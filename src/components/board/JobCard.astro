@@ -1,0 +1,73 @@
+---
+/**
+ * One job in a list (search results, home, company profile, similar jobs), as a row under a
+ * hairline: logo, title with its Featured / Closed label, a meta line (company • place • type •
+ * salary), then "posted" and Save on the right. The title link covers the row
+ * (`.jrow-link::after`); the save button sits above it.
+ */
+import {employmentLabel, formatSalary, postedAgo, workplaceAndPlace} from '../../lib/job-display';
+import type {PublicJobSummary} from '../../lib/types-public';
+import '../../styles/board-list.css';
+import CompanyLogo from './CompanyLogo.astro';
+import Icon from './Icon.astro';
+import SaveButton from './SaveButton.astro';
+
+interface Props {
+  job: PublicJobSummary;
+  /** Pinned featured job (page 1 of /jobs/, home). */
+  pinned?: boolean;
+  /** Hide the company name (on the company's own profile). */
+  hideCompany?: boolean;
+  headingLevel?: 'h2' | 'h3';
+}
+
+const {job, pinned = false, hideCompany = false, headingLevel = 'h3'} = Astro.props;
+const Heading = headingLevel;
+const salary = formatSalary(job.salary);
+const href = `/jobs/${encodeURIComponent(job.slug)}/`;
+const posted = job.publishedAt ? postedAgo(job.publishedAt) : '';
+const meta = [
+  ...(hideCompany ? [] : [{text: job.company.name, strong: true}]),
+  {text: workplaceAndPlace(job), strong: false},
+  {text: employmentLabel(job.employmentType), strong: false},
+  ...(salary ? [{text: salary, strong: false}] : []),
+];
+---
+
+<article class:list={['jrow', {'jrow-pinned': job.featured && pinned}]}>
+  <CompanyLogo name={job.company.name} logoUrl={job.company.logoUrl} class="jrow-logo" />
+  <div class="jrow-body">
+    <div class="jrow-head">
+      <Heading class="jrow-title">
+        <a class="jrow-link" href={href}>{job.title}</a>
+      </Heading>
+      {
+        job.state !== 'active' ? (
+          <span class="status-badge tone-neutral">
+            <span class="status-dot" aria-hidden="true" />
+            {job.state === 'closed' ? 'Closed' : 'Expired'}
+          </span>
+        ) : (
+          job.featured && (
+            <span class="status-badge status-badge-brand">
+              <Icon name="star" class="status-star" />
+              Featured
+            </span>
+          )
+        )
+      }
+    </div>
+    <ul class="jrow-meta" aria-label="Details">
+      {meta.map(m => <li class:list={{'jrow-meta-strong': m.strong}}>{m.text}</li>)}
+      {posted && job.publishedAt && (
+        <li class="jrow-meta-posted">
+          <time datetime={job.publishedAt}>{posted}</time>
+        </li>
+      )}
+    </ul>
+  </div>
+  <div class="jrow-side">
+    {posted && job.publishedAt && <time class="jrow-posted" datetime={job.publishedAt}>{posted}</time>}
+    <SaveButton slug={job.slug} title={job.title} />
+  </div>
+</article>

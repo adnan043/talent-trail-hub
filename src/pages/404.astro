@@ -1,0 +1,36 @@
+---
+/**
+ * Any address on the site that matches no page. Rendered on request (so it
+ * shows the brand) with a 404 status.
+ */
+import Base from '../layouts/Base.astro';
+import {pageContext} from '../server/page';
+import '../styles/board-pages.css';
+
+const {site, viewer} = await pageContext(Astro.request, Astro.response);
+---
+
+<Base site={site} viewer={viewer} title="Page not found" noindex>
+  <main id="main" tabindex="-1" class="wrap st-page">
+    <div class="st-card">
+      <svg class="st-art" viewBox="0 0 320 200" fill="none" aria-hidden="true">
+        <ellipse class="a-soft" cx="160" cy="112" rx="150" ry="78"></ellipse>
+        <ellipse class="a-ring" cx="160" cy="112" rx="132" ry="58" transform="rotate(-8 160 112)" stroke-width="1.25"></ellipse>
+        <circle class="a-brand" cx="44" cy="58" r="5"></circle>
+        <circle class="a-ink" cx="286" cy="164" r="3.5"></circle>
+        <circle class="a-brand" cx="270" cy="40" r="2.5"></circle>
+        <g class="a-ink" font-size="112" font-weight="500" text-anchor="middle">
+          <text x="72" y="146">4</text>
+          <text x="250" y="146">4</text>
+        </g>
+        <line class="a-handle" x1="190" y1="136" x2="216" y2="164" stroke-width="14" stroke-linecap="round"></line>
+        <circle class="a-lens" cx="160" cy="104" r="42" stroke-width="9"></circle>
+        <path class="a-glint" d="M136 92a26 26 0 0 1 18-16" stroke-width="4" stroke-linecap="round"></path>
+        <text class="a-mark" x="160" y="122" text-anchor="middle" font-size="46" font-weight="600">?</text>
+      </svg>
+      <h1>Page not found</h1>
+      <p class="st-body">The page you’re looking for doesn’t exist or has moved.</p>
+      <p class="st-actions"><a class="button" href="/" data-astro-prefetch>Back to home</a></p>
+    </div>
+  </main>
+</Base>

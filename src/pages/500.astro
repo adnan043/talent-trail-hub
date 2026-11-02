@@ -1,0 +1,36 @@
+---
+/**
+ * What a visitor sees when a page fails on the server (an error thrown while
+ * rendering), instead of an empty answer. Astro renders it with a 500 status.
+ * It reads nothing (no brand, no visitor, no database): whatever broke the
+ * page must not break this one too. The error itself is never shown here;
+ * it is in the Worker's log.
+ *
+ * In `npm run dev` and the editor Preview you see Astro's error overlay
+ * instead, with the stack trace.
+ */
+import Base from '../layouts/Base.astro';
+import {GUEST} from '../platform/auth';
+import '../styles/board-pages.css';
+---
+
+<Base site={null} viewer={GUEST} title="Something went wrong" noindex>
+  <main id="main" tabindex="-1" class="wrap st-page">
+    <div class="st-card">
+      <svg class="st-art" viewBox="0 0 320 200" fill="none" aria-hidden="true">
+        <ellipse class="a-soft" cx="160" cy="112" rx="150" ry="78"></ellipse>
+        <ellipse class="a-ring" cx="160" cy="112" rx="132" ry="58" transform="rotate(-8 160 112)" stroke-width="1.25"></ellipse>
+        <circle class="a-brand" cx="44" cy="58" r="5"></circle>
+        <circle class="a-ink" cx="286" cy="164" r="3.5"></circle>
+        <circle class="a-brand" cx="270" cy="40" r="2.5"></circle>
+        <line class="a-handle" x1="190" y1="136" x2="216" y2="164" stroke-width="14" stroke-linecap="round"></line>
+        <circle class="a-lens" cx="160" cy="104" r="42" stroke-width="9"></circle>
+        <path class="a-glint" d="M136 92a26 26 0 0 1 18-16" stroke-width="4" stroke-linecap="round"></path>
+        <text class="a-mark" x="160" y="122" text-anchor="middle" font-size="46" font-weight="600">!</text>
+      </svg>
+      <h1>Something went wrong</h1>
+      <p class="st-body">This page could not be shown just now. Please try again. If it keeps happening, come back in a few minutes.</p>
+      <p class="st-actions"><a class="button" href="/" data-astro-prefetch>Back to home</a></p>
+    </div>
+  </main>
+</Base>

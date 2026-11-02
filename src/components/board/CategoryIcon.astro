@@ -1,0 +1,36 @@
+---
+/**
+ * A category's coloured icon tile. Categories are admin-defined, so the icon matches words in the
+ * slug (unknown ones get a briefcase) and the tint is picked from the slug: the same category has
+ * the same colour on every page. Decorative: the category name is always printed next to it.
+ */
+import Icon, {type IconName} from './Icon.astro';
+
+interface Props {
+  slug: string;
+  class?: string;
+}
+
+const ICONS: [RegExp, IconName][] = [
+  [/design|ux|ui|creative|art/, 'pen-tool'],
+  [/engineer|develop|software|tech|data|devops|it\b/, 'code'],
+  [/market|growth|seo|social/, 'megaphone'],
+  [/sales|business|finance|account/, 'chart'],
+  [/content|writ|copy|editor|media/, 'feather'],
+  [/educat|teach|coach/, 'graduation-cap'],
+  [/hr|people|recruit|talent/, 'users'],
+  [/support|customer|success/, 'headphones'],
+  [/health|medic|care|nurs/, 'stethoscope'],
+  [/legal|law|compliance/, 'scale'],
+  [/operation|admin|product|project/, 'workflow'],
+];
+const TONES = ['tone-info', 'tone-success', 'tone-warning', 'tone-brand', 'tone-danger'] as const;
+
+const {slug, class: className} = Astro.props;
+let hash = 0;
+for (const ch of slug) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+const icon = ICONS.find(([re]) => re.test(slug))?.[1] ?? 'briefcase-business';
+const tone = TONES[hash % TONES.length];
+---
+
+<span class:list={['cat-icon', tone, className]} aria-hidden="true"><Icon name={icon} /></span>

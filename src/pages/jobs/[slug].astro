@@ -1,0 +1,450 @@
+---
+/**
+ * One job (F3), rendered from `GET /site-api/jobs/:slug`. Open jobs carry `JobPosting` JSON-LD
+ * and the apply section (workstream B's `ApplySection`). Expired and closed jobs keep their page
+ * (200, `noindex,follow`) with a banner, no apply and no JSON-LD, unless an edit awaits review
+ * (`needsReview`: 404 until approved). Unknown, draft, pending, rejected or blocked → 404;
+ * a database outage → 503. The view count goes up once per browser session (script below).
+ */
+import ApplySection from '../../components/apply/ApplySection.astro';
+import CompanyLogo from '../../components/board/CompanyLogo.astro';
+import SaveButton from '../../components/board/SaveButton.astro';
+import NotFound from '../../components/NotFound.astro';
+import Base from '../../layouts/Base.astro';
+import {jobPostingJsonLd} from '../../lib/json-ld';
+import {countryName, employmentLabel, formatPlace, formatSalary, postedAgo, SALARY_NOT_DISCLOSED, shortDate, workplaceAndPlace, workplaceLabel} from '../../lib/job-display';
+import {clip, htmlToText} from '../../lib/rich-text';
+import type {JobDetailResponse} from '../../lib/types-public';
+import {sanitizeHtml} from '../../platform/sanitize';
+import {backend, read} from '../../server/backend';
+import '../../styles/board-pages.css';
+import {boardPage} from '../../server/board/public-page';
+
+const slug = Astro.params.slug ?? '';
+const [{site, viewer, board}, answer] = await Promise.all([
+  boardPage(Astro.request, Astro.response),
+  backend(Astro.request)
+    .jobs[':slug'].$get({param: {slug}})
+    .catch(() => null),
+]);
+const data = answer?.ok ? await read<JobDetailResponse>(Promise.resolve(answer)) : null;
+const job = data?.job ?? null;
+// 404 only when the job really is not there: an outage is a 503, never a "does not exist".
+const missing = !job && answer?.status === 404;
+if (!job) {
+  Astro.response.status = missing ? 404 : 503;
+  if (!missing) Astro.response.headers.set('Retry-After', '60');
+}
+const name = board?.name ?? site?.name ?? 'Talent Trail Hub';
+const open = job?.state === 'active';
+const salary = job ? formatSalary(job.salary, 'full') : null;
+const summary = job ? htmlToText(job.descriptionHtml).replace(/\s+/g, ' ').trim() : '';
+const description = job
+  ? clip(`${job.title} at ${job.company.name} · ${workplaceAndPlace(job)}. ${summary}`, 160)
+  : undefined;
+const pageUrl = new URL(`/jobs/${encodeURIComponent(slug)}/`, Astro.url).href;
+const shareText = job ? `${job.title} at ${job.company.name}` : '';
+const share = [
+  {label: 'LinkedIn', href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(pageUrl)}`},
+  {label: 'X', href: `https://x.com/intent/post?url=${encodeURIComponent(pageUrl)}&text=${encodeURIComponent(shareText)}`},
+  {label: 'Email', href: `mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(pageUrl)}`},
+];
+const companyHref = job ? `/companies/${encodeURIComponent(job.company.slug)}/` : '/';
+const place = job ? formatPlace(job, 'full') : null;
+const hiringFrom = job && job.workplaceType === 'remote' && job.applicantCountries.length > 0 ? job.applicantCountries.map(countryName).join(', ') : null;
+const metaLine = job
+  ? [workplaceAndPlace(job, 'full'), employmentLabel(job.employmentType), job.publishedAt ? `Posted ${postedAgo(job.publishedAt)}` : null].filter(Boolean).join(' · ')
+  : '';
+/** Where "Apply now" goes: the company's https page, an email, or the on-site form (#apply). */
+function directApply(): {href: string; external: boolean; label: string} | null {
+  if (!job?.applyTarget) return null;
+  if (job.applyMethod === 'url') {
+    try {
+      return new URL(job.applyTarget).protocol === 'https:' ? {href: job.applyTarget, external: true, label: 'Apply now'} : null;
+    } catch {
+      return null;
+    }
+  }
+  if (job.applyMethod === 'email' && /^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]{2,}$/.test(job.applyTarget)) {
+    return {href: `mailto:${job.applyTarget}?subject=${encodeURIComponent(`Application: ${job.title}`)}`, external: false, label: 'Apply by email'};
+  }
+  return null;
+}
+const direct = open ? directApply() : null;
+const applyHref = direct?.href ?? '#apply';
+const applyLabel = direct?.label ?? 'Apply now';
+const applyLinkAttrs = direct ? {'data-apply-click': '', ...(direct.external ? {target: '_blank', rel: 'noopener noreferrer nofollow'} : {})} : {};
+const facts = job
+  ? [
+      {label: 'Job type', value: employmentLabel(job.employmentType)},
+      {label: 'Workplace', value: workplaceLabel(job.workplaceType)},
+      ...(place ? [{label: 'Location', value: place}] : []),
+      ...(hiringFrom ? [{label: 'Hiring from', value: hiringFrom}] : []),
+    ]
+  : [];
+---
+
+{
+  job ? (
+    <Base
+      site={site}
+      viewer={viewer}
+      board={board}
+      title={`${job.title} at ${job.company.name}`}
+      description={description}
+      image={job.company.logoUrl}
+      imageSquare
+      imageAlt={job.company.logoUrl ? `${job.company.name} logo` : undefined}
+      noindexFollow={!open}
+      jsonLd={jobPostingJsonLd(job, {name}) ?? undefined}>
+      <main id="main" tabindex="-1" class="wrap bp-page" data-job-view={open ? job.slug : undefined}>
+        <a class="bp-back" href="/jobs/"><svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>All jobs</a>
+        {!open && (
+          <div class="bp-alert jd-alert" role="status">
+            <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+            <p class="bp-alert-title">{job.state === 'closed' ? 'This job has been filled or closed' : 'This job has expired'}</p>
+            <p>
+              It no longer accepts applications.{' '}
+              <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>See open {job.category.name} jobs</a>
+            </p>
+          </div>
+        )}
+        <div class="jd-layout">
+          <div class="jd-main">
+            <article class="bp-panel">
+              <div class="jd-article-head">
+                <header class="jd-head">
+                  <CompanyLogo name={job.company.name} logoUrl={job.company.logoUrl} size="lg" />
+                  <div class="jd-head-text">
+                    <p class="jd-company-line">
+                      <a class="jd-company" href={companyHref}>{job.company.name}</a>
+                      {job.featured && open && (
+                        <span class="bp-badge bp-badge-brand">
+                          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                          Featured
+                        </span>
+                      )}
+                      {!open && <span class="bp-badge bp-badge-neutral">{job.state === 'closed' ? 'Closed' : 'Expired'}</span>}
+                    </p>
+                    <h1>{job.title}</h1>
+                    <p class="jd-meta">{metaLine}</p>
+                    {job.tags.length > 0 && (
+                      <ul class="bp-tags" aria-label="Tags">
+                        {job.tags.map(tag => (
+                          <li class="bp-tag">{tag}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </header>
+                <div class="jd-head-actions">
+                  <SaveButton slug={job.slug} title={job.title} variant="full" />
+                  <details class="jd-share" data-share-menu>
+                    <summary class="button bp-quiet">
+                      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg>
+                      Share
+                    </summary>
+                    <div class="jd-share-menu">
+                      <button type="button" data-web-share={pageUrl} data-share-title={shareText} hidden>Share with an app</button>
+                      <button type="button" data-copy-link={pageUrl}>
+                        <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
+                        Copy link
+                      </button>
+                      <span class="jd-share-sep" aria-hidden="true"></span>
+                      {share.map(s => (
+                        <a href={s.href} {...(s.label === 'Email' ? {} : {target: '_blank'})} rel="noopener noreferrer">
+                          {s.label}
+                          {s.label !== 'Email' && <span class="visually-hidden"> (opens in a new tab)</span>}
+                        </a>
+                      ))}
+                    </div>
+                  </details>
+                  <p class="jd-copy-status" data-copy-status role="status" aria-live="polite"></p>
+                </div>
+              </div>
+
+              <section class="jd-facts-mobile" aria-label="Key facts">
+                <dl class="jd-facts">
+                  <div>
+                    <dt>Salary</dt>
+                    <dd>{salary ?? SALARY_NOT_DISCLOSED}</dd>
+                  </div>
+                  {facts.map(f => (
+                    <div>
+                      <dt>{f.label}</dt>
+                      <dd>{f.value}</dd>
+                    </div>
+                  ))}
+                  <div>
+                    <dt>Category</dt>
+                    <dd>
+                      <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>{job.category.name}</a>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Posted</dt>
+                    <dd>{shortDate(job.publishedAt)}</dd>
+                  </div>
+                  {open && job.expiresAt && (
+                    <div>
+                      <dt>Apply by</dt>
+                      <dd>{shortDate(job.expiresAt)}</dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+
+              <section class="jd-body" aria-labelledby="about-job-title">
+                <h2 id="about-job-title" class="bp-subheading">About the job</h2>
+                <div class="bp-rich" set:html={sanitizeHtml(job.descriptionHtml)} />
+                <div class="jd-share-mobile">
+                  <details class="jd-share" data-share-menu>
+                    <summary class="button bp-quiet">
+                      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg>
+                      Share
+                    </summary>
+                    <div class="jd-share-menu">
+                      <button type="button" data-web-share={pageUrl} data-share-title={shareText} hidden>Share with an app</button>
+                      <button type="button" data-copy-link={pageUrl}>
+                        <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
+                        Copy link
+                      </button>
+                      <span class="jd-share-sep" aria-hidden="true"></span>
+                      {share.map(s => (
+                        <a href={s.href} {...(s.label === 'Email' ? {} : {target: '_blank'})} rel="noopener noreferrer">
+                          {s.label}
+                          {s.label !== 'Email' && <span class="visually-hidden"> (opens in a new tab)</span>}
+                        </a>
+                      ))}
+                    </div>
+                  </details>
+                  <p class="jd-copy-status" data-copy-status role="status" aria-live="polite"></p>
+                </div>
+              </section>
+            </article>
+
+            {open && !direct && (
+              <ApplySection
+                job={{
+                  id: job.id,
+                  slug: job.slug,
+                  title: job.title,
+                  applyMethod: job.applyMethod,
+                  applyTarget: job.applyTarget,
+                  companyName: job.company.name,
+                  open,
+                }}
+              />
+            )}
+
+            <section class="bp-panel bp-pad jd-company-panel" aria-labelledby="company-title">
+              <h2 id="company-title" class="bp-label">About the company</h2>
+              <div class="jd-company-row">
+                <CompanyLogo name={job.company.name} logoUrl={job.company.logoUrl} />
+                <div>
+                  <p class="jd-company-name">{job.company.name}</p>
+                  {job.company.location && (
+                    <p class="jd-company-loc">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                      {job.company.location}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {job.company.aboutHtml && <div class="bp-rich" set:html={sanitizeHtml(job.company.aboutHtml)} />}
+              <div class="jd-company-actions">
+                <a class="button bp-outline" href={companyHref}>View company profile</a>
+                {job.company.website && (
+                  <a class="button button-ghost" href={job.company.website} target="_blank" rel="noopener noreferrer nofollow">
+                    Website
+                    <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                    <span class="visually-hidden"> (opens in a new tab)</span>
+                  </a>
+                )}
+              </div>
+              {data!.moreAtCompany.length > 0 && (
+                <div class="jd-more">
+                  <h3>More jobs at {job.company.name}</h3>
+                  <ul class="bp-rows">
+                    {data!.moreAtCompany.map(more => (
+                      <li>
+                        <article class="bp-row">
+                          <div class="bp-row-body">
+                            <h4 class="bp-row-title">
+                              <a href={`/jobs/${encodeURIComponent(more.slug)}/`}>{more.title}</a>
+                            </h4>
+                            <p class="bp-row-meta">{[workplaceAndPlace(more), employmentLabel(more.employmentType), formatSalary(more.salary)].filter(Boolean).join(' · ')}</p>
+                          </div>
+                          <svg class="bp-row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                        </article>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <aside class="jd-aside bp-panel" aria-label="Apply and key facts" data-apply-section data-slug={job.slug}>
+            <div class="jd-aside-top">
+              <p class="jd-salary">{formatSalary(job.salary) ?? SALARY_NOT_DISCLOSED}</p>
+              {open && job.expiresAt && <p class="jd-deadline">Apply by {shortDate(job.expiresAt)}</p>}
+              {open && (
+                <a class="button bp-lg bp-block" href={applyHref} {...applyLinkAttrs}>
+                  {applyLabel}
+                  {direct?.external && <span class="visually-hidden"> on the company website (opens in a new tab)</span>}
+                </a>
+              )}
+            </div>
+            <div class="jd-aside-facts">
+              <h2 class="visually-hidden">Key facts</h2>
+              <dl class="jd-fact-rows">
+                {facts.map(f => (
+                  <div>
+                    <dt>{f.label}</dt>
+                    <dd>{f.value}</dd>
+                  </div>
+                ))}
+                <div>
+                  <dt>Category</dt>
+                  <dd>
+                    <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>{job.category.name}</a>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Posted</dt>
+                  <dd>{shortDate(job.publishedAt)}</dd>
+                </div>
+              </dl>
+            </div>
+          </aside>
+        </div>
+
+        {data!.similar.length > 0 && (
+          <section class="jd-similar" aria-labelledby="similar-title">
+            <div class="bp-section-head">
+              <h2 id="similar-title">Similar jobs</h2>
+              <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>All {job.category.name} jobs</a>
+            </div>
+            <ul class="jd-similar-grid">
+              {data!.similar.map(s => (
+                <li>
+                  <article class="bp-row">
+                    <div class="bp-row-body">
+                      <h3 class="bp-row-title">
+                        <a href={`/jobs/${encodeURIComponent(s.slug)}/`}>{s.title}</a>
+                      </h3>
+                      <p class="bp-row-meta">{[s.company.name, workplaceAndPlace(s), formatSalary(s.salary)].filter(Boolean).join(' · ')}</p>
+                    </div>
+                    <svg class="bp-row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {open && (
+          <div class="jd-bar" data-apply-section data-slug={job.slug}>
+            <div class="jd-bar-inner">
+              <SaveButton slug={job.slug} title={job.title} variant="full" />
+              <a class="button bp-lg jd-bar-apply" href={applyHref} {...applyLinkAttrs}>
+                {applyLabel}
+                {direct?.external && <span class="visually-hidden"> on the company website (opens in a new tab)</span>}
+              </a>
+            </div>
+          </div>
+        )}
+      </main>
+    </Base>
+  ) : missing ? (
+    <Base site={site} viewer={viewer} board={board} title="Page not found" noindex>
+      <NotFound site={site} />
+    </Base>
+  ) : (
+    <Base site={site} viewer={viewer} board={board} title="Not available right now" noindex>
+      <main id="main" tabindex="-1" class="wrap st-page">
+        <div class="st-card">
+          <h1>This job is not available right now</h1>
+          <p class="st-body">Something went wrong on our side. Try again in a minute.</p>
+          <p class="st-actions">
+            <a class="button" href="/jobs/">All jobs</a>
+          </p>
+        </div>
+      </main>
+    </Base>
+  )
+}
+
+<script>
+  import {siteFetch} from '../../platform/browser';
+
+  document.addEventListener('astro:page-load', () => {
+    const main = document.querySelector<HTMLElement>('[data-job-view]');
+    if (!main) return;
+
+    // F3: one view per job per browser session.
+    const slug = main.dataset.jobView!;
+    const key = `board:viewed:${slug}`;
+    let first = false;
+    try {
+      first = !sessionStorage.getItem(key);
+      if (first) sessionStorage.setItem(key, '1');
+    } catch {
+      first = false; // Storage blocked: never count on every load.
+    }
+    if (first) void siteFetch(`/site-api/jobs/${encodeURIComponent(slug)}/view`, {method: 'POST'}).catch(() => null);
+
+    // Web Share where the device has it (phones): the system share sheet.
+    const canShare = typeof navigator.share === 'function';
+    document.querySelectorAll<HTMLButtonElement>('[data-web-share]').forEach(button => {
+      if (!canShare) return;
+      button.hidden = false;
+      button.addEventListener('click', () => {
+        void navigator.share({title: button.dataset.shareTitle, url: button.dataset.webShare}).catch(() => null);
+      });
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-copy-link]').forEach(copy => {
+      const status = copy.closest('[data-share-menu]')?.parentElement?.querySelector<HTMLElement>('[data-copy-status]');
+      copy.addEventListener('click', async () => {
+        copy.disabled = true;
+        copy.setAttribute('aria-busy', 'true');
+        try {
+          await navigator.clipboard.writeText(copy.dataset.copyLink ?? location.href);
+          if (status) status.textContent = 'Link copied.';
+        } catch {
+          if (status) status.textContent = 'Could not copy. Copy the address from your browser instead.';
+        } finally {
+          copy.disabled = false;
+          copy.removeAttribute('aria-busy');
+          copy.closest('details')?.removeAttribute('open');
+        }
+      });
+    });
+
+    // The share menus close on Escape and on a click outside them.
+    const menus = [...document.querySelectorAll<HTMLDetailsElement>('[data-share-menu]')];
+    const controller = new AbortController();
+    document.addEventListener(
+      'click',
+      event => {
+        for (const menu of menus) if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+      },
+      {signal: controller.signal}
+    );
+    document.addEventListener(
+      'keydown',
+      event => {
+        if (event.key !== 'Escape') return;
+        for (const menu of menus) {
+          if (!menu.open) continue;
+          menu.open = false;
+          menu.querySelector('summary')?.focus();
+        }
+      },
+      {signal: controller.signal}
+    );
+    document.addEventListener('astro:before-swap', () => controller.abort(), {once: true});
+  });
+</script>

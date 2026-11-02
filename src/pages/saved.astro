@@ -1,0 +1,225 @@
+---
+/**
+ * Saved jobs (F6): PRERENDERED (one file for everyone); the list lives in this browser's
+ * localStorage and is filled in by the script below from `POST /site-api/jobs/saved`. Expired or
+ * closed jobs show "Expired" / "Closed"; jobs no longer on the board can be removed.
+ * DOM built with `textContent` only. `noindex`: the page is per visitor.
+ */
+import Base from '../layouts/Base.astro';
+import {staticContext} from '../server/page';
+import '../styles/board-list.css';
+import '../styles/board-pages.css';
+
+export const prerender = true;
+const {site, viewer} = await staticContext(Astro.request);
+---
+
+<Base site={site} viewer={viewer} isStatic title="Saved jobs" description="The jobs you saved in this browser." noindex>
+  <main id="main" tabindex="-1" class="wrap bp-page bp-narrow saved-page" data-saved-page>
+    <header class="bp-header">
+      <div>
+        <h1>Saved jobs</h1>
+        <p class="bp-desc" data-saved-desc>Jobs you save are stored in this browser only. No account needed.</p>
+      </div>
+    </header>
+    <div class="bp-panel saved-skeleton" data-saved-loading role="status">
+      <span class="visually-hidden">Loading your saved jobs…</span>
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+    </div>
+    <div class="bp-alert" data-saved-error hidden role="alert">
+      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+      <p class="bp-alert-title">We couldn’t load your saved jobs</p>
+      <p>They are still saved in this browser. Check your connection and try again in a minute.</p>
+    </div>
+    <div class="bp-empty" data-saved-empty hidden>
+      <span class="bp-empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg>
+      </span>
+      <h2>No saved jobs yet</h2>
+      <p>Select Save on any job to keep it here. Saved jobs stay in this browser.</p>
+      <div class="bp-empty-actions">
+        <a class="button" href="/jobs/">Browse jobs</a>
+      </div>
+    </div>
+    <ul class="jrows bp-panel saved-list" data-saved-list hidden></ul>
+  </main>
+</Base>
+
+<script>
+  import {employmentLabel, formatSalary, postedAgo, workplaceAndPlace} from '../lib/job-display';
+  import {readSaved, removeSaved} from '../lib/saved-jobs';
+  import type {PublicJobSummary} from '../lib/types-public';
+  import {siteFetch} from '../platform/browser';
+  import {initials} from '../lib/format';
+
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = '') => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  };
+
+  function removeButton(slug: string, label: string, li: HTMLLIElement, onEmpty: () => void) {
+    const button = el('button', 'button ghost small-button', 'Remove');
+    button.type = 'button';
+    button.setAttribute('aria-label', `Remove ${label} from saved jobs`);
+    button.addEventListener('click', () => {
+      removeSaved(slug);
+      li.remove();
+      onEmpty();
+    });
+    return button;
+  }
+
+  const SVG = 'http://www.w3.org/2000/svg';
+  const TINTS = ['tone-brand', 'tone-success', 'tone-info', 'tone-warning', 'tone-neutral'];
+  const STAR =
+    'M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z';
+
+  /** Same tile as CompanyLogo.astro: the logo, or initials on a tint picked from the name. */
+  function logo(job: PublicJobSummary) {
+    if (job.company.logoUrl) {
+      const img = el('img', 'co-logo co-logo-md jrow-logo');
+      img.src = job.company.logoUrl;
+      img.alt = '';
+      img.width = 52;
+      img.height = 52;
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      return img;
+    }
+    let hash = 0;
+    for (const ch of job.company.name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+    const tile = el('span', `co-logo co-logo-mono co-logo-md ${TINTS[hash % TINTS.length]} jrow-logo`, initials(job.company.name));
+    tile.setAttribute('aria-hidden', 'true');
+    return tile;
+  }
+
+  function badge(job: PublicJobSummary) {
+    if (job.state !== 'active') {
+      const b = el('span', 'status-badge tone-neutral');
+      const dot = el('span', 'status-dot');
+      dot.setAttribute('aria-hidden', 'true');
+      b.append(dot, job.state === 'closed' ? 'Closed' : 'Expired');
+      return b;
+    }
+    if (!job.featured) return null;
+    const b = el('span', 'status-badge status-badge-brand');
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'status-star');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', STAR);
+    svg.append(path);
+    b.append(svg, 'Featured');
+    return b;
+  }
+
+  /** The same row as JobCard.astro (board-list.css), with Remove in place of Save. */
+  function card(job: PublicJobSummary, li: HTMLLIElement, onEmpty: () => void) {
+    const article = el('article', 'jrow');
+    const body = el('div', 'jrow-body');
+    const head = el('div', 'jrow-head');
+    const h2 = el('h2', 'jrow-title');
+    const link = el('a', 'jrow-link', job.title);
+    link.href = `/jobs/${encodeURIComponent(job.slug)}/`;
+    h2.append(link);
+    head.append(h2);
+    const label = badge(job);
+    if (label) head.append(label);
+    const meta = el('ul', 'jrow-meta');
+    meta.setAttribute('aria-label', 'Details');
+    meta.append(el('li', 'jrow-meta-strong', job.company.name));
+    const salary = formatSalary(job.salary);
+    for (const text of [workplaceAndPlace(job), employmentLabel(job.employmentType), ...(salary ? [salary] : [])]) meta.append(el('li', '', text));
+    const posted = job.publishedAt ? postedAgo(job.publishedAt) : '';
+    if (posted && job.publishedAt) {
+      const li2 = el('li', 'jrow-meta-posted');
+      const time = el('time', '', posted);
+      time.dateTime = job.publishedAt;
+      li2.append(time);
+      meta.append(li2);
+    }
+    body.append(head, meta);
+    const side = el('div', 'jrow-side');
+    if (posted && job.publishedAt) {
+      const time = el('time', 'jrow-posted', posted);
+      time.dateTime = job.publishedAt;
+      side.append(time);
+    }
+    const remove = removeButton(job.slug, job.title, li, onEmpty);
+    remove.className = 'button bp-quiet small-button saved-remove';
+    side.append(remove);
+    article.append(logo(job), body, side);
+    return article;
+  }
+
+  document.addEventListener('astro:page-load', async () => {
+    const page = document.querySelector('[data-saved-page]');
+    if (!page) return;
+    const list = page.querySelector<HTMLUListElement>('[data-saved-list]')!;
+    const loading = page.querySelector<HTMLElement>('[data-saved-loading]')!;
+    const empty = page.querySelector<HTMLElement>('[data-saved-empty]')!;
+    const error = page.querySelector<HTMLElement>('[data-saved-error]')!;
+    const desc = page.querySelector<HTMLElement>('[data-saved-desc]');
+    const describe = () => {
+      const n = list.children.length;
+      if (desc && n > 0) desc.textContent = `${n} saved ${n === 1 ? 'job' : 'jobs'}, stored in this browser only.`;
+      else if (desc) desc.textContent = 'Jobs you save are stored in this browser only. No account needed.';
+    };
+    const showEmpty = () => {
+      describe();
+      if (!list.children.length) {
+        list.hidden = true;
+        empty.hidden = false;
+      }
+    };
+    const saved = readSaved();
+    if (!saved.length) {
+      loading.hidden = true;
+      empty.hidden = false;
+      return;
+    }
+    let jobs: PublicJobSummary[] | null = null;
+    try {
+      const res = await siteFetch('/site-api/jobs/saved', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({slugs: saved.map(s => s.slug)}),
+      });
+      jobs = res.ok ? ((await res.json()) as {jobs: PublicJobSummary[]}).jobs : null;
+    } catch {
+      jobs = null;
+    }
+    loading.hidden = true;
+    if (!jobs) {
+      error.hidden = false;
+      return;
+    }
+    const bySlug = new Map(jobs.map(j => [j.slug, j]));
+    list.replaceChildren();
+    for (const entry of saved) {
+      const li = el('li');
+      const job = bySlug.get(entry.slug);
+      if (job) li.append(card(job, li, showEmpty));
+      else {
+        // No longer on the board (removed, or its company blocked).
+        const article = el('article', 'jrow saved-gone');
+        const body = el('div', 'jrow-body');
+        body.append(el('p', 'saved-gone-text', 'This job is no longer available.'));
+        const side = el('div', 'jrow-side');
+        const gone = removeButton(entry.slug, 'this job', li, showEmpty);
+        gone.classList.add('bp-quiet');
+        side.append(gone);
+        article.append(body, side);
+        li.append(article);
+      }
+      list.append(li);
+    }
+    list.hidden = false;
+    describe();
+  });
+</script>

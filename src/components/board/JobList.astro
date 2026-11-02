@@ -1,0 +1,24 @@
+---
+import type {PublicJobSummary} from '../../lib/types-public';
+import JobCard from './JobCard.astro';
+
+interface Props {
+  jobs: PublicJobSummary[];
+  /** The first `pinned` jobs are pinned featured ones. */
+  pinned?: number;
+  hideCompany?: boolean;
+  headingLevel?: 'h2' | 'h3';
+}
+
+const {jobs, pinned = 0, hideCompany = false, headingLevel = 'h3'} = Astro.props;
+---
+
+<ul class="jrows">
+  {
+    jobs.map((job, i) => (
+      <li>
+        <JobCard job={job} pinned={i < pinned} hideCompany={hideCompany} headingLevel={headingLevel} />
+      </li>
+    ))
+  }
+</ul>

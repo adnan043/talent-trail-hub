@@ -1,0 +1,55 @@
+---
+/**
+ * Privacy policy (F36): PRERENDERED placeholder text for the owner to replace (an editor is
+ * Release 2). The resume retention period comes from the code constant.
+ */
+import Base from '../layouts/Base.astro';
+import {RESUME_RETENTION_DAYS} from '../lib/board';
+import {staticContext} from '../server/page';
+import '../styles/board-pages.css';
+
+export const prerender = true;
+const {site, viewer} = await staticContext(Astro.request);
+const name = site?.name ?? 'This job board';
+---
+
+<Base site={site} viewer={viewer} isStatic title="Privacy policy" description={`How ${name} collects, uses and deletes the personal data of candidates and employers.`}>
+  <main id="main" tabindex="-1" class="wrap bp-page">
+    <div class="bp-alert bp-alert-note lg-alert" role="note">
+      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+      <p><strong>Placeholder text: the board owner replaces it with their own policy before launch.</strong></p>
+    </div>
+    <header class="bp-header">
+      <div>
+        <p class="bp-eyebrow">Legal</p>
+        <h1>Privacy policy</h1>
+      </div>
+    </header>
+    <div class="lg-body">
+      <section aria-labelledby="privacy-1">
+        <h2 id="privacy-1">Who we are</h2>
+        <p><span data-brand-text="{name}">{name}</span> runs this job board. Employers post jobs; candidates search and apply without an account.</p>
+      </section>
+      <section aria-labelledby="privacy-2">
+        <h2 id="privacy-2">What we collect</h2>
+        <ul>
+          <li>Candidates: the details you send when you apply (name, email, resume, optional phone, profile link and note), the consent you give and when.</li>
+          <li>Employers: your account, your company profile, your job posts and your orders.</li>
+          <li>Everyone: a keyed hash of your IP address to stop abuse, never the address itself. Saved jobs stay in your own browser.</li>
+        </ul>
+      </section>
+      <section aria-labelledby="privacy-3">
+        <h2 id="privacy-3">How we use it</h2>
+        <p>An application goes to the employer of the job you applied for, and we email you a confirmation. We never sell personal data.</p>
+      </section>
+      <section aria-labelledby="privacy-4">
+        <h2 id="privacy-4">How long we keep it</h2>
+        <p>Resumes are deleted {RESUME_RETENTION_DAYS} days after you apply. You can ask us to delete all your applications sooner.</p>
+      </section>
+      <section aria-labelledby="privacy-5">
+        <h2 id="privacy-5">Your rights</h2>
+        <p>You can ask to see, correct or delete your data. Contact the board owner and we will answer within 30 days.</p>
+      </section>
+    </div>
+  </main>
+</Base>

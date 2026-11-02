@@ -1,0 +1,124 @@
+---
+/**
+ * A company profile (F5): logo, about, links and its open jobs. Blocked or unknown → 404; on a
+ * single-company board only the owner company has a profile (F39). An outage → 503.
+ */
+import CompanyLogo from '../../components/board/CompanyLogo.astro';
+import JobList from '../../components/board/JobList.astro';
+import NotFound from '../../components/NotFound.astro';
+import Base from '../../layouts/Base.astro';
+import {companyJsonLd} from '../../lib/json-ld';
+import {clip, htmlToText} from '../../lib/rich-text';
+import type {CompanyProfileResponse} from '../../lib/types-public';
+import {sanitizeHtml} from '../../platform/sanitize';
+import {backend} from '../../server/backend';
+import {boardPage} from '../../server/board/public-page';
+import '../../styles/board-pages.css';
+
+const slug = Astro.params.slug ?? '';
+const [{site, viewer, board}, answer] = await Promise.all([
+  boardPage(Astro.request, Astro.response),
+  backend(Astro.request)
+    .companies[':slug'].$get({param: {slug}})
+    .catch(() => null),
+]);
+const data = answer?.ok ? ((await answer.json().catch(() => null)) as CompanyProfileResponse | null) : null;
+const missing = !data && answer?.status === 404;
+if (!data) {
+  Astro.response.status = missing ? 404 : 503;
+  if (!missing) Astro.response.headers.set('Retry-After', '60');
+}
+const company = data?.company ?? null;
+const about = company?.aboutHtml ? htmlToText(company.aboutHtml).replace(/\s+/g, ' ').trim() : '';
+const name = board?.name ?? site?.name ?? 'Talent Trail Hub';
+const description = company
+  ? clip(
+      about
+        ? `${company.name}: ${about}`
+        : `See every open job at ${company.name}${company.location ? ` in ${company.location}` : ''} on ${name}: roles, locations, salaries and how to apply. New roles appear here as soon as they open.`,
+      160
+    )
+  : undefined;
+---
+
+{
+  company ? (
+    <Base site={site} viewer={viewer} board={board} title={`Jobs at ${company.name}`} description={description} image={company.logoUrl} imageSquare imageAlt={company.logoUrl ? `${company.name} logo` : undefined} jsonLd={companyJsonLd(company)}>
+      <main id="main" tabindex="-1" class="wrap bp-page bp-narrow">
+        <a class="bp-back" href={board?.singleCompany ? '/' : '/companies/'}><svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>{board?.singleCompany ? 'Home' : 'All companies'}</a>
+        <header class="bp-panel bp-pad">
+          <div class="cp-head-row">
+            <CompanyLogo name={company.name} logoUrl={company.logoUrl} size="lg" />
+            <div>
+              <h1>{company.name}</h1>
+              {company.location && (
+                <p class="cp-loc">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                  {company.location}
+                </p>
+              )}
+            </div>
+          </div>
+          {company.aboutHtml && <div class="bp-rich cp-about" set:html={sanitizeHtml(company.aboutHtml)} />}
+          {(company.website || company.socials.length > 0) && (
+            <ul class="cp-links" aria-label="Links">
+              {company.website && (
+                <li>
+                  <a class="button bp-quiet small-button" href={company.website} target="_blank" rel="noopener noreferrer nofollow">
+                    Website
+                    <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                    <span class="visually-hidden"> (opens in a new tab)</span>
+                  </a>
+                </li>
+              )}
+              {company.socials.map(s => (
+                <li>
+                  <a class="button bp-quiet small-button" href={s.url} target="_blank" rel="noopener noreferrer nofollow">
+                    {s.label}
+                    <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                    <span class="visually-hidden"> (opens in a new tab)</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </header>
+        <section class="bp-panel cp-jobs" aria-labelledby="jobs-title">
+          <div class="cp-jobs-head">
+            <h2 id="jobs-title">
+              Open positions <span class="count">({data!.jobs.length})</span>
+            </h2>
+          </div>
+          {data!.jobs.length ? (
+            <JobList jobs={data!.jobs} hideCompany />
+          ) : (
+            <div class="bp-empty bp-empty-plain">
+              <span class="bp-empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>
+              </span>
+              <h3>No open positions right now</h3>
+              <p>{company.name} has no open jobs at the moment.</p>
+              <div class="bp-empty-actions">
+                <a class="button bp-outline" href="/jobs/">Browse all jobs</a>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+    </Base>
+  ) : missing ? (
+    <Base site={site} viewer={viewer} board={board} title="Page not found" noindex>
+      <NotFound site={site} />
+    </Base>
+  ) : (
+    <Base site={site} viewer={viewer} board={board} title="Not available right now" noindex>
+      <main id="main" tabindex="-1" class="wrap st-page">
+        <div class="st-card">
+          <h1>This company is not available right now</h1>
+          <p class="st-body">Something went wrong on our side. Try again in a minute.</p>
+          <p class="st-actions"><a class="button" href="/jobs/">All jobs</a></p>
+        </div>
+      </main>
+    </Base>
+  )
+}

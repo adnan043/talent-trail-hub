@@ -1,0 +1,117 @@
+---
+/**
+ * Below 768px: the menu button opening the main nav, the theme choice and Sign in / Sign out in a
+ * side sheet (a native modal <dialog>: focus stays inside, the page behind is inert). Closes on
+ * Esc, the close button, a click on the scrim or a link. No inline handlers (CSP).
+ */
+import {EMPLOYER_LINKS, type NavItem} from '../../content/site';
+import type {Viewer} from '../../lib/types';
+
+interface Props {
+  nav: NavItem[];
+  viewer: Viewer;
+  /** The page is prerendered (or the Preview hides the session): render no visitor data. */
+  hydrate: boolean;
+  single: boolean;
+  active: (href: string) => boolean;
+  signInHref: string;
+}
+
+const {nav, viewer, hydrate, single, active, signInHref} = Astro.props;
+const user = viewer.state === 'user';
+const email = !hydrate && user ? (viewer.email ?? viewer.name ?? '') : '';
+---
+
+<button
+  type="button"
+  class="icon-button mobile-menu-button"
+  aria-expanded="false"
+  aria-controls="mobile-menu"
+  aria-haspopup="dialog"
+  data-mobile-menu-open>
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+  <span class="visually-hidden">Menu</span>
+</button>
+
+<dialog id="mobile-menu" class="mobile-sheet" aria-labelledby="mobile-menu-title" data-mobile-menu>
+  <div class="mobile-sheet-inner">
+  <div class="mobile-sheet-head">
+    <h2 id="mobile-menu-title" class="mobile-sheet-title">Menu</h2>
+    <button type="button" class="icon-button" data-mobile-menu-close>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      <span class="visually-hidden">Close menu</span>
+    </button>
+  </div>
+  <nav class="mobile-sheet-nav" aria-label="Main">
+    <ul>
+      {nav.map(item => (
+        <li data-marketplace-only={item.marketplaceOnly ? '' : undefined} hidden={item.marketplaceOnly && single ? true : undefined}>
+          <a href={item.href} class:list={{active: active(item.href)}} aria-current={active(item.href) ? 'page' : undefined}>
+            {item.label}
+            {item.href === '/saved/' && <span class="nav-count" data-saved-count aria-hidden="true" hidden />}
+          </a>
+        </li>
+      ))}
+      {/* The signed-in visitor's links, as in the header's account menu (src/lib/account-fill.ts). */}
+      <li data-account-admin hidden>
+        <a href="/dashboard/">Admin</a>
+      </li>
+      {EMPLOYER_LINKS.map(link => (
+        <li data-user-only data-marketplace-only hidden={!user || single ? true : undefined}>
+          <a href={link.href}>{link.label}</a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+  <div class="mobile-sheet-theme">
+    <p id="mobile-theme-label">Theme</p>
+    <div class="segmented" role="radiogroup" aria-labelledby="mobile-theme-label">
+      {['light', 'dark', 'system'].map(value => (
+        <label class="segmented-option">
+          <input type="radio" name="mobile-theme" value={value} checked={value === 'system'} data-theme-radio />
+          <span>{value === 'light' ? 'Light' : value === 'dark' ? 'Dark' : 'System'}</span>
+        </label>
+      ))}
+    </div>
+  </div>
+  <div class="mobile-sheet-foot">
+    <div data-user-only hidden={!user} class="mobile-sheet-account">
+      <p class="mobile-sheet-email" data-account-email>{email}</p>
+      <button type="button" class="button button-outline" data-logout>Sign out</button>
+    </div>
+    <a class="button button-outline" href={signInHref} data-guest-only hidden={user}>Sign in</a>
+  </div>
+  </div>
+</dialog>
+
+<script>
+  document.addEventListener('astro:page-load', () => {
+    const dialog = document.querySelector<HTMLDialogElement>('[data-mobile-menu]');
+    const opener = document.querySelector<HTMLButtonElement>('[data-mobile-menu-open]');
+    if (!dialog || !opener || dialog.dataset.bound) return;
+    dialog.dataset.bound = '1';
+
+    opener.addEventListener('click', () => {
+      dialog.showModal();
+      opener.setAttribute('aria-expanded', 'true');
+    });
+    // Esc (native), the close button, a link or the scrim (a click on the <dialog> itself, outside
+    // its inner panel) all end here: focus returns to the opener.
+    dialog.addEventListener('close', () => {
+      opener.setAttribute('aria-expanded', 'false');
+      opener.focus();
+    });
+    dialog.querySelector('[data-mobile-menu-close]')?.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', event => {
+      const target = event.target as HTMLElement;
+      if (target === dialog || target.closest('a[href]')) dialog.close();
+    });
+  });
+
+  // Once for the document: back on a wide screen with the sheet open, close it.
+  const wide = window.matchMedia('(min-width: 768px)');
+  wide.addEventListener('change', () => {
+    const dialog = document.querySelector<HTMLDialogElement>('[data-mobile-menu]');
+    if (wide.matches && dialog?.open) dialog.close();
+  });
+</script>

@@ -1,0 +1,176 @@
+---
+/**
+ * F4 apply, on the job page (`<ApplySection job={…} />`). No account needed.
+ * - `onsite`: the form (name, email, resume, consent; phone, profile link, cover note optional),
+ *   posting to `/site-api/applications/*` from ./apply-form.ts. A hidden honeypot field catches bots.
+ * - `url` / `email`: a button that opens the target; the click is counted.
+ * Works on SSR and client-navigated pages (the script runs on every `astro:page-load`).
+ */
+import {DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
+import {type ApplyJob, RESUME_ACCEPT} from '../../lib/types-apply';
+import '../../styles/board-pages.css';
+
+interface Props {
+  job: ApplyJob;
+}
+const {job} = Astro.props;
+
+/** Only https links and plain addresses become links (the target was checked on save, too). */
+function safeUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).protocol === 'https:' ? value : null;
+  } catch {
+    return null;
+  }
+}
+const email = job.applyTarget && /^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]{2,}$/.test(job.applyTarget) ? job.applyTarget : null;
+const url = job.applyMethod === 'url' ? safeUrl(job.applyTarget) : null;
+const mailto = job.applyMethod === 'email' && email ? `mailto:${email}?subject=${encodeURIComponent(`Application: ${job.title}`)}` : null;
+const id = `apply-${job.id}`;
+---
+
+<section class="bp-panel bp-pad apply-section" id="apply" aria-labelledby={`${id}-title`} data-apply-section data-slug={job.slug}>
+  <h2 id={`${id}-title`} class="bp-subheading">Apply for this job</h2>
+  {
+    !job.open ? (
+      <p class="notice">This job is no longer taking applications.</p>
+    ) : job.applyMethod === 'onsite' ? (
+      <p class="notice" data-apply-blocked hidden></p>
+      <form id={`${id}-form`} class="form-card apply-form" novalidate data-apply-form>
+        <p class="apply-lead">No account needed. {job.companyName} will get your details and resume.</p>
+        <div class="form-grid">
+          <div class="field">
+            <label for={`${id}-name`}>Full name</label>
+            <input id={`${id}-name`} name="name" type="text" autocomplete="name" maxlength={LIMITS.applicantName} placeholder="Your full name" />
+          </div>
+          <div class="field">
+            <label for={`${id}-email`}>Email</label>
+            <input id={`${id}-email`} name="email" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" />
+          </div>
+          <div class="field">
+            <label for={`${id}-phone`}>Phone <span class="muted">(optional)</span></label>
+            <input id={`${id}-phone`} name="phone" type="tel" autocomplete="tel" placeholder="+1 555 123 4567" />
+          </div>
+          <div class="field">
+            <label for={`${id}-profile`}>Profile or portfolio link <span class="muted">(optional)</span></label>
+            <input id={`${id}-profile`} name="profileUrl" type="url" inputmode="url" placeholder="https://www.linkedin.com/in/you" />
+          </div>
+          <div class="field full">
+            <label for={`${id}-resume`}>Resume</label>
+            <input id={`${id}-resume`} name="resume" type="file" accept={RESUME_ACCEPT} aria-describedby={`${id}-resume-hint`} />
+            <p class="field-hint" id={`${id}-resume-hint`}>PDF or DOCX, up to {LIMITS.resumeMb} MB.</p>
+            <p class="muted small" data-upload-progress aria-live="polite" hidden></p>
+          </div>
+          <div class="field full">
+            <label for={`${id}-note`}>Cover note <span class="muted">(optional)</span></label>
+            <textarea id={`${id}-note`} name="coverNote" rows="5" placeholder="A few lines on why you are a good fit." aria-describedby={`${id}-note-hint`}></textarea>
+            <p class="field-hint" id={`${id}-note-hint`}>Up to {LIMITS.coverNote} characters.</p>
+          </div>
+          <div class="field full">
+            <label class="check" for={`${id}-consent`}>
+              <input id={`${id}-consent`} name="consent" type="checkbox" />
+              <span>{DEFAULT_CONSENT_TEXT}</span>
+            </label>
+          </div>
+        </div>
+        <div class="apply-trap" aria-hidden="true">
+          <label for={`${id}-website`}>Leave this empty</label>
+          <input id={`${id}-website`} name="website" type="text" tabindex="-1" autocomplete="off" />
+        </div>
+        <p class="notice" data-form-status hidden></p>
+        <div class="actions">
+          <button class="button" type="submit">Send application</button>
+        </div>
+      </form>
+    ) : url || mailto ? (
+      <div class="apply-out">
+        <p class="apply-lead">
+          {url ? (
+            `${job.companyName} takes applications on its own website.`
+          ) : (
+            <>
+              Send your application to <strong>{email}</strong>.
+            </>
+          )}
+        </p>
+        <a class="button bp-lg" href={(url ?? mailto)!} data-apply-click {...(url ? {target: '_blank', rel: 'noopener noreferrer'} : {})}>
+          {url ? 'Apply on the company site' : 'Apply by email'}
+        </a>
+      </div>
+    ) : (
+      <p class="notice">Ask {job.companyName} how to apply for this job.</p>
+    )
+  }
+</section>
+
+<style>
+  .apply-section {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .apply-section h2 {
+    margin: 0;
+  }
+  .apply-section > h2 + .apply-lead,
+  .apply-section > h2 + .apply-out {
+    margin-top: -0.75rem;
+  }
+  .apply-form {
+    gap: 1.25rem;
+  }
+  .apply-form .apply-lead {
+    margin: -0.75rem 0 0.25rem;
+  }
+  .apply-form .actions {
+    margin-top: 0.25rem;
+  }
+  .apply-form button[type='submit'] {
+    min-height: 48px;
+    padding: 0 22px;
+    font-size: 1rem;
+  }
+  @media (max-width: 640px) {
+    .apply-section .form-grid {
+      grid-template-columns: 1fr;
+    }
+    .apply-form button[type='submit'] {
+      width: 100%;
+    }
+  }
+  .apply-section .check {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .apply-section .check input {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    min-height: 0;
+    margin: 2px 0 0;
+    padding: 0;
+  }
+  .apply-out {
+    display: grid;
+    gap: 1.25rem;
+    justify-items: start;
+  }
+  /* The honeypot: off screen for people, still in the form for bots. */
+  .apply-trap {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+</style>
+
+<script>
+  import {bindApplySections} from './apply-form';
+
+  document.addEventListener('astro:page-load', bindApplySections);
+</script>

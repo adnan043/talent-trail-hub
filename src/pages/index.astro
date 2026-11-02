@@ -1,0 +1,320 @@
+---
+/**
+ * The home page (F1), rendered per visit from `GET /site-api/board/home`: the hero from the board
+ * settings (live status, headline, search → /jobs/?q=&location=), "Popular" chips (Remote + the 4
+ * biggest categories), the categories with counts, ONE raised panel with up to 5 pinned featured
+ * jobs (rotated hourly) then the latest (workplace switch: `/?workplace=remote#latest`), a safety
+ * note, companies hiring now and the employer band. Single-company boards (F39) show the owner
+ * company instead of the companies strip and no employer calls to action.
+ */
+import CategoryIcon from '../components/board/CategoryIcon.astro';
+import CompanyLogo from '../components/board/CompanyLogo.astro';
+import Icon from '../components/board/Icon.astro';
+import JobList from '../components/board/JobList.astro';
+import {HOME, withName} from '../content/site';
+import Base from '../layouts/Base.astro';
+import {companyJsonLd} from '../lib/json-ld';
+import {WORKPLACE_LABELS, WORKPLACE_TYPES, type WorkplaceType} from '../lib/board';
+import {postedAgo} from '../lib/job-display';
+import type {HomeResponse} from '../lib/types-public';
+import {sanitizeHtml} from '../platform/sanitize';
+import {backend, read} from '../server/backend';
+import {boardPage} from '../server/board/public-page';
+import '../styles/board-list.css';
+
+// The latest list's workplace switch: '' = all. Remote first (the most common filter).
+const SWITCH_ORDER: WorkplaceType[] = ['remote', 'hybrid', 'onsite'];
+const WORKPLACE_SWITCH = [{value: '', label: 'All'}, ...SWITCH_ORDER.map(w => ({value: w, label: WORKPLACE_LABELS[w]}))];
+const workplaceParam = Astro.url.searchParams.get('workplace') ?? '';
+const workplace = (WORKPLACE_TYPES as readonly string[]).includes(workplaceParam) ? (workplaceParam as WorkplaceType) : '';
+const [{site, viewer, board}, home] = await Promise.all([
+  boardPage(Astro.request, Astro.response),
+  read<HomeResponse>(backend(Astro.request).board.home.$get({query: {workplace}})),
+]);
+if (!home) Astro.response.status = 503;
+const name = board?.name ?? site?.name ?? 'Talent Trail Hub';
+const single = board?.singleCompany ?? false;
+const owner = home?.ownerCompany ?? null;
+const withJobs = (home?.categories ?? []).filter(c => c.jobCount > 0);
+const popular = [...withJobs].sort((a, b) => b.jobCount - a.jobCount).slice(0, 4);
+// `*phrase*` in the hero title is emphasised (the odd parts of the split).
+const heroParts = (board?.heroTitle ?? 'Find your next role').split(/\*([^*]+)\*/);
+const openRoles = withJobs.reduce((sum, c) => sum + c.jobCount, 0);
+const roles = (n: number) => `${n.toLocaleString('en-US')} open ${n === 1 ? 'role' : 'roles'}`;
+
+// One list: the pinned featured jobs (the switch applies to them too), then the latest without them.
+const featured = (home?.featured ?? []).filter(j => !workplace || j.workplaceType === workplace);
+const pinnedSlugs = new Set(featured.map(j => j.slug));
+const jobs = [...featured, ...(home?.latest ?? []).filter(j => !pinnedSlugs.has(j.slug))];
+// ISO strings sort chronologically.
+const newest = [...(home?.featured ?? []), ...(home?.latest ?? [])]
+  .map(j => j.publishedAt)
+  .filter((d): d is string => Boolean(d))
+  .sort()
+  .at(-1);
+const nothing = home && jobs.length === 0 && !workplace;
+const viewLabel = workplace ? WORKPLACE_LABELS[workplace].toLowerCase() : '';
+const countLabel = `${jobs.length} ${viewLabel ? `${viewLabel} ` : ''}${jobs.length === 1 ? 'role' : 'roles'}`;
+const description = single && owner ? `Open roles at ${owner.name}. ${board?.heroSubtitle ?? ''}`.trim() : undefined;
+---
+
+<Base site={site} viewer={viewer} board={board} description={description} jsonLd={single && owner ? companyJsonLd(owner) : undefined}>
+  <main id="main" tabindex="-1">
+    <section class="home-hero" aria-labelledby="hero-title">
+      <svg class="orbits orbits-hero" viewBox="0 0 600 600" fill="none" aria-hidden="true" focusable="false">
+        <g transform="rotate(-24 300 300)" stroke="currentColor" stroke-width="1.25">
+          <ellipse cx="300" cy="300" rx="290" ry="150"></ellipse>
+          <ellipse cx="300" cy="300" rx="215" ry="108"></ellipse>
+          <ellipse cx="300" cy="300" rx="140" ry="66"></ellipse>
+        </g>
+        <circle class="orbit-dot" cx="398" cy="186" r="8"></circle>
+        <circle class="orbit-dot" cx="226" cy="398" r="4.5"></circle>
+      </svg>
+      <div class="wrap home-hero-inner">
+        {
+          openRoles > 0 && (
+            <p class="live-pill">
+              <span class="live-dot" aria-hidden="true" />
+              <span>
+                <strong>{roles(openRoles)}</strong>
+                {newest && (
+                  <>
+                    {' · updated '}
+                    <time datetime={newest}>{postedAgo(newest)}</time>
+                  </>
+                )}
+              </span>
+            </p>
+          )
+        }
+        <h1 id="hero-title" class="display">{heroParts.map((part, i) => (i % 2 ? <em>{part}</em> : part))}</h1>
+        <p class="home-lead">{board?.heroSubtitle ?? withName('Hand-picked jobs at {name}.', name)}</p>
+        <form class="searchbar searchbar-lg" action="/jobs/" method="get" role="search" aria-label={HOME.searchLabel} novalidate>
+          <div class="searchbar-field searchbar-what">
+            <Icon name="search" class="searchbar-icon" />
+            <span class="searchbar-control">
+              <label for="home-q">What</label>
+              <input id="home-q" type="search" name="q" maxlength="100" enterkeyhint="search" autocomplete="off" placeholder="Job title, skill or company" />
+            </span>
+          </div>
+          <span class="searchbar-divider" aria-hidden="true"></span>
+          <div class="searchbar-field searchbar-where">
+            <Icon name="map-pin" class="searchbar-icon" />
+            <span class="searchbar-control">
+              <label for="home-location">Where</label>
+              <input id="home-location" type="text" name="location" maxlength="80" autocomplete="address-level2" placeholder="City, country or “Remote”" />
+            </span>
+          </div>
+          <button class="button searchbar-submit" type="submit">
+            Search jobs
+            <Icon name="arrow-right" class="button-icon" />
+          </button>
+        </form>
+        {
+          home && openRoles > 0 && (
+            <nav class="popular-chips" aria-label="Popular searches">
+              <span>{HOME.popular}</span>
+              <a class="pill" href="/jobs/?workplace=remote">Remote</a>
+              {popular.map(c => (
+                <a class="pill" href={`/jobs/?category=${encodeURIComponent(c.slug)}`}>
+                  {c.name}
+                </a>
+              ))}
+            </nav>
+          )
+        }
+      </div>
+    </section>
+
+    {
+      !home ? (
+        <section class="home-section">
+          <div class="wrap">
+            <p class="notice">The job board is not available right now. Try again in a minute.</p>
+          </div>
+        </section>
+      ) : (
+        <>
+          {single && owner && (
+            <section class="home-section home-owner" aria-labelledby="owner-title">
+              <div class="wrap">
+                <div class="owner-card">
+                  <div class="owner-head">
+                    <CompanyLogo name={owner.name} logoUrl={owner.logoUrl} size="lg" />
+                    <div>
+                      <h2 id="owner-title">{owner.name}</h2>
+                      {owner.location && <p class="home-muted">{owner.location}</p>}
+                    </div>
+                    <a class="button ghost owner-link" href={`/companies/${encodeURIComponent(owner.slug)}/`}>
+                      About {owner.name}
+                    </a>
+                  </div>
+                  {owner.aboutHtml && <div class="prose" set:html={sanitizeHtml(owner.aboutHtml)} />}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {withJobs.length > 0 && (
+            <section class="home-section" aria-labelledby="categories-title">
+              <div class="wrap">
+                <div class="home-section-head">
+                  <div>
+                    <h2 id="categories-title" class="title">{HOME.categoriesTitle}</h2>
+                    <p class="home-section-desc">
+                      {roles(openRoles)} across {withJobs.length} {withJobs.length === 1 ? 'category' : 'categories'}
+                    </p>
+                  </div>
+                  <a class="link-action" href="/jobs/">{HOME.allJobs}</a>
+                </div>
+                <ul class="cat-grid">
+                  {withJobs.map(c => (
+                    <li>
+                      <a class="cat-card" href={`/jobs/?category=${encodeURIComponent(c.slug)}`}>
+                        <span class="cat-card-top">
+                          <CategoryIcon slug={c.slug} />
+                          <span class="round-arrow" aria-hidden="true">
+                            <Icon name="arrow-up-right" />
+                          </span>
+                        </span>
+                        <span class="cat-card-text">
+                          <span class="cat-card-name">{c.name}</span>
+                          <span class="cat-card-count">{roles(c.jobCount)}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          )}
+
+          <div class:list={['wrap', 'home-latest', {'home-latest-first': withJobs.length === 0}]}>
+            {nothing ? (
+              single ? (
+                <div class="empty-box">
+                  <span class="empty-box-icon" aria-hidden="true"><Icon name="briefcase" /></span>
+                  <h2 id="latest-title">{HOME.emptySingle.title}</h2>
+                  <p>{HOME.emptySingle.body.replace('{company}', owner?.name ?? name)}</p>
+                </div>
+              ) : (
+                <div class="empty-box">
+                  <span class="empty-box-icon" aria-hidden="true"><Icon name="briefcase" /></span>
+                  <h2 id="latest-title">{HOME.empty.title}</h2>
+                  <p>{HOME.empty.body}</p>
+                  <div class="empty-box-actions">
+                    <a class="button" href="/post-a-job/">{HOME.empty.action}</a>
+                  </div>
+                </div>
+              )
+            ) : (
+              <>
+                <section class="panel" id="latest" aria-labelledby="latest-title">
+                  <div class="panel-head">
+                    <div class="panel-title">
+                      <h2 id="latest-title">{HOME.latestTitle}</h2>
+                      <span class="count-badge">{countLabel}</span>
+                    </div>
+                    <nav class="segmented" aria-label="Workplace">
+                      {WORKPLACE_SWITCH.map(w => (
+                        <a href={w.value ? `/?workplace=${w.value}#latest` : '/#latest'} aria-current={w.value === workplace ? 'true' : undefined}>
+                          {w.label}
+                        </a>
+                      ))}
+                    </nav>
+                  </div>
+                  {home.featuredMore && (
+                    <p class="panel-row featured-link">
+                      <a href="/jobs/?featured=1">
+                        See all {home.featuredCount >= 100 ? '100+' : home.featuredCount} featured jobs
+                        <Icon name="arrow-right" class="inline-icon" />
+                      </a>
+                    </p>
+                  )}
+                  {jobs.length > 0 ? (
+                    <div class="panel-list">
+                      <JobList jobs={jobs} pinned={featured.length} />
+                    </div>
+                  ) : (
+                    <p class="panel-empty">
+                      No {viewLabel} roles among the latest jobs.{' '}
+                      <a href={`/jobs/?workplace=${workplace}`}>Search all {viewLabel} jobs</a>
+                    </p>
+                  )}
+                  <div class="panel-foot">
+                    <p>{featured.length > 0 ? 'Featured first, then newest' : 'Newest first'}</p>
+                    <a class="button ghost button-outline" href="/jobs/">
+                      Browse all jobs
+                      <Icon name="arrow-right" class="button-icon" />
+                    </a>
+                  </div>
+                </section>
+                <p class="safety-note">
+                  <strong>Stay safe:</strong> never pay to apply for a job or share bank details during an application.
+                </p>
+              </>
+            )}
+          </div>
+
+          {!single && home.companies.length > 0 && (
+            <section class="home-band" aria-labelledby="companies-title">
+              <div class="wrap">
+                <div class="home-section-head">
+                  <div>
+                    <p class="kicker">{HOME.companiesTitle}</p>
+                    <h2 id="companies-title" class="title">Companies with open roles</h2>
+                  </div>
+                  <a class="link-action" href="/companies/">{HOME.allCompanies}</a>
+                </div>
+                <ul class="co-grid">
+                  {home.companies.map(co => (
+                    <li>
+                      <a class="co-card" href={`/companies/${encodeURIComponent(co.slug)}/`}>
+                        <CompanyLogo name={co.name} logoUrl={co.logoUrl} />
+                        <span class="co-card-text">
+                          <span class="co-card-name">{co.name}</span>
+                          <span class="co-card-count">{roles(co.openJobCount)}</span>
+                        </span>
+                        <span class="round-arrow" aria-hidden="true">
+                          <Icon name="arrow-up-right" />
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          )}
+
+          {!single && (
+            <section class="employer-band" aria-labelledby="employer-cta-title">
+              <svg class="orbits orbits-band" viewBox="0 0 600 600" fill="none" aria-hidden="true" focusable="false">
+                <g transform="rotate(-24 300 300)" stroke="currentColor" stroke-width="1.25">
+                  <ellipse cx="300" cy="300" rx="290" ry="150"></ellipse>
+                  <ellipse cx="300" cy="300" rx="215" ry="108"></ellipse>
+                  <ellipse cx="300" cy="300" rx="140" ry="66"></ellipse>
+                </g>
+                <circle class="orbit-dot" cx="398" cy="186" r="8"></circle>
+                <circle class="orbit-dot" cx="226" cy="398" r="4.5"></circle>
+              </svg>
+              <div class="wrap employer-band-inner">
+                <div class="employer-band-text">
+                  <p class="kicker">For employers</p>
+                  <h2 id="employer-cta-title" class="title">Hiring? Reach people who are looking right now.</h2>
+                  <p class="home-lead">Post in a few minutes. Candidates apply directly.</p>
+                </div>
+                <div class="employer-band-actions">
+                  <a class="button button-inverse" href="/post-a-job/">
+                    {HOME.cta.action}
+                    <Icon name="arrow-right" class="button-icon" />
+                  </a>
+                  <a class="button button-inverse-outline" href="/pricing/">{HOME.cta.pricing}</a>
+                </div>
+              </div>
+            </section>
+          )}
+        </>
+      )
+    }
+  </main>
+</Base>

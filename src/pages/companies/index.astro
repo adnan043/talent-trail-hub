@@ -1,0 +1,101 @@
+---
+/**
+ * The companies directory (F5): companies with at least one open job, most open jobs first, keyset pages
+ * (`?after=<cursor>`). A single-company board has no directory: 404 (F39).
+ */
+import CompanyLogo from '../../components/board/CompanyLogo.astro';
+import NotFound from '../../components/NotFound.astro';
+import Base from '../../layouts/Base.astro';
+import type {CompaniesPage} from '../../lib/types-public';
+import {backend} from '../../server/backend';
+import {boardPage} from '../../server/board/public-page';
+import '../../styles/board-pages.css';
+
+const rawAfter = Astro.url.searchParams.get('after') ?? '';
+const after = /^\d{1,6}\.\d{1,10}$/.test(rawAfter) ? rawAfter : '';
+const [{site, viewer, board}, answer] = await Promise.all([
+  boardPage(Astro.request, Astro.response),
+  backend(Astro.request)
+    .companies.$get({query: {after}})
+    .catch(() => null),
+]);
+const missing = answer?.status === 404;
+const page = answer?.ok ? ((await answer.json().catch(() => null)) as CompaniesPage | null) : null;
+if (missing) Astro.response.status = 404;
+else if (!page) Astro.response.status = 503;
+const name = board?.name ?? site?.name ?? 'our board';
+---
+
+{
+  missing ? (
+    <Base site={site} viewer={viewer} board={board} title="Page not found" noindex>
+      <NotFound site={site} />
+    </Base>
+  ) : (
+    <Base site={site} viewer={viewer} board={board} title="Companies hiring" description={`Companies hiring on ${name}: browse employers with open roles, see how many jobs each has open and every role they have posted.`} noindexFollow={Boolean(after)}>
+      <main id="main" tabindex="-1" class="wrap bp-page">
+        <header class="bp-header">
+          <div>
+            <h1>Companies hiring now</h1>
+            <p class="bp-desc">
+              {page && page.companies.length > 0 ? 'Every company here has at least one open role.' : 'Companies with open jobs show up here.'}
+            </p>
+          </div>
+        </header>
+        {!page ? (
+          <div class="bp-alert jd-alert cdir-error" role="alert">
+            <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+            <p class="bp-alert-title">The companies are not available right now</p>
+            <p>Try again in a minute.</p>
+          </div>
+        ) : page.companies.length === 0 ? (
+          <div class="bp-empty cdir-empty">
+            <span class="bp-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>
+            </span>
+            <h2>No companies are hiring right now</h2>
+            <p>New roles are posted all the time. Check back soon.</p>
+            <div class="bp-empty-actions">
+              <a class="button" href="/jobs/">Browse jobs</a>
+            </div>
+          </div>
+        ) : (
+          <ul class="cdir-grid">
+            {page.companies.map(co => (
+              <li>
+                <article class="cdir-card">
+                  <div class="cdir-card-top">
+                    <CompanyLogo name={co.name} logoUrl={co.logoUrl} />
+                    <div class="cdir-card-text">
+                      <h2 class="cdir-card-name">
+                        <a href={`/companies/${encodeURIComponent(co.slug)}/`}>{co.name}</a>
+                      </h2>
+                      {co.location && (
+                        <p class="cdir-card-loc">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                          <span>{co.location}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <p class="cdir-card-foot">
+                    <span>
+                      <strong>{co.openJobCount}</strong> open {co.openJobCount === 1 ? 'position' : 'positions'}
+                    </span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                  </p>
+                </article>
+              </li>
+            ))}
+          </ul>
+        )}
+        {(page?.nextAfter || after) && (
+          <nav class="bp-pager" aria-label="Pages">
+            {after && <a class="button bp-quiet" href="/companies/">← First page</a>}
+            {page?.nextAfter && <a class="button bp-quiet" href={`/companies/?after=${encodeURIComponent(page.nextAfter)}`}>Next page →</a>}
+          </nav>
+        )}
+      </main>
+    </Base>
+  )
+}

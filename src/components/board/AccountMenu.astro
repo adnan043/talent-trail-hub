@@ -1,0 +1,64 @@
+---
+/**
+ * The signed-in visitor's menu in the header (768px and up): an avatar with the email's initial
+ * opening the email, Admin (admins only), the employer's links (Your jobs, Company profile, Billing;
+ * marketplace only) and Sign out. Shown by `[data-user-only]`. A prerendered page knows no visitor,
+ * so the initial and email are filled in the browser (`fillAccount()` in src/lib/account-fill.ts,
+ * called by the layout); a rendered page passes the viewer in.
+ */
+import type {Viewer} from '../../lib/types';
+import {EMPLOYER_LINKS} from '../../content/site';
+
+/** Fixed SVG markup (no data): the menu's icons. */
+const ICONS: Record<string, string> = {
+  jobs: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>`,
+  company: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4"></path></svg>`,
+  billing: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 17.5v-11"></path></svg>`,
+};
+
+interface Props {
+  viewer: Viewer;
+  /** The page is prerendered (or the Preview hides the session): render no visitor data. */
+  hydrate: boolean;
+  /** Single-company board: no employer links. */
+  single: boolean;
+}
+
+const {viewer, hydrate, single} = Astro.props;
+const known = !hydrate && viewer.state === 'user';
+const email = known ? (viewer.email ?? viewer.name ?? '') : '';
+const initial = email.charAt(0).toUpperCase();
+---
+
+<div class="menu account-menu" data-menu data-user-only hidden={viewer.state !== 'user'}>
+  <button
+    type="button"
+    class="button button-ghost account-trigger"
+    aria-haspopup="menu"
+    aria-expanded="false"
+    aria-controls="account-menu-list"
+    data-menu-trigger>
+    <span class="account-avatar" aria-hidden="true" data-account-initial>{initial}</span>
+    <span class="visually-hidden" data-account-email>{email || 'Your account'}</span>
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+  </button>
+  <div class="menu-pop" id="account-menu-list" role="menu" aria-label="Account" data-menu-list hidden>
+    <p class="menu-label menu-label-plain" role="none" data-account-email>{email}</p>
+    <div class="menu-sep" role="separator"></div>
+    {/* Filled in the browser from `/site-api/me` (src/lib/account-fill.ts): "Admin" only with an admin ability. */}
+    <a class="menu-item" role="menuitem" href="/dashboard/" data-account-admin hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path></svg>
+      Admin
+    </a>
+    {EMPLOYER_LINKS.map(link => (
+      <a class="menu-item" role="menuitem" href={link.href} data-marketplace-only hidden={single ? true : undefined}>
+        <Fragment set:html={ICONS[link.icon]} />
+        {link.label}
+      </a>
+    ))}
+    <button type="button" class="menu-item" role="menuitem" data-logout>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5M21 12H9"></path></svg>
+      Sign out
+    </button>
+  </div>
+</div>

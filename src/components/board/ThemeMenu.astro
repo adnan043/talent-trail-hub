@@ -1,0 +1,78 @@
+---
+/**
+ * The header's theme menu (768px and up): an icon button showing the current choice, opening
+ * Light / Dark / System (default System). The mobile menu has the same choice as a segmented
+ * control (MobileMenu.astro). State: src/lib/theme-choice.ts; menu behaviour: src/lib/menu-button.ts.
+ * The choice is known only in the browser: the server renders System.
+ */
+---
+
+<div class="menu theme-menu" data-menu>
+  <button
+    type="button"
+    class="icon-button"
+    aria-haspopup="menu"
+    aria-expanded="false"
+    aria-controls="theme-menu-list"
+    data-menu-trigger>
+    <svg data-theme-icon="light" hidden viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg>
+    <svg data-theme-icon="dark" hidden viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+    <svg data-theme-icon="system" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+    <span class="visually-hidden" data-theme-label>Theme: System</span>
+  </button>
+  <div class="menu-pop menu-pop-narrow" id="theme-menu-list" role="menu" aria-label="Theme" data-menu-list hidden>
+    <p class="menu-label" role="none">Theme</p>
+    <div class="menu-sep" role="separator"></div>
+    <button type="button" class="menu-item" role="menuitemradio" aria-checked="false" data-theme-option="light">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg>
+      Light
+    </button>
+    <button type="button" class="menu-item" role="menuitemradio" aria-checked="false" data-theme-option="dark">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+      Dark
+    </button>
+    <button type="button" class="menu-item" role="menuitemradio" aria-checked="true" data-theme-option="system">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+      System
+    </button>
+  </div>
+</div>
+
+<script>
+  import {applyTheme, isTheme, readTheme, setTheme, THEME_EVENT, THEMES, type Theme} from '../../lib/theme-choice';
+  import {bindMenus} from '../../lib/menu-button';
+
+  /** Every theme control on the page (this menu, the mobile menu's segmented control) shows `theme`. */
+  const show = (theme: Theme) => {
+    const label = THEMES.find(t => t.value === theme)?.label ?? 'System';
+    document.querySelectorAll<SVGElement>('[data-theme-icon]').forEach(icon => {
+      if (icon.dataset.themeIcon === theme) icon.removeAttribute('hidden');
+      else icon.setAttribute('hidden', '');
+    });
+    document.querySelectorAll<HTMLElement>('[data-theme-label]').forEach(el => (el.textContent = `Theme: ${label}`));
+    document.querySelectorAll<HTMLElement>('[data-theme-option]').forEach(el =>
+      el.setAttribute('aria-checked', String(el.dataset.themeOption === theme))
+    );
+    document.querySelectorAll<HTMLInputElement>('input[data-theme-radio]').forEach(input => (input.checked = input.value === theme));
+  };
+
+  applyTheme(readTheme());
+  // The ClientRouter swaps in a new <html>: give it the theme before it paints.
+  document.addEventListener('astro:after-swap', () => applyTheme(readTheme()));
+  document.addEventListener(THEME_EVENT, event => show((event as CustomEvent<Theme>).detail));
+  document.addEventListener('astro:page-load', () => {
+    bindMenus();
+    show(readTheme());
+    document.querySelectorAll<HTMLElement>('[data-theme-option]').forEach(item =>
+      item.addEventListener('click', () => {
+        const theme = item.dataset.themeOption;
+        if (isTheme(theme)) setTheme(theme);
+      })
+    );
+    document.querySelectorAll<HTMLInputElement>('input[data-theme-radio]').forEach(input =>
+      input.addEventListener('change', () => {
+        if (input.checked && isTheme(input.value)) setTheme(input.value);
+      })
+    );
+  });
+</script>

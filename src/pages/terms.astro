@@ -1,0 +1,43 @@
+---
+/** Terms of use (F36): PRERENDERED placeholder text for the owner to replace (editor: Release 2). */
+import Base from '../layouts/Base.astro';
+import {staticContext} from '../server/page';
+import '../styles/board-pages.css';
+
+export const prerender = true;
+const {site, viewer} = await staticContext(Astro.request);
+const name = site?.name ?? 'This job board';
+---
+
+<Base site={site} viewer={viewer} isStatic title="Terms of use" description={`The terms for using ${name}: for candidates searching and applying, and for employers posting jobs.`}>
+  <main id="main" tabindex="-1" class="wrap bp-page">
+    <div class="bp-alert bp-alert-note lg-alert" role="note">
+      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+      <p><strong>Placeholder text: the board owner replaces it with their own terms before launch.</strong></p>
+    </div>
+    <header class="bp-header">
+      <div>
+        <p class="bp-eyebrow">Legal</p>
+        <h1>Terms of use</h1>
+      </div>
+    </header>
+    <div class="lg-body">
+      <section aria-labelledby="terms-1">
+        <h2 id="terms-1">Using the board</h2>
+        <p>Candidates search and apply for free. Employers are responsible for their listings being accurate, lawful and for real jobs.</p>
+      </section>
+      <section aria-labelledby="terms-2">
+        <h2 id="terms-2">No endorsement</h2>
+        <p><span data-brand-text="{name}">{name}</span> does not endorse any employer or guarantee any job, salary or hiring outcome. Check every offer before you share personal details or money.</p>
+      </section>
+      <section aria-labelledby="terms-3">
+        <h2 id="terms-3">Listings and payments</h2>
+        <p>Paid listings run for the period of the plan bought. We may review, edit the presentation of, or remove listings that break these terms; refunds follow the plan's conditions.</p>
+      </section>
+      <section aria-labelledby="terms-4">
+        <h2 id="terms-4">Changes</h2>
+        <p>We may update these terms. The date of the latest change is shown on this page.</p>
+      </section>
+    </div>
+  </main>
+</Base>

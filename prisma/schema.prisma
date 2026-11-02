@@ -1,0 +1,746 @@
+// The Site Database's schema (Prisma ORM 7). Change it, then run
+// `npx prisma migrate dev --create-only --name <what-changed>` against the
+// Preview Database, wrap the new migration.sql in BEGIN; … COMMIT;, apply it
+// with `npx prisma migrate dev`, then `npx prisma generate` (docs/agent/database.md).
+//
+// Tables marked MANAGED belong to the template's auth core (src/platform/auth):
+// add columns to them only through a template upgrade.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  // The client runs in the Cloudflare Workers runtime, never in Node.
+  runtime  = "workerd"
+}
+
+// TESTS ONLY: the same client for Node, so `npm test` can run the real Site API
+// against a real Postgres (vitest aliases the import to it). Never imported by
+// site code; git-ignored like the one above.
+generator nodeClient {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma-node"
+  runtime  = "nodejs"
+}
+
+// The connection string is NOT here: prisma.config.ts reads DATABASE_URL from
+// the environment, which the platform sets (the Build never gets one).
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- auth (MANAGED)
+
+/// A person with an account on this site. `email` is stored trimmed and
+/// lower-cased. Only the user and holders of `site:user:read` ever see it.
+model User {
+  id              Int       @id @default(autoincrement())
+  email           String    @unique @db.VarChar(254)
+  /// `pbkdf2-sha256$v1$<iterations>$<salt>$<key>` (src/platform/auth/password.ts).
+  passwordHash    String    @map("password_hash") @db.VarChar(255)
+  name            String    @db.VarChar(80)
+  /// `active` or `suspended`.
+  status          String    @default("active") @db.VarChar(16)
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  /// Bumped on password change, logout-all and suspension: every access token
+  /// carrying an older value stops working at once.
+  sessionVersion  Int       @default(1) @map("session_version")
+  lastLoginAt     DateTime? @map("last_login_at")
+  /// Two-step sign-in (src/platform/auth/two-factor.ts): the authenticator secret, SEALED
+  /// (never in clear), set once the user confirmed a first code (`totpEnabledAt`).
+  totpSecretSealed  String?   @map("totp_secret_sealed") @db.VarChar(255)
+  /// A secret shown during setup, not yet confirmed with a code.
+  totpPendingSealed String?   @map("totp_pending_sealed") @db.VarChar(255)
+  totpEnabledAt     DateTime? @map("totp_enabled_at")
+  /// The 30-second step of the last accepted code: that code (and older) never works again.
+  totpLastStep      Int?      @map("totp_last_step")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  roles              UserRole[]
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordReset[]
+  emailVerifications EmailVerification[]
+  emailChanges       EmailChange[]
+  recoveryCodes      RecoveryCode[]
+  signInCodes        SignInCode[]
+
+  @@index([status, id])
+  @@map("users")
+}
+
+/// A role: a named set of permissions. `is_system` roles (owner, admin,
+/// member) are seeded and cannot be deleted; `owner` cannot be edited.
+model Role {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique @db.VarChar(48)
+  name        String   @db.VarChar(80)
+  description String?  @db.VarChar(255)
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+/// The permission catalogue: one row per codename (`site:job:manage`,
+/// `site:user:*`, `*`). Shipped as idempotent migrations, matched by codename.
+model Permission {
+  id          Int      @id @default(autoincrement())
+  codename    String   @unique @db.VarChar(128)
+  title       String   @db.VarChar(120)
+  description String?  @db.VarChar(255)
+  /// Groups the catalogue in the roles screen ("Users", "Jobs").
+  groupName   String   @default("General") @map("group_name") @db.VarChar(48)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int      @map("role_id")
+  permissionId Int      @map("permission_id")
+  grantedBy    Int?     @map("granted_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    Int      @map("user_id")
+  roleId    Int      @map("role_id")
+  grantedBy Int?     @map("granted_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId, userId])
+  @@map("user_roles")
+}
+
+/// One refresh token, stored only as its SHA-256. Tokens of one sign-in share
+/// a `family_id`; each rotation marks the old row used and points the new
+/// row at it (`rotated_from`). Reuse of a used token revokes the family.
+model RefreshToken {
+  id                BigInt    @id @default(autoincrement())
+  familyId          String    @map("family_id") @db.Uuid
+  userId            Int       @map("user_id")
+  tokenHash         String    @unique @map("token_hash") @db.Char(64)
+  rotatedFromId     BigInt?   @map("rotated_from")
+  usedAt            DateTime? @map("used_at")
+  revokedAt         DateTime? @map("revoked_at")
+  revokedReason     String?   @map("revoked_reason") @db.VarChar(16)
+  expiresAt         DateTime  @map("expires_at")
+  absoluteExpiresAt DateTime  @map("absolute_expires_at")
+  userAgent         String?   @map("user_agent") @db.VarChar(255)
+  ipHash            String?   @map("ip_hash") @db.Char(64)
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// A single-use password reset link (30 minutes), stored as its SHA-256.
+model PasswordReset {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  ipHash    String?   @map("ip_hash") @db.Char(64)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+/// A single-use email confirmation link (24 hours), stored as its SHA-256.
+model EmailVerification {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  /// The address this link confirms (the user's email when it was sent).
+  email     String    @db.VarChar(254)
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("email_verifications")
+}
+
+/// A 6-digit sign-in code emailed to the account (src/platform/auth/code-routes.ts): 10 minutes,
+/// single use, 5 wrong tries and it is spent. Only its keyed hash is stored. A new code ends the
+/// older ones.
+model SignInCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  codeHash  String    @map("code_hash") @db.Char(64)
+  tries     Int       @default(0)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  ipHash    String?   @map("ip_hash") @db.Char(64)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("sign_in_codes")
+}
+
+/// Rate-limit ledger: one row per attempt. Keyed hashes only (never the raw
+/// email or IP). Rows older than a day are swept on the way.
+model LoginAttempt {
+  id        BigInt   @id @default(autoincrement())
+  /// `login`, `register`, `reset`, `verify`, `password`, `code`, `codecheck`, ….
+  kind      String   @db.VarChar(16)
+  emailHash String?  @map("email_hash") @db.Char(64)
+  ipHash    String   @map("ip_hash") @db.Char(64)
+  succeeded Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([kind, emailHash, createdAt])
+  @@index([kind, ipHash, createdAt])
+  @@index([createdAt])
+  @@map("login_attempts")
+}
+
+/// Security-relevant events (sign-ups, password changes, role changes,
+/// refresh-token reuse). No email addresses, no raw IPs, no secrets.
+/// A pending move of an account to a new address: the link mailed to the NEW address
+/// (`/account/confirm-email/?token=…`) finishes it; single use, 24 hours.
+model EmailChange {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  newEmail  String    @map("new_email") @db.VarChar(254)
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("email_changes")
+}
+
+/// Two-step sign-in recovery codes, as SHA-256 hashes; each works once.
+model RecoveryCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  codeHash  String    @map("code_hash") @db.Char(64)
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@map("recovery_codes")
+}
+
+model AuditEvent {
+  id          BigInt   @id @default(autoincrement())
+  actorUserId Int?     @map("actor_user_id")
+  action      String   @db.VarChar(64)
+  targetType  String?  @map("target_type") @db.VarChar(32)
+  targetId    String?  @map("target_id") @db.VarChar(64)
+  ipHash      String?  @map("ip_hash") @db.Char(64)
+  /// Small, non-personal details (`{"roles":["admin"]}`). Never filtered on.
+  meta        Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([actorUserId, id])
+  @@index([targetType, targetId, id])
+  @@map("audit_events")
+}
+
+/// One row (`id = 1`): who claimed the owner role first. Claimed with a
+/// conditional update, so two simultaneous sign-ups can never both become owner.
+model AuthState {
+  id          Int      @id
+  ownerUserId Int?     @map("owner_user_id")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("auth_state")
+}
+
+/// Background job deliveries already taken (`src/platform/background.ts`): the
+/// replay guard for signed deliveries, across every Worker instance. One row
+/// per job try; rows older than a day are swept on the way.
+model JobDelivery {
+  jobId   String   @map("job_id")
+  attempt Int
+  seenAt  DateTime @default(now()) @map("seen_at")
+
+  @@id([jobId, attempt])
+  @@index([seenAt])
+  @@map("job_deliveries")
+}
+
+// ---------------------------------------------------------------- payments (MANAGED)
+// Filled by src/server/payments-hooks.ts from the platform's payment events (and the thanks
+// page's confirm). Add columns only through a template upgrade; keep your own data in your own
+// tables, pointing at `checkout_id` / `subscription_id`.
+
+/// Payment events already handled, by event id (`src/platform/payments.ts`): a retried or
+/// replayed event runs its hook once. Rows older than 90 days are swept on the way.
+model PaymentEvent {
+  id         String   @id @db.VarChar(128)
+  type       String   @db.VarChar(40)
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([receivedAt])
+  @@map("payment_events")
+}
+
+/// One paid (or failed / refunded) checkout. `checkout_id` is the platform's `pcs_…`.
+model Order {
+  id          Int       @id @default(autoincrement())
+  checkoutId  String    @unique @map("checkout_id") @db.VarChar(80)
+  priceKey    String    @map("price_key") @db.VarChar(63)
+  /// `test` (sandbox) or `live`.
+  mode        String    @default("test") @db.VarChar(4)
+  email       String?   @db.VarChar(254)
+  /// The signed-in buyer (`users.id`), from the checkout's `customerRef`. No foreign key: an
+  /// order outlives a deleted account.
+  userId      Int?      @map("user_id")
+  /// `paid`, `failed`, `refunded` or `partially_refunded`.
+  status      String    @db.VarChar(20)
+  quantity    Int       @default(1)
+  amountCents Int       @map("amount_cents")
+  currency    String    @db.Char(3)
+  metadata    Json?
+  paidAt      DateTime? @map("paid_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, id])
+  @@index([email, id])
+  @@map("orders")
+}
+
+/// A subscription bought on this site. Access: `active`, `trialing`, `past_due`, or `canceled`
+/// until `access_ends_at` (`grantsAccess` in src/platform/payments.ts).
+model Membership {
+  id               Int       @id @default(autoincrement())
+  subscriptionId   String    @unique @map("subscription_id") @db.VarChar(128)
+  priceKey         String    @map("price_key") @db.VarChar(63)
+  mode             String    @default("test") @db.VarChar(4)
+  email            String?   @db.VarChar(254)
+  userId           Int?      @map("user_id")
+  status           String    @db.VarChar(20)
+  currentPeriodEnd DateTime? @map("current_period_end")
+  accessEndsAt     DateTime? @map("access_ends_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, priceKey])
+  @@index([email, priceKey])
+  @@map("memberships")
+}
+
+// ---------------------------------------------------------------- the site's own data
+
+// Talent Trail Hub: a paid-listing job board. Employers (any signed-in, verified user) own ONE
+// company and pay to post; candidates apply without an account; admins moderate (codenames in
+// src/server/permissions.ts). Small fixed sets are VarChar + validator + CHECK (migration SQL).
+
+/// The board's settings: ONE row, `id = 1` (src/server/board/settings.ts reads it with defaults).
+model BoardSettings {
+  id                 Int      @id @default(1)
+  name               String   @default("Talent Trail Hub") @db.VarChar(80)
+  /// Uploaded logo (public file, src/platform/files.ts) and its public URL.
+  logoFileId         String?  @map("logo_file_id") @db.VarChar(32)
+  logoUrl            String?  @map("logo_url") @db.VarChar(500)
+  /// Uploaded favicon (public file) and its public URL.
+  faviconFileId      String?  @map("favicon_file_id") @db.VarChar(32)
+  faviconUrl         String?  @map("favicon_url") @db.VarChar(500)
+  /// `#rrggbb`; the site's `--accent` (src/server/board/brand.ts).
+  primaryColor       String   @default("#a63d23") @map("primary_color") @db.VarChar(7)
+  /// `#rrggbb` or null (the dashboard sidebar's own dark panel): its background and text colour.
+  sidebarBg          String?  @map("sidebar_bg") @db.VarChar(7)
+  sidebarText        String?  @map("sidebar_text") @db.VarChar(7)
+  /// `inter`, `serif` or `mono`.
+  fontPreset         String   @default("inter") @map("font_preset") @db.VarChar(10)
+  heroTitle          String   @default("Find your next role") @map("hero_title") @db.VarChar(120)
+  heroSubtitle       String   @default("Hand-picked jobs from companies that are hiring now.") @map("hero_subtitle") @db.VarChar(240)
+  /// `[{label, href}]`, at most 8: an opaque snapshot shown in the footer.
+  footerLinks        Json     @default("[]") @map("footer_links") @db.JsonB
+  currency           String   @default("USD") @db.Char(3)
+  /// `all` (every job is reviewed) or `auto` (published at once); `first_post` reserved.
+  moderationMode     String   @default("all") @map("moderation_mode") @db.VarChar(12)
+  /// Every listing tier costs nothing (no checkout); days and featured still apply.
+  freePostingEnabled Boolean  @default(false) @map("free_posting_enabled")
+  /// `marketplace` or `single_company` (F39).
+  boardMode          String   @default("marketplace") @map("board_mode") @db.VarChar(16)
+  ownerCompanyId     Int?     @map("owner_company_id")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  ownerCompany Company? @relation("BoardOwnerCompany", fields: [ownerCompanyId], references: [id], onDelete: SetNull)
+
+  @@index([ownerCompanyId])
+  @@map("board_settings")
+}
+
+/// A hiring company. An employer's company has `ownerUserId` (one per user); admin and import
+/// companies have none. `slug` is its public URL and never changes.
+model Company {
+  id          Int      @id @default(autoincrement())
+  /// The employer (`users.id`). No foreign key: a company and its jobs outlive the account.
+  ownerUserId Int?     @unique @map("owner_user_id")
+  name        String   @db.VarChar(80)
+  slug        String   @unique @db.VarChar(100)
+  logoFileId  String?  @map("logo_file_id") @db.VarChar(32)
+  logoUrl     String?  @map("logo_url") @db.VarChar(500)
+  website     String?  @db.VarChar(300)
+  /// Sanitized HTML (src/lib/markdown.ts + sanitizeHtml), from ≤ 2000 characters of input.
+  aboutHtml   String?  @map("about_html") @db.VarChar(6000)
+  location    String?  @db.VarChar(80)
+  /// `{linkedin?, x?, github?, instagram?}`: https URLs, shown as they are.
+  socials     Json?    @db.JsonB
+  isTrusted   Boolean  @default(false) @map("is_trusted")
+  isBlocked   Boolean  @default(false) @map("is_blocked")
+  /// `employer`, `admin` or `import`.
+  source      String   @default("employer") @db.VarChar(10)
+  /// Kept on write (published, unexpired jobs): the companies directory lists > 0.
+  activeJobCount Int   @default(0) @map("active_job_count")
+  isSeed      Boolean  @default(false) @map("is_seed")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  logo          CompanyLogo?
+  jobs          Job[]
+  orders        ListingOrder[]
+  ownerOfBoards BoardSettings[] @relation("BoardOwnerCompany")
+
+  @@index([isBlocked, name, id])
+  @@map("companies")
+}
+
+/// A job category (chips, filters). Never deleted while jobs use it (Restrict).
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(60)
+  slug      String   @unique @db.VarChar(60)
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  jobs Job[]
+
+  @@index([isActive, sortOrder, id])
+  @@map("categories")
+}
+
+/// A job on the board (`/jobs/<slug>/`). Public only when `status = 'published'` AND
+/// `expiresAt > now()` (every public query checks both, so a late expiry run never leaks).
+model Job {
+  id                 Int       @id @default(autoincrement())
+  companyId          Int       @map("company_id")
+  categoryId         Int       @map("category_id")
+  title              String    @db.VarChar(100)
+  slug               String    @unique @db.VarChar(120)
+  /// Sanitized HTML from the poster's simple Markdown (p, ul, ol, li, strong, em, a, h3, h4, br).
+  descriptionHtml    String    @map("description_html") @db.VarChar(30000)
+  /// The Markdown as typed (≤ 10000), so an edit starts from it.
+  descriptionMd      String    @map("description_md") @db.VarChar(10000)
+  /// `FULL_TIME`, `PART_TIME`, `CONTRACTOR`, `TEMPORARY`, `INTERN` (schema.org values).
+  employmentType     String    @map("employment_type") @db.VarChar(12)
+  /// `onsite`, `hybrid` or `remote`.
+  workplaceType      String    @map("workplace_type") @db.VarChar(8)
+  locationCity       String?   @map("location_city") @db.VarChar(80)
+  locationRegion     String?   @map("location_region") @db.VarChar(80)
+  /// ISO 3166-1 alpha-2.
+  locationCountry    String?   @map("location_country") @db.Char(2)
+  /// Remote jobs: ISO-2 codes candidates may live in (`["US","CA"]`); empty = anywhere.
+  applicantCountries Json?     @map("applicant_countries") @db.JsonB
+  salaryMinCents     Int?      @map("salary_min_cents")
+  salaryMaxCents     Int?      @map("salary_max_cents")
+  salaryCurrency     String?   @map("salary_currency") @db.Char(3)
+  /// `HOUR`, `DAY`, `WEEK`, `MONTH` or `YEAR`.
+  salaryPeriod       String?   @map("salary_period") @db.VarChar(5)
+  /// `onsite` (the form here), `url` or `email`.
+  applyMethod        String    @default("onsite") @map("apply_method") @db.VarChar(6)
+  /// The https URL or the email address for `url` / `email`.
+  applyTarget        String?   @map("apply_target") @db.VarChar(500)
+  /// `draft`, `pending_payment`, `pending_review`, `published`, `rejected`, `expired`, `closed`.
+  status             String    @default("draft") @db.VarChar(16)
+  rejectionReason    String?   @map("rejection_reason") @db.VarChar(500)
+  /// `paid`, `credit`, `free` (employer jobs: the admin cannot edit them), `admin`, `import`.
+  source             String    @default("paid") @db.VarChar(8)
+  isFeatured         Boolean   @default(false) @map("is_featured")
+  featuredUntil      DateTime? @map("featured_until") @db.Timestamptz(3)
+  publishedAt        DateTime? @map("published_at") @db.Timestamptz(3)
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz(3)
+  /// From the ordered tier, applied on publish (expiresAt = publishedAt + durationDays).
+  durationDays       Int       @default(30) @map("duration_days")
+  listingFeatured    Boolean   @default(false) @map("listing_featured")
+  tierId             Int?      @map("tier_id")
+  viewCount          Int       @default(0) @map("view_count")
+  applyClickCount    Int       @default(0) @map("apply_click_count")
+  /// Kept on write with each application insert / delete.
+  applicationCount   Int       @default(0) @map("application_count")
+  flagged            Boolean   @default(false)
+  /// Set by every employer edit, cleared when a moderator approves it: a job that needs review is
+  /// never put live by a renew, relist or extend (only by moderation, or by `auto` mode).
+  needsReview        Boolean   @default(false) @map("needs_review")
+  expiryReminderSentAt DateTime? @map("expiry_reminder_sent_at") @db.Timestamptz(3)
+  /// The user (`users.id`) who created it. No foreign key: a job outlives its poster.
+  createdBy          Int?      @map("created_by")
+  isSeed             Boolean   @default(false) @map("is_seed")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  tier         ListingTier?  @relation(fields: [tierId], references: [id], onDelete: SetNull)
+  tags         JobTag[]
+  applications Application[]
+  orders       ListingOrder[]
+
+  /// The public board: published, newest first (plus the `expires_at > now()` filter).
+  @@index([status, publishedAt(sort: Desc), id(sort: Desc)])
+  @@index([status, isFeatured, featuredUntil])
+  /// The hourly featured sweep (any status).
+  @@index([isFeatured, featuredUntil])
+  @@index([categoryId, status, publishedAt(sort: Desc), id(sort: Desc)])
+  /// Admin jobs list and moderation queue (status, newest id first).
+  @@index([status, id])
+  @@index([companyId, status, id])
+  /// The employer's "my jobs" (every status, newest first).
+  @@index([companyId, id(sort: Desc)])
+  @@index([status, expiresAt])
+  @@index([tierId])
+  @@map("jobs")
+}
+
+/// A tag (≤ 5 per job), stored lower-cased.
+model Tag {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(30)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  jobs JobTag[]
+
+  @@map("tags")
+}
+
+model JobTag {
+  jobId     Int      @map("job_id")
+  tagId     Int      @map("tag_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, tagId])
+  @@index([tagId, jobId])
+  @@map("job_tags")
+}
+
+/// A candidate's application (no account). One per email per job. The resume is a PRIVATE file
+/// (src/platform/files.ts); after RESUME_RETENTION_DAYS the purge deletes it and clears the fields.
+model Application {
+  id             Int       @id @default(autoincrement())
+  jobId          Int       @map("job_id")
+  name           String    @db.VarChar(100)
+  /// Trimmed, lower-cased.
+  email          String    @db.VarChar(254)
+  phone          String?   @db.VarChar(40)
+  profileUrl     String?   @map("profile_url") @db.VarChar(300)
+  coverNote      String?   @map("cover_note") @db.VarChar(3000)
+  resumeFileId   String?   @map("resume_file_id") @db.VarChar(32)
+  resumeFileName String?   @map("resume_file_name") @db.VarChar(200)
+  /// `new`, `reviewed`, `shortlisted` or `rejected`.
+  status         String    @default("new") @db.VarChar(12)
+  /// Private to the employer / admin; never emailed.
+  employerNotes  String?   @map("employer_notes") @db.VarChar(5000)
+  /// When the shortlisted email went out (at most once per application).
+  statusEmailedAt DateTime? @map("status_emailed_at") @db.Timestamptz(3)
+  /// When the rejected email went out (at most once per application).
+  rejectedEmailedAt DateTime? @map("rejected_emailed_at") @db.Timestamptz(3)
+  consentAt      DateTime  @map("consent_at") @db.Timestamptz(3)
+  consentText    String    @map("consent_text") @db.VarChar(1000)
+  ipHash         String?   @map("ip_hash") @db.Char(64)
+  isSeed         Boolean   @default(false) @map("is_seed")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, email])
+  @@index([jobId, status, id(sort: Desc)])
+  @@index([jobId, id(sort: Desc)])
+  @@index([status, id(sort: Desc)])
+  @@index([email, id])
+  @@index([createdAt, id])
+  @@map("applications")
+}
+
+/// A resume upload in progress or done, before / after it is attached to an application.
+/// Guests upload first (createUpload), then apply with the `token`; unattached rows older
+/// than a day are swept with their files by the purge job.
+model ResumeUpload {
+  id            Int      @id @default(autoincrement())
+  /// Random, unguessable: what the apply form sends back.
+  token         String   @unique @db.VarChar(43)
+  fileId        String   @unique @map("file_id") @db.VarChar(32)
+  name          String   @db.VarChar(200)
+  contentType   String   @map("content_type") @db.VarChar(127)
+  size          Int
+  ready         Boolean  @default(false)
+  applicationId Int?     @unique @map("application_id")
+  ipHash        String?  @map("ip_hash") @db.Char(64)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([applicationId, createdAt])
+  @@map("resume_uploads")
+}
+
+/// A listing tier (1–3 active): what a post costs and gives. The charged amount is the platform
+/// catalogue price `priceKey` (payments.md); `priceCents` / `currency` are a copy for display,
+/// refreshed from the catalogue. Never deleted: deactivated (paid orders keep what they paid for).
+model ListingTier {
+  id               Int      @id @default(autoincrement())
+  name             String   @db.VarChar(40)
+  /// The catalogue key (`listing-standard-30`). Null only while free posting is the only use.
+  priceKey         String?  @map("price_key") @db.VarChar(63)
+  priceCents       Int      @default(0) @map("price_cents")
+  currency         String   @default("USD") @db.Char(3)
+  /// 1–120.
+  durationDays     Int      @default(30) @map("duration_days")
+  /// Featured for the whole listing period (featuredUntil = expiresAt).
+  includesFeatured Boolean  @default(false) @map("includes_featured")
+  isActive         Boolean  @default(true) @map("is_active")
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  jobs   Job[]
+  orders ListingOrder[]
+
+  @@index([isActive, sortOrder, id])
+  @@map("listing_tiers")
+}
+
+/// What an employer bought for a job: one per checkout (or a $0 order: free posting).
+/// Points at the platform checkout (`checkoutId`, `pcs_…`); the managed `orders` row holds the
+/// money side. The paid hook finds THIS row by `checkoutId`, never by browser metadata.
+model ListingOrder {
+  id               Int       @id @default(autoincrement())
+  checkoutId       String?   @unique @map("checkout_id") @db.VarChar(80)
+  companyId        Int       @map("company_id")
+  /// The buyer (`users.id`). No foreign key: an order outlives the account.
+  userId           Int?      @map("user_id")
+  jobId            Int?      @map("job_id")
+  tierId           Int?      @map("tier_id")
+  /// `new` (first post) or `renew`.
+  kind             String    @default("new") @db.VarChar(6)
+  /// `pending`, `paid`, `refunded` or `failed`.
+  status           String    @default("pending") @db.VarChar(10)
+  priceKey         String?   @map("price_key") @db.VarChar(63)
+  amountCents      Int       @default(0) @map("amount_cents")
+  currency         String    @default("USD") @db.Char(3)
+  /// What the tier gave when ordered (a later tier edit never changes a paid order).
+  tierName         String    @map("tier_name") @db.VarChar(40)
+  durationDays     Int       @map("duration_days")
+  includesFeatured Boolean   @default(false) @map("includes_featured")
+  receiptUrl       String?   @map("receipt_url") @db.VarChar(500)
+  paidAt           DateTime? @map("paid_at") @db.Timestamptz(3)
+  refundedAt       DateTime? @map("refunded_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  job     Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  tier    ListingTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, id(sort: Desc)])
+  @@index([jobId, id])
+  @@index([tierId])
+  @@index([status, paidAt])
+  @@map("listing_orders")
+}
+
+/// Every email this site sends itself (not the platform's account emails): the admin's email log.
+model EmailLog {
+  id          BigInt   @id @default(autoincrement())
+  templateKey String   @map("template_key") @db.VarChar(40)
+  /// The recipient. Cleared by the privacy tool with the rest of a candidate's data.
+  to          String   @map("to_address") @db.VarChar(254)
+  /// `sent`, `failed` or `skipped` (no mail service set up).
+  status      String   @db.VarChar(8)
+  error       String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, id(sort: Desc)])
+  @@index([to, id(sort: Desc)])
+  @@map("email_logs")
+}
+
+/// Rate-limit ledger for the board's public forms (apply 5/IP/hour): keyed hashes only.
+/// Rows older than a day are swept by the purge job.
+model BoardAttempt {
+  id        BigInt   @id @default(autoincrement())
+  /// `apply`, `upload`, `view`.
+  kind      String   @db.VarChar(12)
+  ipHash    String   @map("ip_hash") @db.Char(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([kind, ipHash, createdAt])
+  @@index([createdAt])
+  @@map("board_attempts")
+}
+
+/// A company logo kept in the Site Database, only when the site has no file storage (no Site Key):
+/// the local and demo fallback. A downscaled PNG, JPEG or WebP of at most 48 KB.
+model CompanyLogo {
+  companyId   Int      @id @map("company_id")
+  contentType String   @map("content_type") @db.VarChar(12)
+  data        Bytes
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_logos")
+}
+
+/// The board's own logo kept in the Site Database, only when the site has no file storage (no Site
+/// Key): the local and demo fallback. ONE row, `id = 1`; a downscaled image of at most 48 KB.
+model BoardLogo {
+  id          Int      @id @default(1)
+  contentType String   @map("content_type") @db.VarChar(12)
+  data        Bytes
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("board_logo")
+}

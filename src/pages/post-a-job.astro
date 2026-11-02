@@ -1,0 +1,66 @@
+---
+/**
+ * The "Post a job" landing page. The wizard itself is the dashboard's `/dashboard/post-a-job`
+ * (workstream C); guests create an account first (`/account/register/?next=…`). Single-company
+ * boards have no employer posting: 404 (F39).
+ */
+import NotFound from '../components/NotFound.astro';
+import {POST_A_JOB_PAGE, withName} from '../content/site';
+import Base from '../layouts/Base.astro';
+import {boardPage} from '../server/board/public-page';
+import '../styles/board-pages.css';
+
+const {site, viewer, board} = await boardPage(Astro.request, Astro.response);
+const single = board?.singleCompany ?? false;
+if (single) Astro.response.status = 404;
+const name = board?.name ?? site?.name ?? 'our board';
+const next = encodeURIComponent('/dashboard/post-a-job');
+const signedIn = viewer.state === 'user';
+---
+
+{
+  single ? (
+    <Base site={site} viewer={viewer} board={board} title="Page not found" noindex>
+      <NotFound site={site} />
+    </Base>
+  ) : (
+    <Base site={site} viewer={viewer} board={board} title={POST_A_JOB_PAGE.title} description={withName(POST_A_JOB_PAGE.description, name)}>
+      <main id="main" tabindex="-1" class="wrap bp-page">
+        <header class="bp-header">
+          <div>
+            <p class="bp-eyebrow">For employers</p>
+            <h1>Hire on {name}</h1>
+            <p class="bp-desc">{POST_A_JOB_PAGE.lede}</p>
+          </div>
+          <div class="bp-header-actions">
+            <a class="button bp-quiet" href="/pricing/">See pricing</a>
+          </div>
+        </header>
+        <ol class="pj-steps">
+          {POST_A_JOB_PAGE.steps.map(step => (
+            <li>
+              <h2>{step.title}</h2>
+              <p>{step.body}</p>
+            </li>
+          ))}
+        </ol>
+        <section class="pj-cta" aria-labelledby="pj-cta-title">
+          <div>
+            <h2 id="pj-cta-title">{signedIn ? 'Ready when you are' : 'Post your first job'}</h2>
+            <p>Your listing goes live after a quick review. Candidates apply for free.</p>
+          </div>
+          <p class="pj-cta-actions">
+            {signedIn ? (
+              <a class="button bp-lg" href="/dashboard/post-a-job">{POST_A_JOB_PAGE.userAction}</a>
+            ) : (
+              <>
+                <a class="button bp-lg" href={`/account/register/?next=${next}`}>{POST_A_JOB_PAGE.guestAction}</a>
+                <a class="button bp-lg bp-inverse-outline" href={`/account/login/?next=${next}`}>{POST_A_JOB_PAGE.signIn}</a>
+              </>
+            )}
+          </p>
+        </section>
+      </main>
+    </Base>
+  )
+}

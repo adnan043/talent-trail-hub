@@ -1,0 +1,34 @@
+---
+/**
+ * A company's logo (public file URL) on a light plate with a soft outline, or its initials on a
+ * tint picked from the name (the same company always gets the same one). Sizes are classes
+ * (CSP: no style=""): sm 36px, md 52px, lg 64px. Decorative: the name is always printed next to it.
+ */
+import {initials} from '../../lib/format';
+import '../../styles/board-list.css';
+
+interface Props {
+  name: string;
+  logoUrl: string | null;
+  size?: 'sm' | 'md' | 'lg';
+  class?: string;
+}
+
+const TINTS = ['tone-brand', 'tone-success', 'tone-info', 'tone-warning', 'tone-neutral'] as const;
+
+const {name, logoUrl, size = 'md', class: className} = Astro.props;
+const px = size === 'sm' ? 36 : size === 'lg' ? 64 : 52;
+let hash = 0;
+for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+const tint = TINTS[hash % TINTS.length];
+---
+
+{
+  logoUrl ? (
+    <img class:list={['co-logo', `co-logo-${size}`, className]} src={logoUrl} alt="" width={px} height={px} loading="lazy" decoding="async" />
+  ) : (
+    <span class:list={['co-logo', 'co-logo-mono', `co-logo-${size}`, tint, className]} aria-hidden="true">
+      {initials(name)}
+    </span>
+  )
+}

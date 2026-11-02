@@ -1,0 +1,451 @@
+---
+/**
+ * The job board (F2): search and filters as ONE plain GET form, so every result set is a real,
+ * shareable URL that a reload restores (`/jobs/?q=design&type=FULL_TIME&workplace=remote`).
+ * Rendered from `GET /site-api/jobs` (in-process). Page 1 pins up to 5 featured matches (rotated
+ * per UTC hour); filters and fields apply on submit only; "Next page" follows the keyset cursor (`before`). Filtered and `?featured=1`
+ * pages are `noindex,follow`; the canonical is always `/jobs/`.
+ *
+ * Layout: search bar, a row of stat tiles, then the filters in a sidebar card beside the results
+ * card (md and up); below md the filters open as a side sheet from the "Filters" button.
+ */
+import Icon from '../../components/board/Icon.astro';
+import JobList from '../../components/board/JobList.astro';
+import Base from '../../layouts/Base.astro';
+import {EMPLOYMENT_TYPES, WORKPLACE_TYPES} from '../../lib/board';
+import {employmentLabel, workplaceLabel} from '../../lib/job-display';
+import {activeFilterCount, isFilteredSearch, JOB_SORTS, jobSearchHref, MIN_SALARY_OPTIONS, parseJobSearch, POSTED_WITHIN, toApiQuery} from '../../lib/job-search';
+import type {CategoryCount, JobsPage} from '../../lib/types-public';
+import {backend, read} from '../../server/backend';
+import {boardPage} from '../../server/board/public-page';
+import '../../styles/board-list.css';
+
+const search = parseJobSearch(Astro.url.searchParams);
+const api = backend(Astro.request);
+const [{site, viewer, board}, result, cats] = await Promise.all([
+  boardPage(Astro.request, Astro.response),
+  read<JobsPage>(api.jobs.$get({query: toApiQuery(search)})),
+  read<{categories: CategoryCount[]}>(api.board.categories.$get()),
+]);
+if (!result) Astro.response.status = 503;
+const categories = cats?.categories ?? [];
+const filtered = isFilteredSearch(search);
+const filterCount = activeFilterCount(search);
+const currency = board?.currency ?? 'USD';
+const money = (n: number) => {
+  try {
+    return new Intl.NumberFormat('en-US', {style: 'currency', currency, maximumFractionDigits: 0}).format(n);
+  } catch {
+    return `${currency} ${n}`;
+  }
+};
+const categoryName = categories.find(c => c.slug === search.category)?.name ?? search.category;
+const chips = [
+  ...(search.q ? [{label: `“${search.q}”`, href: jobSearchHref(search, {q: '', before: ''})}] : []),
+  ...(search.featured ? [{label: 'Featured jobs', href: jobSearchHref(search, {featured: false, before: ''})}] : []),
+  ...(search.category ? [{label: categoryName, href: jobSearchHref(search, {category: '', before: ''})}] : []),
+  ...search.types.map(t => ({label: employmentLabel(t), href: jobSearchHref(search, {types: search.types.filter(x => x !== t), before: ''})})),
+  ...search.workplaces.map(w => ({label: workplaceLabel(w), href: jobSearchHref(search, {workplaces: search.workplaces.filter(x => x !== w), before: ''})})),
+  ...(search.location ? [{label: `In ${search.location}`, href: jobSearchHref(search, {location: '', before: ''})}] : []),
+  ...(search.minSalary ? [{label: `${money(search.minSalary)}+ a year`, href: jobSearchHref(search, {minSalary: null, before: ''})}] : []),
+  ...(search.posted ? [{label: POSTED_WITHIN.find(p => p.value === search.posted)!.label, href: jobSearchHref(search, {posted: null, before: ''})}] : []),
+];
+const clearHref = search.sort === 'salary' ? '/jobs/?sort=salary' : '/jobs/';
+const jobs = result?.jobs ?? [];
+// The focused heading says how many (no totals: "20+" when there is a next page).
+const shown = `${jobs.length}${result?.nextBefore ? '+' : ''}`;
+const noun = (one: string, many: string) => (jobs.length === 1 && !result?.nextBefore ? one : many);
+const headingRest = search.featured
+  ? `featured ${noun('job', 'jobs')}`
+  : search.before
+    ? `more ${noun('job', 'jobs')}`
+    : filtered
+      ? `matching ${noun('job', 'jobs')}`
+      : `latest ${noun('job', 'jobs')}`;
+const pageTitle = search.q ? `“${search.q}” jobs` : search.featured ? 'Featured jobs' : 'Jobs';
+const h1 = search.q ? `Jobs matching “${search.q}”` : search.featured ? 'Featured jobs' : 'Find jobs';
+const name = board?.name ?? site?.name ?? 'our board';
+// Stat tiles: numbers already on hand (no extra count per request).
+const hiringCategories = categories.filter(c => c.jobCount > 0).length;
+const featuredNow = !result || search.before ? '—' : result.featuredCount >= 100 ? '100+' : String(result.featuredCount);
+const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
+---
+
+<Base
+  site={site}
+  viewer={viewer}
+  board={board}
+  title={pageTitle}
+  description={`Search open jobs at ${name}: filter by category, job type, remote or on-site, location, salary and date posted.`}
+  noindexFollow={filtered}>
+  <main id="main" tabindex="-1" class="wrap jobs-page">
+    <h1 class="title">{h1}</h1>
+
+    <form id="jobs-form" action="/jobs/" method="get" role="search" aria-label="Search jobs" novalidate data-jobs-form>
+      <div class="searchbar searchbar-md">
+        <div class="searchbar-field searchbar-what">
+          <Icon name="search" class="searchbar-icon" />
+          <span class="searchbar-control">
+            <label for="jobs-q">Keyword</label>
+            <input id="jobs-q" type="search" name="q" value={search.q} maxlength="100" enterkeyhint="search" autocomplete="off" placeholder="Job title, skill or company" />
+          </span>
+        </div>
+        <span class="searchbar-divider" aria-hidden="true"></span>
+        <div class="searchbar-field searchbar-where">
+          <Icon name="map-pin" class="searchbar-icon" />
+          <span class="searchbar-control">
+            <label for="jobs-location">Location</label>
+            <input id="jobs-location" type="search" name="location" value={search.location} maxlength="80" autocomplete="address-level2" placeholder="City, country or “Remote”" />
+          </span>
+        </div>
+        {search.featured && <input type="hidden" name="featured" value="1" />}
+        <button class="button searchbar-submit" type="submit">
+          Search jobs
+          <Icon name="arrow-right" class="button-icon" />
+        </button>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-tile">
+          <dl>
+            <dt>{noun('Job found', 'Jobs found')}</dt>
+            <dd>{result ? shown : '—'}</dd>
+          </dl>
+          <span class="stat-icon tone-info" aria-hidden="true"><Icon name="briefcase" /></span>
+        </div>
+        <div class="stat-tile">
+          <dl>
+            <dt>Featured now</dt>
+            <dd>{featuredNow}</dd>
+          </dl>
+          <span class="stat-icon tone-warning" aria-hidden="true"><Icon name="star" /></span>
+        </div>
+        <div class="stat-tile">
+          <dl>
+            <dt>Categories hiring</dt>
+            <dd>{cats ? hiringCategories : '—'}</dd>
+          </dl>
+          <span class="stat-icon tone-success" aria-hidden="true"><Icon name="layout-grid" /></span>
+        </div>
+      </div>
+
+      <div class="jobs-grid">
+        <details class="fpanel" data-filter-sheet>
+          <summary class="fpanel-toggle">
+            <Icon name="sliders" class="button-icon" />
+            Filters
+            {filterCount > 0 && (
+              <span class="fpanel-count">
+                {filterCount}
+                <span class="visually-hidden"> active</span>
+              </span>
+            )}
+          </summary>
+          <div class="fpanel-sheet" role="group" aria-labelledby="filters-title">
+            <div class="fpanel-head">
+              <h2 id="filters-title" tabindex="-1">Filters</h2>
+              {filtered && <a class="fpanel-clear" href={clearHref}>Clear filters</a>}
+              <button class="fpanel-close" type="button" aria-label="Close filters" data-filter-close>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div class="fpanel-body">
+              <div class="fgroup">
+                <label class="fgroup-title" for="jobs-category">Category</label>
+                <select id="jobs-category" name="category">
+                  <option value="">All categories</option>
+                  {categories.map(c => <option value={c.slug} selected={c.slug === search.category}>{c.name} ({c.jobCount})</option>)}
+                </select>
+              </div>
+              <fieldset class="fgroup">
+                <legend class="fgroup-title">Job type</legend>
+                <ul class="fchecks">
+                  {EMPLOYMENT_TYPES.map(t => (
+                    <li>
+                      <label class="fcheck">
+                        <input type="checkbox" name="type" value={t} checked={search.types.includes(t)} /> {employmentLabel(t)}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
+              <fieldset class="fgroup">
+                <legend class="fgroup-title">Workplace</legend>
+                <ul class="fchecks">
+                  {WORKPLACE_TYPES.map(w => (
+                    <li>
+                      <label class="fcheck">
+                        <input type="checkbox" name="workplace" value={w} checked={search.workplaces.includes(w)} /> {workplaceLabel(w)}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
+              <div class="fgroup">
+                <label class="fgroup-title" for="jobs-salary">Minimum salary</label>
+                <select id="jobs-salary" name="minSalary">
+                  <option value="">Any salary</option>
+                  {MIN_SALARY_OPTIONS.map(n => <option value={String(n)} selected={search.minSalary === n}>{money(n)}+ per year</option>)}
+                </select>
+              </div>
+              <fieldset class="fgroup">
+                <legend class="fgroup-title">Date posted</legend>
+                <ul class="fchecks">
+                  <li>
+                    <label class="fcheck">
+                      <input type="radio" name="posted" value="" checked={!search.posted} /> Any time
+                    </label>
+                  </li>
+                  {POSTED_WITHIN.map(p => (
+                    <li>
+                      <label class="fcheck">
+                        <input type="radio" name="posted" value={p.value} checked={search.posted === p.value} /> {p.label}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
+              <div class="fgroup">
+                <label class="fgroup-title" for="jobs-sort">Sort by</label>
+                <select id="jobs-sort" name="sort">
+                  {JOB_SORTS.map(s => <option value={s.value} selected={search.sort === s.value}>{s.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div class="fpanel-foot">
+              <button class="button fpanel-apply" type="submit">
+                <span class="fpanel-apply-wide">Apply filters</span>
+                <span class="fpanel-apply-narrow">{showLabel}</span>
+              </button>
+            </div>
+          </div>
+        </details>
+
+        <section class="results-card" aria-labelledby="results-title">
+          <div class="results-top">
+            <h2 id="results-title" class="results-count" tabindex="-1">
+              {result ? (
+                <>
+                  <strong>{shown}</strong> {headingRest}
+                </>
+              ) : (
+                'Jobs'
+              )}
+            </h2>
+            {chips.length > 0 && (
+              <div class="applied">
+                <ul class="applied-list" aria-label="Active filters">
+                  {chips.map(chip => (
+                    <li>
+                      <a class="pill pill-active" href={chip.href} aria-label={`Remove filter: ${chip.label}`}>
+                        {chip.label}
+                        <Icon name="x" class="pill-x" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <a class="applied-clear" href={clearHref}>Clear all</a>
+              </div>
+            )}
+          </div>
+          {result?.featuredMore && !search.featured && jobs.length > 0 && (
+            <p class="featured-link results-featured">
+              <a href="/jobs/?featured=1">
+                See all {result.featuredCount >= 100 ? '100+' : result.featuredCount} featured jobs
+                <Icon name="arrow-right" class="inline-icon" />
+              </a>
+            </p>
+          )}
+          {!result ? (
+            <p class="notice results-notice">The job board is not available right now. Try again in a minute.</p>
+          ) : jobs.length === 0 ? (
+            <div class="empty-box results-empty">
+              <span class="empty-box-icon" aria-hidden="true"><Icon name="search-x" /></span>
+              <h3>{filtered ? 'No jobs match your search' : 'No open jobs right now'}</h3>
+              <p>{filtered ? 'Try fewer filters or a different keyword.' : 'New jobs are posted regularly. Check back soon.'}</p>
+              {filtered && (
+                <div class="empty-box-actions">
+                  <a class="button" href={clearHref}>Clear all filters</a>
+                </div>
+              )}
+            </div>
+          ) : (
+            <JobList jobs={jobs} pinned={result.pinned} />
+          )}
+          {(result?.nextBefore || search.before) && (
+            <nav class="pager" aria-label="Pages">
+              {search.before && (
+                <a class="pager-link" href={jobSearchHref(search, {before: ''})}>
+                  <Icon name="arrow-left" class="button-icon" />
+                  First page
+                </a>
+              )}
+              {result?.nextBefore && (
+                <a class="pager-link pager-next" href={jobSearchHref(search, {before: result.nextBefore})}>
+                  Next page
+                  <Icon name="arrow-right" class="button-icon" />
+                </a>
+              )}
+            </nav>
+          )}
+        </section>
+      </div>
+    </form>
+  </main>
+</Base>
+
+<script>
+  // Filters wait for "Apply filters", the keyword for Search or Enter; the location field submits
+  // 400 ms after typing stops. After a submit, the results heading takes focus.
+  const FOCUS_KEY = 'board:focus-results';
+  document.addEventListener('astro:page-load', () => {
+    const form = document.querySelector<HTMLFormElement>('form[data-jobs-form]');
+    if (!form) return;
+    try {
+      if (sessionStorage.getItem(FOCUS_KEY)) document.getElementById('results-title')?.focus();
+      sessionStorage.removeItem(FOCUS_KEY);
+    } catch {
+      // Storage blocked: focus stays where the browser puts it.
+    }
+    form.addEventListener('submit', () => {
+      try {
+        sessionStorage.setItem(FOCUS_KEY, '1');
+      } catch {
+        // Storage blocked.
+      }
+    });
+    // Location: submit 400 ms after the last keystroke (once, and only when the value changed).
+    const location = form.querySelector<HTMLInputElement>('#jobs-location');
+    if (location) {
+      let timer: number | undefined;
+      let last = location.value;
+      location.addEventListener('input', () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          if (location.value === last) return;
+          last = location.value;
+          form.requestSubmit();
+        }, 400);
+      });
+      form.addEventListener('submit', () => window.clearTimeout(timer));
+    }
+    // Selects become the site's menu: the <select> stays in the form (it submits and holds the
+    // value) while a button + listbox replaces it on screen.
+    form.querySelectorAll<HTMLSelectElement>('.fgroup select').forEach(select => {
+      const group = select.closest<HTMLElement>('.fgroup');
+      if (!group || group.dataset.menuReady) return;
+      group.dataset.menuReady = '1';
+      group.classList.add('fselect');
+      select.classList.add('fselect-native');
+      select.tabIndex = -1;
+      select.setAttribute('aria-hidden', 'true');
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'fselect-trigger';
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      const labelId = `${select.id}-label`;
+      group.querySelector('label')?.setAttribute('id', labelId);
+      trigger.setAttribute('aria-labelledby', labelId);
+      const pop = document.createElement('div');
+      pop.className = 'menu-pop fselect-pop';
+      pop.setAttribute('role', 'listbox');
+      pop.setAttribute('aria-labelledby', labelId);
+      pop.hidden = true;
+      const items = [...select.options].map(option => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'menu-item';
+        item.setAttribute('role', 'option');
+        item.dataset.value = option.value;
+        item.textContent = option.textContent;
+        item.tabIndex = -1;
+        pop.append(item);
+        return item;
+      });
+      const sync = () => {
+        trigger.textContent = select.selectedOptions[0]?.textContent ?? '';
+        for (const item of items) {
+          item.setAttribute('aria-selected', String(item.dataset.value === select.value));
+          item.setAttribute('aria-checked', String(item.dataset.value === select.value));
+        }
+      };
+      const setOpen = (open: boolean, focusTrigger = false) => {
+        pop.hidden = !open;
+        trigger.setAttribute('aria-expanded', String(open));
+        if (open) (items.find(i => i.dataset.value === select.value) ?? items[0])?.focus();
+        else if (focusTrigger) trigger.focus();
+      };
+      const choose = (item: HTMLButtonElement) => {
+        select.value = item.dataset.value ?? '';
+        sync();
+        setOpen(false, true);
+      };
+      trigger.addEventListener('click', () => setOpen(pop.hidden));
+      trigger.addEventListener('keydown', event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          setOpen(true);
+        }
+      });
+      pop.addEventListener('click', event => {
+        const item = (event.target as Element).closest<HTMLButtonElement>('.menu-item');
+        if (item) choose(item);
+      });
+      pop.addEventListener('keydown', event => {
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.key === 'ArrowDown') items[Math.min(index + 1, items.length - 1)]?.focus();
+        else if (event.key === 'ArrowUp') items[Math.max(index - 1, 0)]?.focus();
+        else if (event.key === 'Home') items[0]?.focus();
+        else if (event.key === 'End') items[items.length - 1]?.focus();
+        else if (event.key === 'Escape') {
+          event.stopPropagation();
+          setOpen(false, true);
+        } else if (event.key === 'Tab') setOpen(false);
+        else return;
+        if (event.key !== 'Tab') event.preventDefault();
+      });
+      document.addEventListener('click', event => {
+        if (!pop.hidden && !group.contains(event.target as Node)) setOpen(false);
+      });
+      form.addEventListener('reset', () => window.setTimeout(sync));
+      const box = document.createElement('div');
+      box.className = 'fselect-box';
+      box.append(trigger, pop);
+      select.after(box);
+      sync();
+    });
+    // Clean URLs: empty fields and the default sort are left out of the query.
+    form.addEventListener('formdata', event => {
+      for (const [key, value] of [...event.formData.entries()]) {
+        if (value === '' || (key === 'sort' && value === 'newest')) event.formData.delete(key);
+      }
+    });
+    // Below md the filters are a side sheet (a <details>): the × button and Escape close it, focus
+    // moves into it on open and back to the "Filters" button on close.
+    const sheet = form.querySelector<HTMLDetailsElement>('details[data-filter-sheet]');
+    if (sheet) {
+      const toggle = sheet.querySelector<HTMLElement>('summary');
+      const close = () => {
+        if (!sheet.open) return;
+        sheet.open = false;
+        toggle?.focus();
+      };
+      sheet.querySelector('[data-filter-close]')?.addEventListener('click', close);
+      sheet.addEventListener('keydown', event => {
+        if (event.key === 'Escape') close();
+      });
+      const narrow = window.matchMedia('(max-width: 767px)');
+      sheet.addEventListener('toggle', () => {
+        if (sheet.open && narrow.matches) document.getElementById('filters-title')?.focus();
+      });
+      // md and up the panel is a sidebar, always shown: keep the <details> open there (browsers
+      // without ::details-content hide a closed one's body), closed when the window narrows.
+      const fit = () => {
+        sheet.open = !narrow.matches;
+      };
+      fit();
+      narrow.addEventListener('change', fit);
+    }
+  });
+</script>

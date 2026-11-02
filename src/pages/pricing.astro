@@ -1,0 +1,132 @@
+---
+/**
+ * Pricing: the active listing tiers (1–3) from `GET /site-api/board/tiers`. The amount charged at
+ * checkout is the platform catalogue price; this shows the tier's display copy. Free posting
+ * shows every tier at no cost. Single-company boards do not sell listings: 404 (F39).
+ */
+import NotFound from '../components/NotFound.astro';
+import Base from '../layouts/Base.astro';
+import {formatMoney} from '../lib/format';
+import type {PublicTier} from '../lib/types-public';
+import {backend} from '../server/backend';
+import {boardPage} from '../server/board/public-page';
+import '../styles/board-pages.css';
+
+const [{site, viewer, board}, answer] = await Promise.all([
+  boardPage(Astro.request, Astro.response),
+  backend(Astro.request)
+    .board.tiers.$get()
+    .catch(() => null),
+]);
+const missing = answer?.status === 404;
+const data = answer?.ok ? ((await answer.json().catch(() => null)) as {tiers: PublicTier[]; freePosting: boolean} | null) : null;
+if (missing) Astro.response.status = 404;
+else if (!data) Astro.response.status = 503;
+const name = board?.name ?? site?.name ?? 'our board';
+const INCLUDED = [
+  'Listed in search and on the home page',
+  'Structured data so it can show in Google for Jobs',
+  'Apply on this site, on your website or by email',
+  'Applicants and resumes in your dashboard',
+  'Close it any time once the role is filled',
+];
+const perks = (tier: PublicTier) => [
+  {label: 'One job listing', included: true},
+  {label: `Live for ${tier.durationDays} days`, included: true},
+  {label: 'Featured badge and highlight', included: tier.includesFeatured},
+  {label: 'Pinned above regular listings', included: tier.includesFeatured},
+  {label: 'Shown in featured jobs on the home page', included: tier.includesFeatured},
+];
+const perDay = (tier: PublicTier) => (tier.durationDays > 0 ? formatMoney(Math.round(tier.priceCents / tier.durationDays), tier.currency) : null);
+const start = viewer.state === 'user' ? '/dashboard/post-a-job' : `/account/register/?next=${encodeURIComponent('/dashboard/post-a-job')}`;
+---
+
+{
+  missing ? (
+    <Base site={site} viewer={viewer} board={board} title="Page not found" noindex>
+      <NotFound site={site} />
+    </Base>
+  ) : (
+    <Base site={site} viewer={viewer} board={board} title="Pricing" description={`Job posting prices at ${name}: pick how long your listing runs and whether it is featured. Candidates always apply for free.`}>
+      <main id="main" tabindex="-1" class="wrap bp-page">
+        <header class="bp-header">
+          <div>
+            <p class="bp-eyebrow">Pricing</p>
+            <h1>Simple pricing for employers</h1>
+            <p class="bp-desc">Candidates never pay. You pay once per listing, with no subscription.</p>
+          </div>
+        </header>
+        {!data ? (
+          <div class="bp-alert pr-closed" role="alert">
+            <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+            <p class="bp-alert-title">Prices are not available right now</p>
+            <p>Try again in a minute.</p>
+          </div>
+        ) : data.tiers.length === 0 ? (
+          <section class="bp-panel bp-pad pr-closed">
+            <h2 class="bp-heading">Job listing</h2>
+            <p>Posting isn’t open yet. Please check back soon.</p>
+          </section>
+        ) : (
+          <>
+            {data.freePosting && <p class="pr-free">Posting is free right now: every plan below costs nothing.</p>}
+            <ul class:list={['pr-tiers', `pr-${Math.min(data.tiers.length, 3)}`]}>
+              {data.tiers.map(tier => {
+                const free = tier.priceCents === 0;
+                const daily = perDay(tier);
+                return (
+                  <li>
+                    <section class:list={['pr-tier', {'pr-tier-featured': tier.includesFeatured}]} aria-labelledby={`tier-${tier.id}`}>
+                      <div class="pr-tier-head">
+                        <h2 id={`tier-${tier.id}`}>{tier.name}</h2>
+                        {tier.includesFeatured && <span class="bp-badge bp-badge-brand">Featured</span>}
+                      </div>
+                      <p class="pr-price">
+                        <span class="pr-amount">{free ? 'Free' : formatMoney(tier.priceCents, tier.currency)}</span>
+                        {!free && <span class="pr-per">per listing</span>}
+                      </p>
+                      <p class="pr-day">{free || !daily ? `${tier.durationDays} days live` : `About ${daily} a day`}</p>
+                      <ul class="pr-perks">
+                        {perks(tier).map(perk => (
+                          <li class:list={{'pr-off': !perk.included}}>
+                            {perk.included ? (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+                            ) : (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+                            )}
+                            <span>
+                              {perk.label}
+                              {!perk.included && <span class="visually-hidden"> (not included)</span>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div class="pr-cta">
+                        <a class:list={['button', 'bp-lg', 'bp-block', {'bp-outline': !tier.includesFeatured}]} href={start}>Post a job</a>
+                      </div>
+                    </section>
+                  </li>
+                );
+              })}
+            </ul>
+            <section class="pr-included" aria-labelledby="included-title">
+              <div>
+                <h2 id="included-title">Every listing includes</h2>
+                <p>Whichever plan you pick. Pay once, no subscription and nothing renews on its own.</p>
+              </div>
+              <ul>
+                {INCLUDED.map(item => (
+                  <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </>
+        )}
+        <p class="pr-note">Prices include everything shown; taxes may apply at checkout. Every listing is reviewed before it goes live.</p>
+      </main>
+    </Base>
+  )
+}

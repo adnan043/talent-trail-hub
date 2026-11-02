@@ -1,0 +1,58 @@
+---
+/**
+ * Save / unsave a job in this browser (F6). Rendered pressed=false; the script (once per
+ * document) syncs every `[data-save-job]` button with localStorage on each page load.
+ */
+interface Props {
+  slug: string;
+  title: string;
+  /** `icon` on cards, `full` (icon + words) on the job page. */
+  variant?: 'icon' | 'full';
+}
+
+const {slug, title, variant = 'icon'} = Astro.props;
+---
+
+<button
+  type="button"
+  class:list={['save-job', {'button ghost': variant === 'full'}]}
+  data-save-job={slug}
+  data-variant={variant}
+  aria-pressed="false"
+  aria-label={variant === 'icon' ? `Save ${title}` : undefined}>
+  <svg class="save-job-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path>
+  </svg>
+  {variant === 'full' && <span class="save-job-text">Save job</span>}
+</button>
+
+<script>
+  import {isSaved, SAVED_JOBS_KEY, toggleSaved} from '../../lib/saved-jobs';
+
+  // The label stays "Save <title>"; aria-pressed says whether it is saved.
+  function paint(button: HTMLButtonElement) {
+    button.setAttribute('aria-pressed', String(isSaved(button.dataset.saveJob ?? '')));
+  }
+
+  document.addEventListener('astro:page-load', () => {
+    document.querySelectorAll<HTMLButtonElement>('[data-save-job]').forEach(paint);
+  });
+
+  // Saved in another tab: repaint this one.
+  window.addEventListener('storage', event => {
+    if (event.key === SAVED_JOBS_KEY) document.querySelectorAll<HTMLButtonElement>('[data-save-job]').forEach(paint);
+  });
+
+  // Once for the document: one listener serves every button on every page.
+  document.addEventListener('click', event => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>('[data-save-job]');
+    if (!button) return;
+    event.preventDefault();
+    const state = toggleSaved(button.dataset.saveJob ?? '');
+    if (state === null) {
+      button.title = 'Saving needs browser storage, which is blocked here.';
+      return;
+    }
+    document.querySelectorAll<HTMLButtonElement>(`[data-save-job="${CSS.escape(button.dataset.saveJob ?? '')}"]`).forEach(paint);
+  });
+</script>

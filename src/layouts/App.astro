@@ -1,0 +1,81 @@
+---
+/**
+ * The <head> and body for an APP (the portal, or any signed-in app at its own
+ * path). NOT the website layout: no site header, no footer, no centered
+ * column. The app fills the viewport and draws its own shell (sidebar, top
+ * bar) in React, so screens switch without a page load.
+ *
+ * Signed out / no access: pass the prompt as the slot; it renders
+ * centered on the same full-height canvas.
+ */
+import '../styles/global.css';
+import '../styles/app.css';
+
+import {THEME_BOOT, THEME_BOOT_HASH} from '../lib/theme-boot';
+import type {Site, Viewer} from '../lib/types';
+
+interface Props {
+  site: Site | null;
+  viewer: Viewer;
+  /** The app's name; the tab shows "<title> · <site>". */
+  title: string;
+}
+
+const {site, viewer, title} = Astro.props;
+const name = site?.name ?? 'My site';
+// The theme-before-paint script's hash joins this page's CSP (src/lib/theme-boot.ts).
+Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{`${title} · ${name}`}</title>
+    <!-- Signed-in screens are never search results. -->
+    <meta name="robots" content="noindex" />
+    <!-- The saved theme before first paint: a fixed string, hashed into the CSP. -->
+    <script is:inline set:html={THEME_BOOT} />
+    <!-- The board's brand (F30): accent colour and font, as a stylesheet (CSP: no inline styles). -->
+    <link rel="stylesheet" href="/site-api/board/brand.css" />
+    {site?.favIcon ? <link rel="icon" href={site.favIcon} /> : <link rel="icon" href="/favicon.svg" type="image/svg+xml" />}
+  </head>
+  <body class="app-body" data-viewer={viewer.state}>
+    <slot />
+
+    <script>
+      import {refreshSession} from '../platform/browser';
+
+      // The theme picked in the dashboard's top bar (src/portal/routes.tsx `useTheme`), before the app draws.
+      try {
+        const theme = localStorage.getItem('site:theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {
+        // Storage blocked: the device's theme.
+      }
+
+      // Same as the website layout: the server saw an expired access token but
+      // a refresh cookie. Refresh ONCE in the browser, then re-render signed in.
+      if (document.body.dataset.viewer === 'returning') {
+        const key = 'site:refreshed';
+        let first = true;
+        try {
+          first = !sessionStorage.getItem(key);
+          sessionStorage.setItem(key, '1');
+        } catch {
+          // Storage blocked: no way to remember the reload, so never reload
+          // (it would repeat on every load). The visitor signs in again.
+          first = false;
+        }
+        if (first) void refreshSession().then(ok => ok && window.location.reload());
+      } else {
+        try {
+          sessionStorage.removeItem('site:refreshed');
+        } catch {
+          // Storage blocked: nothing to clear.
+        }
+      }
+    </script>
+  </body>
+</html>

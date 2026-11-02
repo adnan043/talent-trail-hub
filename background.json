@@ -1,0 +1,10 @@
+{
+  "lists": {
+    "board-expiry": {"retries": 2, "concurrency": 1},
+    "board-purge": {"retries": 3, "concurrency": 1}
+  },
+  "schedules": {
+    "board-expiry": {"every": "hour", "label": "Expire jobs and featured listings, send expiry reminders"},
+    "board-purge": {"every": "day", "at": "03:30", "tz": "UTC", "label": "Delete resumes past retention, sweep stale uploads"}
+  }
+}
