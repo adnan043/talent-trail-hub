@@ -145,7 +145,19 @@ export const managePrivacyRoutes = new Hono()
       return c.json(problem('platform_unavailable', 'Resumes are stored on the platform, which this copy of the site cannot reach (no Site Key).'), 503);
     }
     await audit(c.var.db, {...(await actorOf(c)), action: 'purge_run', meta: result.summary});
-    const parts = Object.entries(result.summary).map(([k, v]) => `${v} ${k.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
-    const body: TaskRun = {summary: result.summary, message: parts.length ? `Purge ran: ${parts.join(', ')}.` : 'Purge ran: nothing to do.'};
+    const body: TaskRun = {summary: result.summary, message: purgeMessage(result.summary)};
     return c.json(body);
   });
+
+/** Plain words for the toast: only what happened, failures last; all zeros reads as "nothing to clean up". */
+function purgeMessage(s: Record<string, number>): string {
+  const n = (v: number, one: string, many: string) => `${v} ${v === 1 ? one : many}`;
+  const done: string[] = [];
+  if (s.resumesPurged) done.push(n(s.resumesPurged, 'old resume deleted', 'old resumes deleted'));
+  if (s.uploadsSwept) done.push(n(s.uploadsSwept, 'unused upload removed', 'unused uploads removed'));
+  if (s.attemptsSwept) done.push(n(s.attemptsSwept, 'old rate-limit record cleared', 'old rate-limit records cleared'));
+  const failed = (s.resumesFailed ?? 0) + (s.uploadsFailed ?? 0);
+  let msg = done.length ? `Clean-up done: ${done.join(', ')}.` : 'Clean-up done: nothing was due.';
+  if (failed) msg += ` ${n(failed, 'file', 'files')} could not be deleted; the next run will try again.`;
+  return msg;
+}
