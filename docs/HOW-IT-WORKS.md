@@ -61,7 +61,7 @@ comes from their **roles**, and roles hold **permissions** (named "codenames").
 | **Guest / candidate** | No account needed | Browse and search jobs and companies, save jobs in this browser, apply with a resume. Limit: 5 applications per IP address per hour; one application per email per job (409 `already_applied`). |
 | **Employer** | Any signed-in user with a **verified email** (`requireVerified`) | The employer area: post and pay, own jobs (edit, close, renew, duplicate), own applicants, company profile and logo, billing and receipts. One user owns at most ONE company (`companies.owner_user_id` is unique). Other companies' data answers **404**. |
 | **Admin** | The `admin` role, which holds the board's codenames | The board's admin screens under `/dashboard/manage/...` |
-| **Owner** | The platform makes the owner account(s) from the owner emails, with the `owner` role (`*`, every permission) | Everything, plus users and roles. Signs in at `/dashboard` with a 6-digit emailed code, or in one click from the platform dashboard. |
+| **Owner** | Made on the first "View as admin" click in the platform dashboard, with the `owner` role (`*`, every permission); no email or password on the site | Everything, plus users and roles. Signs in only in one click from the platform dashboard ("View as admin" / "Open live portal"). |
 
 The admin codenames are declared once, in `src/server/permissions.ts` (`CATALOGUE`):
 

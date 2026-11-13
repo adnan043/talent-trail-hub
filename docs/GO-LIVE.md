@@ -29,7 +29,11 @@ You need Node 22.12 or newer and `openssl`.
    | `JWT_SECRET` | the random string from `openssl` (32+ characters) |
    | `SITE_URL` | the site's address from the platform (Settings); empty skips branding and relayed emails |
    | `SITE_KEY` | optional: the Site Key, so confirmation and reset emails are really sent |
-   | `SITE_OWNER_EMAILS` | optional: your email. Empty = the first account to confirm its email becomes owner |
+   | `SITE_OWNER_ID` | leave empty (the platform sets it on hosted copies; there is no owner locally) |
+
+   To use the admin locally: sign up at `/account/register` (the code is printed in the
+   `npm run dev` terminal), then `npm run platform -- dev-admin <that email>` gives that account
+   the `admin` role in the LOCAL database only.
 4. Create the tables, then add the demo data (fake companies, jobs and applications; local or
    Preview only, never live):
    ```sh
@@ -112,13 +116,14 @@ In the editor, type "publish". The platform then runs:
 
 ## 5. The admin (you)
 
-- Your account already exists on the live site, made by the platform for the account owner's
-  email, with the `owner` role and no password. Do not create another one.
-- **Sign in:** go to `/dashboard`, enter your email, type the 6-digit code you get by email
-  (10 minutes, one use). Or one click: "Open live portal" on the app's page in the platform
-  dashboard (in the editor Preview: the shield in its bar).
-- A password and two-step sign-in are optional: set them in the dashboard under **Your account** →
-  Security (`/dashboard/account?tab=security`).
+- **Sign in (the only way):** "View as admin" / "Open live portal" on the app's page in the
+  platform dashboard (in the editor Preview: the shield in its bar). One click, no email, no
+  password, no code. Your platform sign-in protects it.
+- The owner account is made on that first click. It has no email address on the site (it shows
+  a placeholder at `owner.invalid`), no password and no two-step: those settings answer
+  "owner account" for it. Nobody can suspend, demote or delete it from inside the site.
+- **Do not** sign in at `/dashboard` with your email and a 6-digit code, or sign up with your own
+  email: that makes an ordinary user account, NOT the owner, even with the same address.
 - **Make someone else an admin:** they sign up on the site first; then in **Users**
   (`/dashboard/users`) give them the `admin` role. Admins can moderate, manage jobs, read
   applicants, run the privacy tool and change board settings.
@@ -160,7 +165,7 @@ In the editor, type "publish". The platform then runs:
 | Prices typed in the admin | prices in the catalogue (`npm run platform -- prices add`); tiers pick a key |
 | One-click refund on reject | refund in the platform dashboard (Payments) |
 | `AUTH_SECRET`, `IP_HASH_SALT`, `EZY_SITE_URL` | `JWT_SECRET` (also keys the IP hashes), `SITE_URL`, set by the platform when live |
-| `npm run seed:admin` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` | owner account made by the platform; 6-digit code or one click |
+| `npm run seed:admin` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` | owner account made on the first "View as admin" click in the platform dashboard; no email or password |
 | `/admin/*`, `/employer/*`, `/login`, `/signup` | `/dashboard/manage/*`, `/dashboard/employer/*` + `/dashboard/post-a-job`, `/account/*` (`/signup/` redirects to register) |
 | Cron triggers, `TASKS_SECRET`, traffic-triggered tasks | platform background jobs (`background.json`), Jobs tab |
 | Storage and email "ask the company" | Storage pack (platform files); Resend via your `RESEND_API_KEY` |

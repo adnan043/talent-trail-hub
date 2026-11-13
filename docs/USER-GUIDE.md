@@ -105,11 +105,12 @@ board's admin.
 ## Part 2: Admin guide
 
 ### 2.1 Signing in
-The admin account already exists; it is created from the owner email address.
-- Go to `/dashboard`. Enter your email and the **6-digit code** emailed to you, **or** use the
-  one-click sign-in from the platform dashboard ("Open live portal").
-- A password and two-step sign-in are optional; set them under **Your account**.
-- Other admins are added by the owner in **Users** (assign the **admin** role).
+- **The owner** signs in only with one click from the platform dashboard ("View as admin" /
+  "Open live portal"). The owner account has no email, password or code on the site; signing in
+  at `/dashboard` with your email makes an ordinary user account, not the owner.
+- **Other admins** sign up on the site like anyone else; the owner then gives them the **admin**
+  role in **Users**. They sign in at `/dashboard` with their email and password (or the
+  **6-digit code** emailed to them), and can set two-step sign-in under **Your account**.
 
 ### 2.2 What each menu item does
 Items appear only if your role has the permission.
