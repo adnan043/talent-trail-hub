@@ -30,6 +30,7 @@ browser sends. Never type an amount into a button, a route or a hidden field.
 Create the prices the site needs, in sandbox, from the editor:
 ```
 npm run platform -- prices                                   # mode, readiness, every price
+npm run platform -- prices currencies                        # the currencies a new price may use
 npm run platform -- prices add --key pro-monthly --name "Pro" --amount-cents 1999 \
   --currency USD --interval month [--trial-days 14] [--description "…"]
 ```
@@ -39,6 +40,10 @@ nothing changes. Amount, currency and interval never change: a new price is a NE
 account by themselves. The live site cannot create prices (`E_PAYMENTS_EDITOR_ONLY`). Show prices
 from the catalogue (`PriceList` / `listPrices()` in an on-demand page, below), or write the same
 numbers into a prerendered page's copy from `npm run platform -- prices`, re-checked when they change.
+Pick the currency from `prices currencies` (the site's connected payment providers; "one-time
+only" ones can't be monthly or yearly). Another currency is refused (422
+`E_SITE_PAYMENTS_CURRENCY_NOT_TAKEN`). With no provider connected yet any common one is accepted:
+ask the owner which currency they sell in rather than guessing.
 A paid price is at least the currency's minimum (1 USD/EUR/GBP, 10,000 IDR, 100 JPY…: 422
 `E_PRICE_BELOW_MINIMUM`, its message says the lowest) and a whole amount where the currency has no
 cents at checkout (IDR, ISK: `--amount-cents 15000000` for 150,000 IDR; 422 `E_PRICE_NOT_WHOLE`).
@@ -119,6 +124,9 @@ copy `thanks/index.astro` (keep the confirm) and pass its path as `successPath`.
   trial already used (409 `E_SITE_PAYMENTS_TRIAL_USED`) → `/checkout/?price=…&trialUsed=1`.
 - A signed-in buyer pays as themselves (their email, their id as `customerRef`); a guest types
   their email at the checkout.
+- A double click, a retry or a reload can't start a second checkout: each attempt has an idempotency key
+  (`src/lib/idempotency.ts`, `orders-and-stock.md`). Keep it in anything you build on top. A plain form post has no
+  script, so the route makes a key from the visitor and the purchase, the same for 2 minutes.
 - The checkout page's island is `EmbeddedCheckout` driving a `CheckoutSession`
   (`src/lib/checkout-session.ts`, framework-free) through `src/lib/checkout-transport.ts` (the
   site's own routes). From the portal or your own script, use the same session:
@@ -164,6 +172,7 @@ signature as job deliveries; answered before the Site API by `src/platform/payme
   confirm): keep it idempotent. The defaults upsert and return `{created}`; put one-time work
   (a welcome email, stock, a booking) under `if (created)`, or send a background job with a `key`.
 - Throw to be tried again later. Keep hooks short; slow work goes in a background job.
+- Stock, seats and bookings: hold them before the checkout starts (`orders-and-stock.md`).
 - Your own data (what was bought, a booking) goes in your own table, pointing at `checkout_id`
   (pass your id in `metadata` when you create the checkout from your own route).
 - `orders.mode` / `memberships.mode` say `test` or `live`: an owner's dashboard of sales filters on
@@ -203,14 +212,15 @@ page; show `message` to people. Codes: `E_PAYMENTS_NOT_READY` (the owner has not
 payments: say so, don't hide the button), `E_PRICE_NOT_FOUND`, `E_PAYMENTS_EDITOR_ONLY`,
 `E_PRICE_KEY_TAKEN`, `E_PLATFORM_UNREACHABLE`, `E_SITE_PAYMENTS_EMAIL_REQUIRED` (422: a price with a free
 trial needs the buyer's `email`; a signed-in buyer's is sent for you, a guest types it), `E_SITE_PAYMENTS_TRIAL_USED` (409: ask, then
-`noTrial: true`), `E_SITE_PAYMENTS_GATEWAY_UNAVAILABLE` (that way to pay can't take it now).
+`noTrial: true`), `E_SITE_PAYMENTS_GATEWAY_UNAVAILABLE` (that way to pay can't take it now),
+`E_SITE_PAYMENTS_IN_PROGRESS` and `E_SITE_PAYMENTS_IDEMPOTENCY_CONFLICT` (409, `orders-and-stock.md`).
 
 Platform endpoints behind them (Site Key, server only):
 ```
 GET  {{SITE_API_PREFIX}}/payments                       {mode, ready, prices}
 POST {{SITE_API_PREFIX}}/payments/prices                {key, name, description?, amountCents, currency, interval, intervalCount?, trialDays?} (editor key only)
 GET  {{SITE_API_PREFIX}}/payments/checkout/gateways?price=   {gateways: [{slug, name}]}
-POST {{SITE_API_PREFIX}}/payments/checkout              {price, quantity?, email?, name?, successPath, cancelPath, metadata?, customerRef?, gateway?, noTrial?} → {id, mode, embedded}
+POST {{SITE_API_PREFIX}}/payments/checkout              {price, quantity?, email?, name?, successPath, cancelPath, metadata?, customerRef?, gateway?, noTrial?, idempotencyKey?} → {id, mode, embedded}
 GET  {{SITE_API_PREFIX}}/payments/checkout/:id
 GET  {{SITE_API_PREFIX}}/payments/memberships?email=
 POST {{SITE_API_PREFIX}}/payments/memberships/:id/cancel  {atPeriodEnd}
@@ -225,7 +235,8 @@ calls the provider's API like any other public API (`security.md` › Calling ot
 Read a key only in server code with `config.ownerSecret('STRIPE_SECRET_KEY')` (`null` when the
 owner has not added it: say which name to add, in which environment; never ask for the value).
 Never put a provider key in code, a file or the browser, and verify the provider's webhook
-signature yourself (its own route, mounted before `csrf`, like `checkoutRoutes`).
+signature yourself (its own route, mounted before `csrf`, like `checkoutRoutes`). Send the provider's idempotency key
+on every charge, refund and subscription (`orders-and-stock.md`).
 
 ## Never
 - An amount, a price id or a gateway key in code, HTML or the browser: a price KEY only.
@@ -235,3 +246,5 @@ signature yourself (its own route, mounted before `csrf`, like `checkoutRoutes`)
 - Access from an unverified email, or from `localStorage`.
 - Editing `src/platform/payments.ts`, or answering `/site-api/_platform/payments` yourself.
 - A hook that charges, emails or books on every call: only when `created`.
+- A checkout, a charge or a booking with no idempotency key, or a new random key on each retry.
+- Stock or a booking decided by a read in your code, or by the cache (`orders-and-stock.md`).

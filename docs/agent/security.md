@@ -15,7 +15,7 @@ there, say so to the owner (it ships with `npm run platform -- upgrade`).
 | CSP | `security.csp` in `astro.config.mjs` | hashes for Astro's own scripts/styles; `default-src 'self'`, `connect-src 'self'`, `object-src 'none'`, `base-uri`/`form-action 'self'` |
 | Site API, app-wide | `src/server/app.ts` | `previewCookies` → `sameOrigin` → `csrf` → `bodyLimit` 64 KB → `syncPermissions`; JSON `notFound` / `onError` |
 | Site API, per route | `src/platform/guards.ts` | `validator → withViewer → requireAuth → requirePermission → withDb` |
-| Auth | `src/platform/auth/` | PBKDF2 passwords, short JWT + rotating refresh, rate limits, two-step, audit |
+| Auth | `src/platform/auth/` | scrypt passwords, short JWT + rotating refresh, rate limits, two-step, audit |
 
 ## A01 Broken access control (+ API1 object level, API5 function level, API7 SSRF)
 Template: the guards above; `requirePermission(codename, {orOwn})`, `can`, `permissionScope`
@@ -156,7 +156,7 @@ You must:
   array lengths in a body (`ids.length ≤ 100`), loop counts, `sendJobs` batch sizes.
 - **Business flows**: state changes are conditional writes (`updateMany({where: {id, status:
   'pending'}, data: {status: 'approved'}})`, `count === 0` → 409); retried actions are idempotent
-  (a unique key, `sendJob(…, {key})`); totals, prices, scores and timestamps are computed on the
+  (`idempotent()`, a unique key, `sendJob(…, {key})`; `orders-and-stock.md`); totals, prices, scores and timestamps are computed on the
   server, never taken from the body.
 - Public lookups answer the same for "exists" and "doesn't" (sign-up, invites, "is this taken").
 
@@ -231,6 +231,31 @@ You must:
 - Optional sections degrade (`null` → hide the section); required data fails visibly (500/503
   page, error state in the portal), never an empty page that looks like "no data".
 
+## Passwords and email addresses (owner's rule: never, no matter what)
+- **A password never leaves the server, in any form, to anyone, the user included**: no plain,
+  hashed, encrypted or masked password in a response, page, email, log, audit `meta`, cache, export,
+  error, URL or outside call. No "your password is…" or "here is your new password" email: a
+  forgotten password gets a reset link (`auth.md`); an admin who resets someone gets a link sent to
+  that person, never a password to pass on. `passwordHash` is never in a `select` of an answer.
+  The same for sign-in codes, tokens, recovery codes and outside API keys once issued.
+- **Another person's email address is never sent where others can see it.** It goes ONLY to:
+  its owner (their own account screens), or a signed-in admin with `site:user:read` checked on the
+  server, in admin screens. Everything else gets a NAME (or nothing):
+  | Place | Rule |
+  | --- | --- |
+  | public pages, public Site API routes, sitemap, RSS, `og:` tags | no emails at all |
+  | lists, search, comments, reviews, "posted by", leaderboards, members of a team | name or initials, never the email |
+  | errors and form messages | the same answer whether an address exists or not ("If that address has an account, we sent a link") |
+  | URLs, query strings, redirects | never an email (logs, history, `Referer`) |
+  | logs, audit `meta`, analytics, background job payloads | user id, never the email |
+  | the cache (`cache.md`) | never an email in a key; in a value only under the user's own `userKey` |
+  | outside services (mail, CRM, AI, analytics) | only the person's own address, only when THEY asked for that action |
+  When someone must recognise an address that isn't theirs (an invite already sent), mask it:
+  `m•••@gmail.com` (first letter, the domain). Never store copies of emails in your own tables:
+  join on `users.id` (`database.md`).
+- Check it in every review (`review.md` step 2): `grep -rn "email" src/server src/pages` and read
+  each hit: who receives it?
+
 ## API3 Broken object property level authorization (mass assignment, data exposure)
 Template: `jobBody` in `jobs.ts` builds the update field by field; every query has an explicit
 `select`; `publicUser` returns only safe user fields; emails only to the user and
@@ -284,6 +309,7 @@ no cookies, visitor IP or platform headers. You must:
 - Never forward a visitor's cookie or `Authorization` header to another service.
 
 ## Before you say "done"
+Run `review.md` (it walks these and the performance checks, and ends with the report). The list:
 - [ ] Every new route: guards in order; non-public ones `withViewer → requireAuth → requirePermission`.
 - [ ] Every by-id read/write is scoped in the query (owner / team); not found → 404.
 - [ ] Inputs validated with types and limits; writes built field by field; output via `select`.

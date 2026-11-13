@@ -10,7 +10,7 @@ import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
 import {paymentHooks} from '../../src/server/payments-hooks';
 import {env} from './support/cloudflare-workers';
-import {Browser, configureEnv, DATABASE_URL, db, resetDatabase, signedIn, userId} from './support/harness';
+import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn, userId} from './support/harness';
 
 /**
  * The PAID listing path end to end: the admin's priced tier (catalogue), the employer's post
@@ -125,7 +125,7 @@ describe.skipIf(!DATABASE_URL)('board payments: the paid listing path (integrati
     started.length = 0;
     checkouts.clear();
     categoryId = (await db.category.upsert({where: {slug: 'engineering'}, create: {name: 'Engineering', slug: 'engineering'}, update: {isActive: true}, select: {id: true}})).id;
-    owner = await signedIn(app, 'owner@example.test', undefined, '203.0.113.31');
+    owner = await ownerSignedIn(app, undefined, '203.0.113.31');
     // (1) The admin's paid tiers, priced from the catalogue; free posting stays off.
     const tier = (name: string, priceKey: string, durationDays: number) => owner.post('/site-api/manage/tiers', {name, priceKey, durationDays, isActive: true});
     const a = await tier('Standard', 'listing-30', 30);

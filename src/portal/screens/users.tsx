@@ -180,7 +180,7 @@ export function Users() {
       header: "User",
       cell: (user) => (
         <span className="users-person">
-          <Person name={user.name} detail={user.email} />
+          <Person name={user.name} detail={user.platformOwner ? 'Comes from the dashboard' : user.email} />
           {!user.emailVerified && <Badge tone="warning">Unconfirmed</Badge>}
         </span>
       ),
@@ -236,7 +236,8 @@ export function Users() {
       key: "actions",
       header: "Actions",
       actions: true,
-      cell: (user) => {
+      cell: user => {
+        if (user.platformOwner) return null;
         const self = user.id === viewerId;
         const items: MenuItem[] = [];
         if (abilities.manageRoles)

@@ -1,7 +1,7 @@
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {app} from '../../src/server/app';
-import {Browser, configureEnv, DATABASE_URL, db, resetDatabase, signedIn, userId} from './support/harness';
+import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn, userId} from './support/harness';
 
 /** The board's admin (`/site-api/manage/*`): codename gating, the employer edit lock, tier rules, board mode. */
 describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
@@ -62,7 +62,7 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
   });
   beforeEach(async () => {
     await resetDatabase();
-    owner = await signedIn(app, 'owner@example.test', undefined, '203.0.113.1');
+    owner = await ownerSignedIn(app, undefined, '203.0.113.1');
     admin = await signedIn(app, 'admin@example.test', undefined, '203.0.113.2');
     member = await signedIn(app, 'member@example.test', undefined, '203.0.113.3');
     const made = await owner.request('PUT', `/site-api/admin/users/${await userId('admin@example.test')}/roles`, {roles: ['member', 'admin']});

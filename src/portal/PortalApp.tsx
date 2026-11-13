@@ -3,6 +3,7 @@ import {createRouter, RouterProvider} from '@tanstack/react-router';
 import {useEffect, useState} from 'react';
 
 import {postJson} from '../lib/form';
+import {finishProgress, installPageProgress, startProgress} from '../lib/page-progress';
 import {siteFetch} from '../platform/browser';
 
 import {ApiError} from './api';
@@ -42,6 +43,13 @@ const router = createRouter({
   defaultPendingMs: 300,
   defaultErrorComponent: RouteError,
 });
+
+// The same bar as the public pages. Only a screen that takes a moment shows it.
+router.subscribe('onBeforeLoad', event => {
+  if (event.pathChanged) startProgress();
+});
+router.subscribe('onResolved', finishProgress);
+installPageProgress();
 
 declare module '@tanstack/react-router' {
   interface Register {

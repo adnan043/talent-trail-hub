@@ -25,7 +25,7 @@ export interface NavItem {
   label: string;
   href: string;
   /**
-   * `false` for a page rendered on every visit (SSR, like `/jobs/`): it is
+   * `false` for a page rendered on every visit (SSR): it is
    * private (`no-store`), so fetching it ahead would be wasted. Every other
    * item is prerendered and prefetched as soon as the nav is on screen.
    */

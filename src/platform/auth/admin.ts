@@ -8,7 +8,8 @@ import type {AdminUser, AuditRow, PermissionRow, RoleRow, Viewer} from '../types
 import {audit} from './audit';
 import {canDelegate, CODENAME_RE, CORE, grants, SYSTEM_ROLES} from './codenames';
 import {subjectHash} from './keys';
-import {refreshStore} from './store';
+import {endAccess} from './end-access';
+import {sendEmail} from './kit';
 import {getAccess} from './session';
 import {normalizeEmail} from './input';
 
@@ -43,9 +44,12 @@ const idOf = (value: string) => {
 
 const SLUG_RE = /^[a-z][a-z0-9-]{1,47}$/;
 
+const OWNER_IS_MANAGED = 'The site owner comes from the dashboard, and is not changed here.';
+
 const userSelect = {
   id: true,
   email: true,
+  platformOwnerId: true,
   name: true,
   status: true,
   emailVerifiedAt: true,
@@ -58,6 +62,7 @@ const userSelect = {
 type UserRowDb = {
   id: number;
   email: string;
+  platformOwnerId: string | null;
   name: string;
   status: string;
   emailVerifiedAt: Date | null;
@@ -67,9 +72,29 @@ type UserRowDb = {
   roles: {role: {slug: string}}[];
 };
 
-const toAdminUser = (row: UserRowDb): AdminUser => ({
+/** `maya@gmail.com` → `m•••@gmail.com`: enough to recognise, not enough to use. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at <= 0) return '•••';
+  return `${email[0]}•••${email.slice(at)}`;
+}
+
+/**
+ * Owner's rule (2026-11-01): an email address is visible ONLY to its own user and to the site's
+ * owner. Every other admin sees it masked. Worked out once per request.
+ */
+type EmailView = {owner: boolean; me: number | null};
+async function emailView(c: Context): Promise<EmailView> {
+  const {roles} = await getAccess(c.req.raw);
+  const viewer = (c.var as {viewer?: Viewer}).viewer;
+  return {owner: roles.includes(SYSTEM_ROLES.OWNER), me: viewer?.state === 'user' ? (viewer.id ?? null) : null};
+}
+
+const toAdminUser = (row: UserRowDb, view: EmailView): AdminUser => ({
   id: row.id,
-  email: row.email,
+  // The owner's account holds only a placeholder address.
+  email: row.platformOwnerId ? '' : view.owner || row.id === view.me ? row.email : maskEmail(row.email),
+  platformOwner: row.platformOwnerId !== null,
   name: row.name,
   status: row.status,
   emailVerified: row.emailVerifiedAt !== null,
@@ -178,6 +203,11 @@ export const adminRoutes = new Hono<Env>()
       const query = c.req.valid('query');
       const before = idOf(query.before);
       const status = query.status || null;
+      const view = await emailView(c);
+      // Finding someone BY email is the owner's alone: anyone else could test which addresses have accounts.
+      if (query.email && !view.owner) {
+        return c.json(problem('forbidden', 'Only the site owner can look people up by email.'), 403);
+      }
       // Email search is an EXACT match on the unique index; a malformed one finds nobody.
       const email = query.email ? normalizeEmail(query.email) : null;
       if (query.email && !email) return c.json({users: [], nextBefore: null});
@@ -191,7 +221,7 @@ export const adminRoutes = new Hono<Env>()
         orderBy: {id: 'desc'},
         take: PAGE + 1,
       });
-      const users = rows.slice(0, PAGE).map(toAdminUser);
+      const users = rows.slice(0, PAGE).map(row => toAdminUser(row, view));
       return c.json({users, nextBefore: rows.length > PAGE ? users.at(-1)!.id : null});
     }
   )
@@ -200,7 +230,7 @@ export const adminRoutes = new Hono<Env>()
     const id = idOf(c.req.param('id'));
     const row = id ? await c.var.db.user.findUnique({where: {id}, select: userSelect}) : null;
     if (!row) return c.json(problem('not_found', 'No such user.'), 404);
-    return c.json({user: toAdminUser(row)});
+    return c.json({user: toAdminUser(row, await emailView(c))});
   })
 
   .patch(
@@ -221,24 +251,21 @@ export const adminRoutes = new Hono<Env>()
       const {status} = c.req.valid('json');
       if (!id) return c.json(problem('not_found', 'No such user.'), 404);
       if (id === c.var.viewer.id) return forbidden(c, 'You cannot change your own status.');
-      const target = await db.user.findUnique({where: {id}, select: {id: true}});
+      const target = await db.user.findUnique({where: {id}, select: {id: true, platformOwnerId: true}});
       if (!target) return c.json(problem('not_found', 'No such user.'), 404);
+      if (target.platformOwnerId) return forbidden(c, OWNER_IS_MANAGED);
       if (!canDelegate(await actorPermissions(c), await permissionsOfUser(db, id))) return forbidden(c);
 
-      const row = await db.user.update({
-        where: {id},
-        // Suspending ends every session at once (session_version) and for good (refresh tokens).
-        data: {status, ...(status === 'suspended' ? {sessionVersion: {increment: 1}} : {})},
-        select: userSelect,
-      });
-      if (status === 'suspended') await refreshStore(db).revokeAllForUser(id, new Date(), 'suspended');
+      // Suspending ends every session, link and code, at once and for good.
+      if (status === 'suspended') await endAccess(db, id, 'suspended', {set: {status}});
+      const row = await db.user.update({where: {id}, data: {status}, select: userSelect});
       await audit(db, {
         actorUserId: c.var.viewer.id,
         action: status === 'suspended' ? 'user_suspended' : 'user_reactivated',
         target: ['user', id],
         ipHash: await ipHashOf(c),
       });
-      return c.json({user: toAdminUser(row)});
+      return c.json({user: toAdminUser(row, await emailView(c))});
     }
   )
 
@@ -260,11 +287,14 @@ export const adminRoutes = new Hono<Env>()
       const wanted = c.req.valid('json').roles;
       const target = id ? await db.user.findUnique({where: {id}, select: userSelect}) : null;
       if (!target) return c.json(problem('not_found', 'No such user.'), 404);
+      if (target.platformOwnerId) return forbidden(c, OWNER_IS_MANAGED);
 
       const current = target.roles.map(r => r.role.slug);
       const added = wanted.filter(slug => !current.includes(slug));
       const removed = current.filter(slug => !wanted.includes(slug));
-      if (!added.length && !removed.length) return c.json({user: toAdminUser(target)});
+      // Owner comes only from the dashboard: nobody gives or takes it here.
+      if (added.includes(SYSTEM_ROLES.OWNER) || removed.includes(SYSTEM_ROLES.OWNER)) return forbidden(c, OWNER_IS_MANAGED);
+      if (!added.length && !removed.length) return c.json({user: toAdminUser(target, await emailView(c))});
 
       const touched = await rolePermissions(db, [...added, ...removed]);
       if (touched.length !== added.length + removed.length) {
@@ -281,28 +311,15 @@ export const adminRoutes = new Hono<Env>()
           return forbidden(c, `You cannot give or remove the “${role.slug}” role.`);
         }
       }
-      const owner = removed.includes(SYSTEM_ROLES.OWNER)
-        ? touched.find(role => role.slug === SYSTEM_ROLES.OWNER)!
-        : null;
       const removeIds = touched.filter(role => removed.includes(role.slug)).map(role => role.id);
       const addIds = touched.filter(role => added.includes(role.slug)).map(role => role.id);
-      const changed = await db.$transaction(async tx => {
-        if (owner) {
-          // Removing an owner: the owner role's row is locked first, so two owners
-          // removing each other at the same moment take turns, and the second one
-          // sees that only one owner is left (never zero owners).
-          await tx.$queryRaw`SELECT "id" FROM "roles" WHERE "id" = ${owner.id} FOR UPDATE`;
-          const owners = await tx.userRole.findMany({where: {roleId: owner.id}, select: {userId: true}, take: 2});
-          if (owners.length < 2) return false;
-        }
+      await db.$transaction(async tx => {
         await tx.userRole.deleteMany({where: {userId: target.id, roleId: {in: removeIds}}});
         await tx.userRole.createMany({
           data: addIds.map(roleId => ({userId: target.id, roleId, grantedBy: c.var.viewer.id})),
           skipDuplicates: true,
         });
-        return true;
       });
-      if (!changed) return forbidden(c, 'The site needs at least one owner.');
       await audit(db, {
         actorUserId: c.var.viewer.id,
         action: 'user_roles_changed',
@@ -311,7 +328,7 @@ export const adminRoutes = new Hono<Env>()
         meta: {added, removed},
       });
       const row = await db.user.findUnique({where: {id: target.id}, select: userSelect});
-      return c.json({user: toAdminUser(row!)});
+      return c.json({user: toAdminUser(row!, await emailView(c))});
     }
   )
 
@@ -324,13 +341,13 @@ export const adminRoutes = new Hono<Env>()
     async c => {
       const db = c.var.db;
       const id = idOf(c.req.param('id'));
-      const target = id ? await db.user.findUnique({where: {id}, select: {id: true}}) : null;
+      const target = id ? await db.user.findUnique({where: {id}, select: {id: true, platformOwnerId: true}}) : null;
       if (!target) return c.json(problem('not_found', 'No such user.'), 404);
+      if (target.platformOwnerId && id !== c.var.viewer.id) return forbidden(c, OWNER_IS_MANAGED);
       if (id !== c.var.viewer.id && !canDelegate(await actorPermissions(c), await permissionsOfUser(db, target.id))) {
         return forbidden(c);
       }
-      await db.user.update({where: {id: target.id}, data: {sessionVersion: {increment: 1}}, select: {id: true}});
-      await refreshStore(db).revokeAllForUser(target.id, new Date(), 'admin');
+      await endAccess(db, target.id, 'admin');
       await audit(db, {
         actorUserId: c.var.viewer.id,
         action: 'user_sessions_revoked',
@@ -351,8 +368,9 @@ export const adminRoutes = new Hono<Env>()
     async c => {
       const db = c.var.db;
       const id = idOf(c.req.param('id'));
-      const target = id ? await db.user.findUnique({where: {id}, select: {id: true}}) : null;
+      const target = id ? await db.user.findUnique({where: {id}, select: {id: true, platformOwnerId: true}}) : null;
       if (!target) return c.json(problem('not_found', 'No such user.'), 404);
+      if (target.platformOwnerId && id !== c.var.viewer.id) return forbidden(c, OWNER_IS_MANAGED);
       if (id !== c.var.viewer.id && !canDelegate(await actorPermissions(c), await permissionsOfUser(db, target.id))) {
         return forbidden(c);
       }
@@ -362,6 +380,8 @@ export const adminRoutes = new Hono<Env>()
         select: {id: true},
       });
       await db.recoveryCode.deleteMany({where: {userId: target.id}});
+      const notified = await db.user.findUnique({where: {id: target.id}, select: {email: true}});
+      if (notified) sendEmail(c, {kind: 'two_factor_off', to: notified.email});
       await audit(db, {
         actorUserId: c.var.viewer.id,
         action: 'user_two_factor_disabled',
@@ -369,7 +389,7 @@ export const adminRoutes = new Hono<Env>()
         ipHash: await ipHashOf(c),
       });
       const row = await db.user.findUnique({where: {id: target.id}, select: userSelect});
-      return c.json({user: toAdminUser(row!)});
+      return c.json({user: toAdminUser(row!, await emailView(c))});
     }
   )
 

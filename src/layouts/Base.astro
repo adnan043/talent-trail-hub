@@ -13,7 +13,7 @@
  * (performance.md "Scripts with the ClientRouter"); the portal has no router, so
  * it is a full load. Only links to PRERENDERED pages carry `data-astro-prefetch` (fetched on hover;
  * the header nav as soon as it is on screen). Pages rendered per visit
- * (`/jobs/*`, `/dashboard`) answer `no-store`: a prefetch of them is thrown away.
+ * (`/jobs/<slug>/`, `/dashboard`) answer `no-store`: a prefetch of them is thrown away.
  *
  * Structured data (JSON-LD, src/lib/seo.ts): the home page gets `WebSite` +
  * `Organization`; a page passes its own in `jsonLd` (a post, a job).
@@ -58,6 +58,8 @@ interface Props {
    * a renamed site (`/site-api/site`) after load.
    */
   isStatic?: boolean;
+  /** A list page's JSON route (`/site-api/jobs`): the browser starts fetching it with the page, not after it. */
+  preloadData?: string;
   /** Keep the page out of search results (account pages, private pages). */
   noindex?: boolean;
   /** The page URL carries a secret (a reset or confirmation token): send no Referer. */
@@ -86,6 +88,7 @@ const {
   publishedAt,
   updatedAt,
   isStatic = false,
+  preloadData,
   noindex = false,
   secretInUrl = false,
   jsonLd,
@@ -127,6 +130,7 @@ const structured = indexable
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     {canonical && <link rel="canonical" href={canonical} />}
+    {preloadData && <link rel="preload" href={preloadData} as="fetch" crossorigin="anonymous" />}
     {noindex && <meta name="robots" content="noindex" />}
     {!noindex && noindexFollow && <meta name="robots" content="noindex,follow" />}
     {secretInUrl && <meta name="referrer" content="no-referrer" />}
@@ -291,6 +295,9 @@ const structured = indexable
       import {hydrateFooterLinks} from '../lib/footer-links';
       import {fillAccount} from '../lib/account-fill';
       import {showSavedCount} from '../lib/saved-count';
+      import {installPageProgress} from '../lib/page-progress';
+
+      installPageProgress();
 
       // Every button shows when it is busy (AGENTS.md "Buttons and forms").
       const busy = (button: HTMLButtonElement, label?: string) => {
