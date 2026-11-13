@@ -83,7 +83,13 @@ export const emailLogQuery = (filter: {status: '' | EmailLogStatus; to: string})
   infiniteQueryOptions({
     queryKey: ['manage', 'emails', filter],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({pageParam}) => read<EmailLogPage>(m.emails.$get({query: {...filter, before: pageParam ?? ''}})),
+    // An address filter is POSTed: an email address never goes in a URL.
+    queryFn: ({pageParam}) =>
+      read<EmailLogPage>(
+        filter.to
+          ? m.emails.search.$post({json: {...filter, before: pageParam ?? ''}})
+          : m.emails.$get({query: {status: filter.status, before: pageParam ?? ''}})
+      ),
     getNextPageParam: last => last.nextBefore ?? undefined,
   });
 

@@ -164,8 +164,7 @@ describe.skipIf(!DATABASE_URL)('board flow, Release 1 end to end (integration, r
     expect(all.status).toBe(200);
     expect((all.json.items as {email: string; job: {company: string}}[]).map(r => [r.email, r.job.company])).toEqual([['casey@example.test', 'Flow Robots']]);
     const again = await apply(visitor, slug, 'Casey@Example.test');
-    expect(again.status).toBe(409);
-    expect(again.json.error).toBe('already_applied');
+    expect(again.status).toBe(201);
     expect(await db.application.count()).toBe(1);
 
     // (5) Editing the live job sends it back to review; approval keeps its dates.

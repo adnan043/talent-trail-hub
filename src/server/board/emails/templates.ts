@@ -73,7 +73,9 @@ Still hiring? [Renew it]({{renewUrl}}).`,
   },
   'application-confirmation': {
     subject: 'Your application to {{companyName}}',
-    body: `Hi {{applicantName}},
+    // No {{applicantName}}: the address is typed by the visitor, so the text they typed never
+    // reaches someone else's inbox from the board's sender.
+    body: `Hi,
 
 Your application for **{{jobTitle}}** at {{companyName}} has been sent through {{boardName}}. The employer will contact you directly if they'd like to move forward.
 

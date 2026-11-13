@@ -240,10 +240,9 @@ export const applicationRoutes = new Hono()
       });
     } catch (err) {
       if (err instanceof ResumeTaken) return fieldError(c, 'resume', 'Upload your resume again.');
-      if ((err as {code?: string}).code === 'P2002') {
-        const message = 'You’ve already applied for this job with this email address.';
-        return c.json({...problem('already_applied', message), fields: {email: message}}, 409);
-      }
+      // Already applied with this address: the same answer as a new application, so nobody can
+      // learn whether a named person applied here. Nothing is stored or sent a second time.
+      if ((err as {code?: string}).code === 'P2002') return accepted(c);
       throw err;
     }
 

@@ -36,7 +36,7 @@ describe.skipIf(!DATABASE_URL)('board emails + slugs (integration, real Postgres
     await sendBoardEmail(db, REQ, {
       template: 'application-confirmation',
       to: 'cand@example.com',
-      vars: {applicantName: '<b>Ana</b>', jobTitle: 'Dev **x**', companyName: 'Acme\r\nBcc: x@y.z', jobUrl: '/jobs/dev/'},
+      vars: {applicantName: '<b>Ana</b>', jobTitle: 'Dev **x** <i>y</i>', companyName: 'Acme\r\nBcc: x@y.z', jobUrl: '/jobs/dev/'},
     });
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, init] = spy.mock.calls[0]!;
@@ -46,9 +46,10 @@ describe.skipIf(!DATABASE_URL)('board emails + slugs (integration, real Postgres
     expect(body.from).toBe('Board <jobs@example.com>');
     expect(body.to).toEqual(['cand@example.com']);
     expect(body.subject).toBe('Your application to Acme Bcc: x@y.z');
-    expect(body.html).toContain('&lt;b&gt;Ana&lt;/b&gt;');
-    expect(body.html).not.toContain('<b>Ana');
-    expect(body.html).toContain('<strong>Dev **x**</strong>');
+    // The visitor-typed name never reaches the (visitor-typed) address; other values are escaped.
+    expect(body.html).not.toContain('Ana');
+    expect(body.text).not.toContain('Ana');
+    expect(body.html).toContain('<strong>Dev **x** &lt;i&gt;y&lt;/i&gt;</strong>');
     expect(body.html).toContain('<a href="https://jobs.example.test/jobs/dev/">View the job</a>');
     expect(body.html).toContain('Talent Trail Hub'); // the board name from the settings
     expect(body.text).toContain('View the job (https://jobs.example.test/jobs/dev/)');

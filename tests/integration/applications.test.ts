@@ -109,14 +109,15 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     jobA = await makeJob(a.id, 'job-a');
   });
 
-  it('applies once per email: a second application is a friendly 409, counted once', async () => {
+  it('applies once per email: a second application answers like the first (no oracle), stored and emailed once', async () => {
     const guest = new Browser(app, '198.51.100.1');
     const first = await apply(guest, jobA.slug, 'Casey@Example.test');
     expect(first.status).toBe(201);
     const again = await apply(guest, jobA.slug, 'casey@example.test');
-    expect(again.status).toBe(409);
-    expect(again.json.error).toBe('already_applied');
-    expect((again.json.fields as Record<string, string>).email).toMatch(/already applied/);
+    // Same answer as a new application: nobody learns whether this address applied.
+    expect(again.status).toBe(first.status);
+    expect(again.json).toEqual(first.json);
+    expect(await db.emailLog.count({where: {templateKey: 'application-confirmation'}})).toBe(1);
     const job = await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {applicationCount: true}});
     expect(job.applicationCount).toBe(1);
     const row = await db.application.findFirstOrThrow({select: {email: true, resumeFileId: true, consentText: true}});

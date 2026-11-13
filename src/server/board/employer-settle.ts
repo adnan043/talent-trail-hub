@@ -24,6 +24,13 @@ const DAY_MS = 86_400_000;
 
 /** A paid order that cannot do what was bought: logged and in the activity log for the admin to refund. */
 export async function flagForRefund(db: PrismaClient, orderId: number, reason: string): Promise<void> {
+  // Once per order: a retried event or a reloaded thanks page must not add a second row (a
+  // second row reads as a second refund to make).
+  const flagged = await db.auditEvent.findFirst({
+    where: {targetType: 'listing_order', targetId: String(orderId), action: 'listing_order.refund_needed'},
+    select: {id: true},
+  });
+  if (flagged) return;
   console.error(`[payments] listing order ${orderId}: ${reason}; refund it in the platform dashboard`);
   await audit(db, {actorUserId: null, action: 'listing_order.refund_needed', target: ['listing_order', orderId], meta: {reason}});
 }

@@ -266,6 +266,9 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     await runHook(() => paymentHooks.onCheckoutPaid!(paidCheckout(old), eventInfo));
     expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {status: true}})).status).toBe('pending_payment');
     expect(await db.auditEvent.count({where: {action: 'listing_order.refund_needed'}})).toBe(1);
+    // A retried event (or a reloaded thanks page) flags it once, never twice.
+    await runHook(() => paymentHooks.onCheckoutPaid!(paidCheckout(old), eventInfo));
+    expect(await db.auditEvent.count({where: {action: 'listing_order.refund_needed'}})).toBe(1);
     await runHook(() => paymentHooks.onCheckoutPaid!(paidCheckout((second.json.checkout as {id: string}).id), eventInfo));
     expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {status: true}})).status).toBe('published');
   });
