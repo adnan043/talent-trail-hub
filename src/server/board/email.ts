@@ -2,7 +2,9 @@ import type {PrismaClient} from '../../generated/prisma/client';
 import {config} from '../../platform/config';
 import {absoluteLinks, renderEmail} from './emails/render';
 import {TEMPLATES} from './emails/templates';
-import {getBoardSettings, isSingleCompany} from './settings';
+import {cachedBoardSettings} from './brand';
+import {type BoardSettings, isSingleCompany} from './settings';
+import {errorLabel} from '../error-label';
 
 /**
  * The board's own emails (not the platform's account emails, which only cover sign-in).
@@ -72,7 +74,16 @@ async function deliver(apiKey: string, to: string, message: {subject: string; te
   return {status: 'failed', error: `The mail service answered ${res.status}${why}`};
 }
 
-export async function sendBoardEmail(db: PrismaClient, requestUrl: string, email: BoardEmail): Promise<void> {
+/**
+ * Sends one board email and logs it. `settings`: the board settings the caller already holds (the
+ * board's name, the single-company mode); without them, the cached copy (brand.ts), never a query.
+ */
+export async function sendBoardEmail(
+  db: PrismaClient,
+  requestUrl: string,
+  email: BoardEmail,
+  settings?: Pick<BoardSettings, 'name' | 'boardMode' | 'ownerCompanyId'>
+): Promise<void> {
   const to = String(email.to ?? '').trim().slice(0, 254);
   let outcome: Outcome;
   try {
@@ -84,10 +95,10 @@ export async function sendBoardEmail(db: PrismaClient, requestUrl: string, email
       if (!apiKey) outcome = {status: 'skipped', error: 'No mail service: add the RESEND_API_KEY secret.'};
       else {
         const given = email.vars ?? {};
-        const settings = await getBoardSettings(db);
-        const boardName = given.boardName || settings.name;
+        const board = settings ?? (await cachedBoardSettings(db));
+        const boardName = given.boardName || board.name;
         // The employer area is hidden on a single-company board: its links go to the home page.
-        const single = isSingleCompany(settings);
+        const single = isSingleCompany(board);
         const links = single
           ? Object.fromEntries(Object.entries(given).map(([k, v]) => [k, k.endsWith('Url') && v.startsWith('/dashboard/employer') ? '/' : v]))
           : given;
@@ -105,6 +116,6 @@ export async function sendBoardEmail(db: PrismaClient, requestUrl: string, email
       select: {id: true},
     });
   } catch (err) {
-    console.warn(`board email ${email.template}: the log row was not written (${(err as Error).message})`);
+    console.warn(`board email ${email.template}: the log row was not written (${errorLabel(err)})`);
   }
 }

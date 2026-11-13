@@ -29,7 +29,9 @@ import {
   usersQuery,
 } from './queries';
 import {ADMIN_NAV, adminRoutes} from './admin/routes';
+import {activityQuery, moderationQuery, overviewQuery} from './admin/queries';
 import {EMPLOYER_NAV, employerRoutes} from './employer/routes';
+import {myJobsQuery} from './employer/queries';
 import {useMe, useSite} from './shared';
 import {
   Avatar,
@@ -271,7 +273,7 @@ function Shell() {
       <aside className="app-sidebar" aria-label="Sidebar">
         <a className="app-brand" href="/">
           {logo ? (
-            <img className="app-brand-logo" src={logo} alt={name} />
+            <img className="app-brand-logo" src={logo} alt={name} width={200} height={36} />
           ) : (
             <>
               <span className="app-brand-mark">{initials(name) || '·'}</span>
@@ -367,12 +369,20 @@ const overviewRoute = createRoute({
   path: '/',
   staticData: {title: 'Overview'},
   loader: async ({context: {queryClient}}) => {
-    // The tiles the visitor may see, as the screen's `enabled` flags decide.
-    const [me] = await Promise.all([queryClient.ensureQueryData(meQuery).catch(() => null), warm(queryClient.ensureQueryData(healthQuery), queryClient.ensureQueryData(twoFactorQuery), queryClient.ensureQueryData(siteQuery))]);
+    // `me` first: the screen branches on it (screens/overview.tsx), so the loader does too.
+    const me = await queryClient.ensureQueryData(meQuery).catch(() => null);
     const can = me?.abilities;
+    // Board report readers see the admin dashboard (admin/Dashboard.tsx): only its two reads.
+    if (can?.readBoardReports) return warm(queryClient.ensureQueryData(overviewQuery), queryClient.ensureQueryData(activityQuery('30d')));
+    // Everyone else: the general overview's tiles, and the board panels it renders, as their `enabled` flags decide.
     await warm(
+      queryClient.ensureQueryData(healthQuery),
+      queryClient.ensureQueryData(twoFactorQuery),
+      queryClient.ensureQueryData(siteQuery),
       ...(can?.manageUsers ? [queryClient.ensureQueryData(firstUsersQuery)] : []),
-      ...(can?.readAudit ? [queryClient.ensureQueryData(firstAuditQuery)] : [])
+      ...(can?.readAudit ? [queryClient.ensureQueryData(firstAuditQuery)] : []),
+      ...(can?.moderateJobs ? [queryClient.ensureInfiniteQueryData(moderationQuery)] : []),
+      ...(me && !me.board.singleCompany ? [queryClient.ensureInfiniteQueryData(myJobsQuery)] : [])
     );
   },
   component: lazyRouteComponent(() => import('./screens/overview'), 'Overview'),

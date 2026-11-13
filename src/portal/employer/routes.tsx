@@ -22,7 +22,12 @@ const jobsRoute = createRoute({
   // `?checkout=pcs_…`: back from a payment (the screen confirms it).
   validateSearch: (search: Record<string, unknown>): {checkout?: string} =>
     typeof search.checkout === 'string' ? {checkout: search.checkout} : {},
-  loader: ({context: {queryClient}}: Ctx) => warm(queryClient.ensureInfiniteQueryData(myJobsQuery)),
+  loader: ({context: {queryClient}}: Ctx) => {
+    // The Renew dialog's tiers, fetched in the background (not awaited: the list never waits on it),
+    // so the dialog opens filled. `prefetchQuery` never throws and skips fresh data.
+    void queryClient.prefetchQuery(employerOptionsQuery);
+    return warm(queryClient.ensureInfiniteQueryData(myJobsQuery));
+  },
   component: lazyRouteComponent(() => import('./screens/jobs'), 'EmployerJobs'),
 });
 

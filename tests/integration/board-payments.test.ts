@@ -219,6 +219,17 @@ describe.skipIf(!DATABASE_URL)('board payments: the paid listing path (integrati
     expect(await db.order.count({where: {status: 'refunded'}})).toBe(2);
   });
 
+  it('(6b) a refund that arrives before the paid event: the job is never published', async () => {
+    await moderation('auto');
+    const {jobId, orderId, checkoutId} = await postPaid();
+    const refund = {checkoutId, amountCents: 9900, currency: 'USD', full: true, refundedAt: new Date().toISOString()};
+    expect((await deliver('payment.refunded', refund)).status).toBe(200);
+    expect(await db.listingOrder.findUniqueOrThrow({where: {id: orderId}, select: {status: true}})).toEqual({status: 'refunded'});
+    expect((await deliver('checkout.paid', pay(checkoutId))).status).toBe(200);
+    expect(await db.listingOrder.findUniqueOrThrow({where: {id: orderId}, select: {status: true}})).toEqual({status: 'refunded'});
+    expect((await jobOf(jobId)).status).toBe('pending_payment');
+  });
+
   it("(7) renewing a live job: a new paid checkout adds the new tier's days to the days left, reminder reset", async () => {
     await moderation('auto');
     const {jobId, checkoutId} = await postPaid();

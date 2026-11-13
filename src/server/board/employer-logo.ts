@@ -3,6 +3,7 @@ import {LIMITS} from '../../lib/board';
 import {SiteKeyMissing} from '../../platform/api';
 import {config} from '../../platform/config';
 import {completeUpload, createUpload, deleteFile, fileUrl, publicFileUrl} from '../../platform/files';
+import {errorLabel} from '../error-label';
 
 /**
  * A company logo (F17): PNG, JPEG or WebP up to 1 MB, a PUBLIC file (docs/agent/files.md). The
@@ -139,7 +140,7 @@ export async function dropLogoFile(requestUrl: string, fileId: string | null): P
   try {
     await deleteFile(requestUrl, fileId);
   } catch (err) {
-    console.warn(`company logo ${fileId} not deleted: ${(err as Error).message}`);
+    console.warn(`company logo ${fileId} not deleted: ${errorLabel(err)}`);
   }
 }
 

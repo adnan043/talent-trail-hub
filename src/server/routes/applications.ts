@@ -15,6 +15,7 @@ import {notifyNewApplication} from '../board/applicants';
 import {checkStoredResume} from '../board/applicants-resume';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
+import {after} from '../board/after';
 import {cachedBoardSettings} from '../board/brand';
 import {isSingleCompany} from '../board/settings';
 import {applicantRoutes} from './applications-manage';
@@ -246,7 +247,10 @@ export const applicationRoutes = new Hono()
       throw err;
     }
 
-    await notifyNewApplication(c, db, {job, candidate: {name: input.name, email: input.email}, boardName: settings.name, singleCompany: isSingleCompany(settings)});
+    // The candidate's confirmation and the employer's alert go AFTER the answer: the candidate
+    // never waits for the mail service, and a failed send never fails the application (it is logged).
+    const candidate = {name: input.name, email: input.email};
+    after(c, `apply emails for job ${job.id}`, () => notifyNewApplication(c, db, {job, candidate, boardName: settings.name, singleCompany: isSingleCompany(settings), settings}));
     return accepted(c);
   })
 
@@ -269,18 +273,27 @@ export const applicationRoutes = new Hono()
   .post('/jobs/:slug/click', withDb, async c => {
     const db = c.var.db;
     const slug = slugOf(c);
-    const ipHash = await ipHashOf(c);
-    if (!slug || !ipHash || (await overLimit(db, 'click', ipHash, CLICK_LIMIT))) return c.body(null, 204);
-    const settings = await cachedBoardSettings(db);
-    const job = await db.job.findFirst({
-      where: {...publicJobWhere(settings), slug, applyMethod: {in: ['url', 'email']}},
-      select: {id: true},
-    });
-    // Raw SQL so the counter leaves `updated_at` (the sitemap's lastmod) alone.
-    if (job) await db.$executeRaw`UPDATE "jobs" SET "apply_click_count" = "apply_click_count" + 1 WHERE "id" = ${job.id}`;
+    // Answered at once; counted after the answer (quietly capped per IP hash, never an error).
+    if (slug) after(c, 'apply click', () => countClick(c, db, slug));
     return c.body(null, 204);
   })
 
   .route('/', applicantRoutes);
 
 class ResumeTaken extends Error {}
+
+/** +1 apply click on a public url / email job, at most CLICK_LIMIT per IP hash an hour. */
+async function countClick(c: Context, db: Db, slug: string): Promise<void> {
+  const [ipHash, settings] = await Promise.all([ipHashOf(c), cachedBoardSettings(db)]);
+  if (!ipHash || (await overLimit(db, 'click', ipHash, CLICK_LIMIT))) return;
+  // ONE statement: `publicJobWhere` in SQL (published, unexpired, company not blocked, the
+  // single-company scope). Raw so the counter leaves `updated_at` (the sitemap's lastmod) alone.
+  const scope = isSingleCompany(settings) ? settings.ownerCompanyId : null;
+  await db.$executeRaw`
+    UPDATE "jobs" j SET "apply_click_count" = j."apply_click_count" + 1
+    FROM "companies" co
+    WHERE co."id" = j."company_id" AND co."is_blocked" = false
+      AND j."slug" = ${slug} AND j."status" = 'published' AND j."expires_at" > now()
+      AND j."apply_method" IN ('url', 'email')
+      AND (${scope}::int IS NULL OR j."company_id" = ${scope}::int)`;
+}

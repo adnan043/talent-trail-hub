@@ -4,6 +4,7 @@ import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
 import {readJobValues} from '../../lib/job-input';
+import {isDbId} from '../../lib/board';
 import type {EmployerOptions} from '../../lib/types-employer';
 import type {Viewer} from '../../lib/types';
 import {audit} from '../../platform/auth';
@@ -50,7 +51,7 @@ const postBody = validator('json', (value, c) => {
   const tierId = v.tierId === null || v.tierId === undefined || v.tierId === '' ? null : Number(v.tierId);
   const jobId = v.jobId === null || v.jobId === undefined ? null : Number(v.jobId);
   const gateway = typeof v.gateway === 'string' && v.gateway ? v.gateway : undefined;
-  if ((tierId !== null && !Number.isSafeInteger(tierId)) || (jobId !== null && !Number.isSafeInteger(jobId)) || (gateway && !/^[a-z0-9_-]{1,40}$/.test(gateway))) {
+  if ((tierId !== null && !isDbId(tierId)) || (jobId !== null && !isDbId(jobId)) || (gateway && !/^[a-z0-9_-]{1,40}$/.test(gateway))) {
     return c.json(problem('invalid_input', 'That request could not be read.'), 400);
   }
   return {job: readJobValues(v.job), company: v.company, tierId, jobId, gateway};

@@ -2,6 +2,7 @@ import type {PrismaClient} from '../../generated/prisma/client';
 import {PERMISSIONS} from '../permissions';
 import {sendBoardEmail} from './email';
 import {getBoardSettings} from './settings';
+import {errorLabel} from '../error-label';
 
 /** At most this many moderators get the email (a board has a handful of admins). */
 const MAX_REVIEWERS = 50;
@@ -52,6 +53,6 @@ export async function notifyReviewers(db: PrismaClient, requestUrl: string, jobI
     // In parallel: this runs inside the payment confirm and edit paths.
     await Promise.allSettled(emails.map(to => sendBoardEmail(db, requestUrl, {template: 'admin-job-review', to, vars})));
   } catch (err) {
-    console.error(`review alert for job ${jobId}: ${(err as Error).message}`);
+    console.error(`review alert for job ${jobId}: ${errorLabel(err)}`);
   }
 }

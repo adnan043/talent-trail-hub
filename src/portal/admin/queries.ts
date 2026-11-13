@@ -1,4 +1,4 @@
-import {infiniteQueryOptions, queryOptions} from '@tanstack/react-query';
+import {infiniteQueryOptions, type QueryClient, queryOptions} from '@tanstack/react-query';
 
 import type {
   ActivityRange,
@@ -113,3 +113,19 @@ export const jobFormOptionsQuery = queryOptions({
   queryFn: () => read<AdminJobFormOptions>(m.jobs['form-options'].$get()),
   staleTime: 5 * 60_000,
 });
+
+/**
+ * After an admin changes jobs: refresh only what shows them, never all of `['manage']`
+ * (tiers, settings, emails and the form options stay cached). The jobs list and job pages always;
+ * when a status changes (close, delete, list again, approve, reject, expiry), also the review
+ * queue and the dashboard's numbers (live jobs, waiting, revenue and refunds by day).
+ */
+export function invalidateAdminJobs(queryClient: QueryClient, {status}: {status: boolean}) {
+  return Promise.all([
+    queryClient.invalidateQueries({queryKey: ['manage', 'jobs', 'list']}),
+    queryClient.invalidateQueries({queryKey: ['manage', 'jobs', 'one']}),
+    ...(status
+      ? [queryClient.invalidateQueries({queryKey: ['manage', 'moderation']}), queryClient.invalidateQueries({queryKey: ['manage', 'overview']})]
+      : []),
+  ]);
+}

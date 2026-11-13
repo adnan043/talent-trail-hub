@@ -2,7 +2,7 @@ import {Hono} from 'hono';
 import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
-import {LIMITS} from '../../lib/board';
+import {LIMITS, isDbId} from '../../lib/board';
 import {readJobValues} from '../../lib/job-input';
 import type {EmployerReceipt} from '../../lib/types-employer';
 import type {Viewer} from '../../lib/types';
@@ -12,7 +12,10 @@ import {effectiveStatus, findOwnJob, isEditable, jobData, RENEWABLE, setJobTags,
 import {chooseTier, findOwnOrder, listOwnOrders, startListing, toOrderRow} from './employer-orders';
 import {submissionTarget} from './lifecycle';
 import {notifyReviewers} from './review';
+import {after} from './after';
 import {cachedBoardSettings} from './brand';
+import {forgetPublicLists} from './public-cache';
+import {getBoardSettings} from './settings';
 
 /**
  * The employer's jobs and orders: `/site-api/employer/jobs…`, `/site-api/employer/orders…`.
@@ -39,7 +42,7 @@ const page = validator('query', value => ({before: typeof value.before === 'stri
 /** The keyset cursor: an id, or undefined for the first page. */
 const cursor = (before: string) => {
   const n = Number(before);
-  return before && Number.isSafeInteger(n) && n > 0 ? n : undefined;
+  return before && isDbId(n) ? n : undefined;
 };
 
 const jobBody = validator('json', value => ({job: readJobValues((value as {job?: unknown} | null)?.job)}));
@@ -48,7 +51,7 @@ const renewBody = validator('json', (value, c) => {
   const v = (value ?? {}) as Record<string, unknown>;
   const tierId = v.tierId === null || v.tierId === undefined || v.tierId === '' ? null : Number(v.tierId);
   const gateway = typeof v.gateway === 'string' && v.gateway ? v.gateway : undefined;
-  if ((tierId !== null && !Number.isSafeInteger(tierId)) || (gateway && !/^[a-z0-9_-]{1,40}$/.test(gateway))) {
+  if ((tierId !== null && !isDbId(tierId)) || (gateway && !/^[a-z0-9_-]{1,40}$/.test(gateway))) {
     return c.json(problem('invalid_input', 'That request could not be read.'), 400);
   }
   return {tierId, gateway};
@@ -85,24 +88,32 @@ export const employerJobRoutes = new Hono<Env>()
     // the job is (again) live: `needs_review` (cleared by an approval, or here when the board
     // publishes without review). A live job leaves the board for review now; one that is down
     // is reviewed when it is renewed (src/server/board/employer-settle.ts). Its dates stay.
-    const target = await submissionTarget(db, company.id);
-    const content = {...jobData(checked.columns, checked.html, settings.currency), needsReview: !(target === 'published' && status === 'published')};
-    // ONE transaction: the public never sees unapproved text on a live job. When the board
-    // reviews, the new content and `pending_review` land in the same write (conditional, so two
-    // saves at once move it, and alert the reviewers, once).
+    const target = await submissionTarget(db, company.id, settings);
+    const base = jobData(checked.columns, checked.html, settings.currency);
+    // ONE transaction, the job row LOCKED and its status read again under the lock: an approval,
+    // a renewal or a payment that lands while this request runs is either fully before this write
+    // (seen here) or waits for it (and sees `needs_review`). So unapproved text never goes live.
+    // When the board reviews, the new content and `pending_review` land in the same write.
     const reReview = await db.$transaction(async tx => {
       const t = tx as unknown as PrismaClient;
-      let moved = false;
-      if (status === 'published' && target === 'pending_review') {
-        moved = (await t.job.updateMany({where: {id: job.id, status: 'published'}, data: {...content, status: 'pending_review'}})).count === 1;
-      }
-      if (!moved) await t.job.update({where: {id: job.id}, data: content, select: {id: true}});
+      await t.$queryRaw`SELECT "id" FROM "jobs" WHERE "id" = ${job.id} FOR UPDATE`;
+      const row = await t.job.findUniqueOrThrow({where: {id: job.id}, select: {status: true, expiresAt: true}});
+      const current = effectiveStatus(row);
+      if (!isEditable(current)) return null;
+      const content = {...base, needsReview: !(target === 'published' && current === 'published')};
+      const moved = current === 'published' && target === 'pending_review';
+      await t.job.update({where: {id: job.id}, data: moved ? {...content, status: 'pending_review'} : content, select: {id: true}});
       await setJobTags(t, job.id, checked.columns.tags);
       return moved;
     });
+    if (reReview === null) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
+    // It left the board (re-review) or its live text changed: its company's count and the public
+    // lists now; the reviewers' email after the answer (the employer never waits for the mail service).
+    if (reReview) await refreshActiveJobCount(db, company.id);
+    if (status === 'published') await forgetPublicLists();
     if (reReview) {
-      await refreshActiveJobCount(db, company.id);
-      await notifyReviewers(db, c.req.url, job.id);
+      const requestUrl = c.req.url;
+      after(c, `review alert for job ${job.id}`, () => notifyReviewers(db, requestUrl, job.id));
     }
     const saved = await findOwnJob(db, company.id, job.id);
     return c.json({job: toJobDetail(saved!), reReview});
@@ -119,6 +130,7 @@ export const employerJobRoutes = new Hono<Env>()
     });
     if (!count) return c.json(problem('not_closable', 'Only live or in-review jobs can be closed.'), 409);
     await refreshActiveJobCount(db, company.id);
+    await forgetPublicLists();
     return c.json({ok: true});
   })
 
@@ -132,7 +144,8 @@ export const employerJobRoutes = new Hono<Env>()
     // A job that was never approved (closed while in review) cannot be renewed onto the board.
     if (!job.publishedAt) return c.json(problem('not_renewable', 'This job was never live, so it cannot be renewed. Post it again instead.'), 409);
     const input = c.req.valid('json');
-    const chosen = await chooseTier(db, await cachedBoardSettings(db), input.tierId);
+    // What is charged (free posting on or off) comes from the database, never the cache.
+    const chosen = await chooseTier(db, await getBoardSettings(db), input.tierId);
     if ('field' in chosen) return c.json({...problem('invalid_input', chosen.field), fields: {tierId: chosen.field}}, 422);
     if ('unavailable' in chosen) return c.json(problem(chosen.status === 409 ? 'tier_not_priced' : 'posting_unavailable', chosen.unavailable), chosen.status);
     // An earlier renewal checkout for this job is superseded (`failed`): only the newest one may

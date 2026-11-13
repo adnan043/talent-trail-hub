@@ -2,32 +2,40 @@ import type {PrismaClient} from '../../generated/prisma/client';
 import type {FontPreset} from '../../lib/board';
 import {contrast, luminance, mix, toRgb} from '../../lib/colour';
 import {sidebarTokens} from '../../lib/sidebar-colours';
+import {cache} from '../../platform/cache';
+import {forgetPublicLists} from './public-cache';
 import {type BoardSettings, getBoardSettings} from './settings';
 
 export {contrast};
 
 /**
- * Runtime branding (F30): the board settings read through a short per-isolate cache (public data,
- * one entry), and the stylesheet built from them (`GET /site-api/board/brand.css`, linked by the
- * layouts). The CSP blocks inline style attributes, so the brand is a real stylesheet.
+ * Runtime branding (F30): the board settings read through the Site Cache (public data, the same
+ * for every visitor, one key), and the stylesheet built from them (`GET /site-api/board/brand.css`,
+ * linked by the layouts). The CSP blocks inline style attributes, so the brand is a real stylesheet.
  */
 
-const TTL_MS = 15_000;
-let cached: {at: number; value: BoardSettings} | null = null;
+const DAY = 86_400;
 
-/** The board settings, at most 15 s old. A settings save shows within that time. */
-export async function cachedBoardSettings(db: PrismaClient): Promise<BoardSettings> {
-  const now = Date.now();
-  if (cached && now - cached.at < TTL_MS) return cached.value;
-  const value = await getBoardSettings(db);
-  cached = {at: now, value};
-  return value;
+/** The Site Cache key of the board settings (docs/agent/cache.md). */
+export const BOARD_SETTINGS_KEY = 'board:settings';
+/**
+ * The board settings for SHOWING and routing (name, brand, mode, moderation): kept 7 days in the
+ * Site Cache, cleared by every write to `board_settings` (`forgetBoardSettings`). A route that
+ * CHARGES (free posting, the currency of an order) reads `getBoardSettings` instead.
+ * The value has no dates (JSON-safe as it is).
+ */
+export function cachedBoardSettings(db: PrismaClient): Promise<BoardSettings> {
+  return cache.getOrSet(BOARD_SETTINGS_KEY, 7 * DAY, () => getBoardSettings(db));
 }
 
-/** Drops the cache (after a settings save in this isolate). */
-export const forgetBoardSettings = () => {
-  cached = null;
-};
+/**
+ * Clears the cached settings and the public reads built from them, for every Worker instance. Call
+ * (and await) it right after ANY write to `board_settings` succeeds, outside the transaction.
+ */
+export async function forgetBoardSettings(): Promise<void> {
+  // The public lists are built with the settings (single-company scope, currency): they go too.
+  await Promise.all([cache.del(BOARD_SETTINGS_KEY), forgetPublicLists()]);
+}
 
 export const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value);
 

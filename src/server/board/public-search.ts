@@ -1,5 +1,5 @@
 import type {Prisma, PrismaClient} from '../../generated/prisma/client';
-import {LIMITS, type SalaryPeriod} from '../../lib/board';
+import {DB_INT_MAX, LIMITS, type SalaryPeriod} from '../../lib/board';
 import {countryCodesMatching} from '../../lib/job-display';
 import {type JobSearch, POSTED_WITHIN} from '../../lib/job-search';
 import type {BoardSettings} from './settings';
@@ -20,17 +20,15 @@ const PIN_CANDIDATES = 200;
 /** Paid periods per year, to compare any salary with a yearly minimum. */
 export const PERIODS_PER_YEAR: Record<SalaryPeriod, number> = {YEAR: 1, MONTH: 12, WEEK: 52, DAY: 260, HOUR: 2080};
 
-/** Every keyword term matches the title, the company, a tag or the description. */
+/**
+ * Every keyword term matches the title, the company, a tag or the description: all four are in
+ * `jobs.search_text` (kept by database triggers on every write, migration perf_indexes), so each
+ * term is ONE `ILIKE` the trigram GIN index answers, instead of an OR across four tables that
+ * reads every live job.
+ */
 function keywordWhere(q: string): Prisma.JobWhereInput[] {
   const terms = [...new Set(q.toLowerCase().split(' ').filter(Boolean))].slice(0, MAX_TERMS);
-  return terms.map(term => ({
-    OR: [
-      {title: insensitive(term)},
-      {company: {name: insensitive(term)}},
-      {tags: {some: {tag: {name: insensitive(term)}}}},
-      {descriptionMd: insensitive(term)},
-    ],
-  }));
+  return terms.map(term => ({searchText: insensitive(term)}));
 }
 
 function locationWhere(location: string): Prisma.JobWhereInput {
@@ -100,16 +98,21 @@ export function cursorHour(cursor: string): number | null {
 
 /** The rows after the cursor in that sort's order; null when the cursor is not valid. */
 export function cursorWhere(sort: JobSearch['sort'], cursor: string): Prisma.JobWhereInput | null {
-  const m = /^([ns])(\d+|x)_(\d+)(?:_h\d{1,9})?$/.exec(cursor);
+  // Bounded digits: an id or cents past int4, or a time past year 9999, would make the query
+  // throw (a 500 anyone can cause); such a cursor is simply not valid.
+  const m = /^([ns])(\d{1,15}|x)_(\d{1,10})(?:_h\d{1,9})?$/.exec(cursor);
   if (!m || (m[1] === 'n') !== (sort === 'newest')) return null;
   const id = Number(m[3]);
+  if (id > DB_INT_MAX) return null;
   if (m[1] === 'n') {
     if (m[2] === 'x') return null;
     const at = new Date(Number(m[2]));
+    if (Number.isNaN(at.getTime()) || at.getUTCFullYear() > 9999) return null;
     return {OR: [{publishedAt: {lt: at}}, {publishedAt: at, id: {lt: id}}]};
   }
   if (m[2] === 'x') return {salaryMaxCents: null, id: {lt: id}};
   const cents = Number(m[2]);
+  if (cents > DB_INT_MAX) return null;
   return {OR: [{salaryMaxCents: {lt: cents}}, {salaryMaxCents: cents, id: {lt: id}}, {salaryMaxCents: null}]};
 }
 
@@ -144,6 +147,26 @@ export async function pinnedIds(db: PrismaClient, where: Prisma.JobWhereInput, n
 
 /** Featured jobs counted up to this many; more reads "100+" (never an unbounded count). */
 export const FEATURED_COUNT_CAP = 100;
+
+/**
+ * The pinned ids AND the board's featured count in ONE read, for an unfiltered page 1 (the home
+ * page, /jobs with no filter), where `pinnedIds(db, publicJobWhere(…))` and `featuredCount` would
+ * read the same rows. With any filter, call both.
+ */
+export async function featuredPinsAndCount(
+  db: PrismaClient,
+  settings: BoardSettings,
+  now: Date,
+  seedAt: Date = now
+): Promise<{pinned: number[]; count: number}> {
+  const rows = await db.job.findMany({
+    where: {AND: [publicJobWhere(settings, now), featuredWhere(now)]},
+    orderBy: {id: 'asc'},
+    take: PIN_CANDIDATES,
+    select: {id: true},
+  });
+  return {pinned: pickPinned(rows.map(r => r.id), seedAt), count: Math.min(rows.length, FEATURED_COUNT_CAP)};
+}
 
 /** Featured jobs on the whole board, capped (one small bounded read of ids). */
 export async function featuredCount(db: PrismaClient, settings: BoardSettings, now: Date): Promise<number> {

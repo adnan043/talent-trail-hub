@@ -1,4 +1,4 @@
-import {useInfiniteQuery, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
+import {keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {Link, useNavigate, useSearch} from '@tanstack/react-router';
 import {type FormEvent, useState} from 'react';
 
@@ -30,7 +30,7 @@ import {
   useToast,
 } from '../../ui';
 import {day, JOB_STATUS_TONES, jobStatusLabel, SOURCE_LABELS} from '../format';
-import {adminJobsQuery, jobFormOptionsQuery, NO_JOB_FILTERS} from '../queries';
+import {adminJobsQuery, invalidateAdminJobs, jobFormOptionsQuery, NO_JOB_FILTERS} from '../queries';
 
 const days = (max: number) => [rules.required('Enter a number of days.'), rules.wholeNumber(), (v: string) => (Number(v) >= 1 && Number(v) <= max ? null : `Pick 1 to ${max} days.`)];
 
@@ -47,9 +47,11 @@ export function Jobs() {
   const [q, setQ] = useState(filters.q);
   const categories = useQuery(jobFormOptionsQuery).data?.categories ?? [];
   const [asking, setAsking] = useState<{job: AdminJobRow; kind: 'feature' | 'extend'} | null>(null);
-  const jobs = useInfiniteQuery(adminJobsQuery(filters));
+  // The last list stays on screen while a new filter loads (no flash of the empty skeleton).
+  const jobs = useInfiniteQuery({...adminJobsQuery(filters), placeholderData: keepPreviousData});
   const rows = jobs.data?.pages.flatMap(page => page.jobs);
-  const refresh = () => queryClient.invalidateQueries({queryKey: ['manage']});
+  // Featuring changes only the job; anything else changes its status too (queue, dashboard numbers).
+  const refresh = (status: boolean) => invalidateAdminJobs(queryClient, {status});
 
   const act = useMutation({
     mutationFn: async ({job, action}: {job: AdminJobRow; action: 'unfeature' | 'close' | 'delete'}) => {
@@ -58,13 +60,17 @@ export function Jobs() {
       if (action === 'close') return read(api.manage.jobs[':id'].close.$post({param}));
       return read(api.manage.jobs[':id'].$delete({param}));
     },
-    onSuccess: refresh,
+    onSuccess: (_, {action}) => {
+      void refresh(action !== 'unfeature');
+      // A deleted job takes its applications with it.
+      if (action === 'delete') void queryClient.invalidateQueries({queryKey: ['applicants']});
+    },
   });
   const expiry = useMutation({
     mutationFn: () => read<TaskRun>(api.manage.jobs['run-expiry'].$post()),
     onSuccess: result => {
       toast.success(result.message);
-      void refresh();
+      void refresh(true);
     },
     onError: err => toast.danger(err.message),
   });
@@ -184,7 +190,7 @@ export function Jobs() {
       </Card>
       {jobs.error && rows?.length ? <ErrorNote error={jobs.error} /> : null}
       <LoadMore query={jobs} />
-      {asking && <DaysDialog key={asking.job.id} {...asking} onClose={() => setAsking(null)} onDone={message => { setAsking(null); toast.success(message); void refresh(); }} />}
+      {asking && <DaysDialog key={asking.job.id} {...asking} onClose={() => setAsking(null)} onDone={message => { setAsking(null); toast.success(message); void refresh(asking.kind === 'extend'); }} />}
     </div>
   );
 }

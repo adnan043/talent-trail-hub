@@ -8,6 +8,7 @@ import {deleteFile} from '../../platform/files';
 import {problem} from '../../platform/guards';
 import type {Viewer} from '../../platform/types';
 import {ipHashOf} from './ip';
+import {errorLabel} from '../error-label';
 
 /** Small pieces every admin route shares (workstream D). */
 
@@ -53,10 +54,15 @@ export const originOf = (requestUrl: string) => new URL(requestUrl).origin;
  */
 export async function refreshActiveJobCount(db: PrismaClient, companyId: number, now = new Date()): Promise<void> {
   try {
-    const live = await db.job.count({where: {companyId, status: 'published', expiresAt: {gt: now}}});
-    await db.company.update({where: {id: companyId}, data: {activeJobCount: live}, select: {id: true}});
+    // ONE statement, the same as the employer side's (employer.ts) and the expiry task's (tasks.ts).
+    await db.$executeRaw`
+      UPDATE "companies" c SET "active_job_count" = (
+        SELECT count(*)::int FROM "jobs" j
+        WHERE j."company_id" = c."id" AND j."status" = 'published' AND j."expires_at" > ${now}
+      ), "updated_at" = now()
+      WHERE c."id" = ${companyId}`;
   } catch (err) {
-    console.warn(`active job count for company ${companyId}: ${(err as Error).message}`);
+    console.warn(`active job count for company ${companyId}: ${errorLabel(err)}`);
   }
 }
 

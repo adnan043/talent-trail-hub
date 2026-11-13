@@ -44,7 +44,7 @@ export function EmployerReceipt() {
       <article className="receipt-sheet">
         <header className="receipt-head">
           <div className="receipt-brand">
-            <span className="receipt-logo">{logo ? <img src={logo} alt="" /> : initials(r.boardName) || '·'}</span>
+            <span className="receipt-logo">{logo ? <img src={logo} alt="" width={52} height={52} decoding="async" /> : initials(r.boardName) || '·'}</span>
             <div>
               <p className="receipt-brand-name">{r.boardName}</p>
               <p className="receipt-meta">Payment receipt</p>

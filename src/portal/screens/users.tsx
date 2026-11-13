@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -62,7 +63,8 @@ export function Users() {
   );
   const [editing, setEditing] = useState<AdminUser | null>(null);
 
-  const users = useInfiniteQuery(usersQuery(filter));
+  // The last list stays on screen while a new filter loads (no flash of the empty skeleton).
+  const users = useInfiniteQuery({ ...usersQuery(filter), placeholderData: keepPreviousData });
   // Role names for the badges; only people who may see roles can read them.
   const roles = useQuery({
     ...rolesQuery,

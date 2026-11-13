@@ -5,6 +5,7 @@ import {jsonLdText} from '../src/lib/seo';
 import type {PublicJobDetail} from '../src/lib/types-public';
 import {accentTokens, contrast} from '../src/server/board/brand';
 import {cursorHour, cursorWhere, encodeCursor, pickPinned} from '../src/server/board/public-search';
+import {safeUrl} from '../src/server/board/public-shapes';
 
 // SPEC "Required tests": JobPosting JSON-LD for an on-site job, a remote job, no salary, expired.
 
@@ -113,6 +114,19 @@ describe('featured pin rotation', () => {
   });
 });
 
+describe('safeUrl', () => {
+  it('keeps https, local logos and platform files; drops everything else', () => {
+    expect(safeUrl('https://a.example/x.png')).toBe('https://a.example/x.png');
+    expect(safeUrl('/site-api/board/logo?v=1')).toBe('/site-api/board/logo?v=1');
+    const file = `/__platform/files/file_${'a'.repeat(26)}/logo%20(1).png`;
+    expect(safeUrl(file)).toBe(file);
+    expect(safeUrl('/__platform/files/file_x/a.png')).toBeNull();
+    expect(safeUrl(`/__platform/files/file_${'a'.repeat(26)}/a"onerror=x`)).toBeNull();
+    expect(safeUrl('javascript:alert(1)')).toBeNull();
+    expect(safeUrl('//evil.example/x.png')).toBeNull();
+  });
+});
+
 describe('keyset cursor', () => {
   it('round-trips and refuses a cursor of the other sort', () => {
     const cursor = encodeCursor('newest', {id: 7, publishedAt: new Date(1_700_000_000_000), salaryMaxCents: null}, 472222);
@@ -120,6 +134,14 @@ describe('keyset cursor', () => {
     expect(cursorWhere('newest', cursor)).not.toBeNull();
     expect(cursorWhere('salary', cursor)).toBeNull();
     expect(cursorWhere('newest', 'n1_2;drop')).toBeNull();
+  });
+
+  it('refuses cursors whose numbers the database cannot hold (no 500)', () => {
+    expect(cursorWhere('newest', 'n99999999999999999_1')).toBeNull();
+    expect(cursorWhere('newest', 'n1_99999999999')).toBeNull();
+    expect(cursorWhere('salary', 's1_99999999999')).toBeNull();
+    expect(cursorWhere('salary', 's3000000000_1')).toBeNull();
+    expect(cursorWhere('salary', 's500000_42')).not.toBeNull();
   });
 });
 

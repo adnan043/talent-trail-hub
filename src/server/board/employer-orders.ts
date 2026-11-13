@@ -1,5 +1,5 @@
 import type {PrismaClient} from '../../generated/prisma/client';
-import {LIMITS} from '../../lib/board';
+import {LIMITS, isDbId} from '../../lib/board';
 import type {EmployerOrderRow, ListingAnswer, TierOption} from '../../lib/types-employer';
 import type {Viewer} from '../../lib/types';
 import {SiteKeyMissing} from '../../platform/api';
@@ -217,6 +217,6 @@ export async function listOwnOrders(db: PrismaClient, companyId: number, before:
 }
 
 export async function findOwnOrder(db: PrismaClient, companyId: number, id: number) {
-  if (!Number.isSafeInteger(id) || id < 1) return null;
+  if (!isDbId(id)) return null;
   return db.listingOrder.findFirst({where: {id, companyId, status: {in: ['paid', 'refunded']}}, select: {...orderSelect, userId: true}});
 }

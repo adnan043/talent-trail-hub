@@ -1,13 +1,17 @@
-import {Hono} from 'hono';
+import {type Context, Hono} from 'hono';
 import {validator} from 'hono/validator';
 
+import {Prisma, type PrismaClient} from '../../generated/prisma/client';
 import {LIMITS} from '../../lib/board';
 import {parseJobSearch, toApiQuery} from '../../lib/job-search';
 import type {JobDetailResponse, JobsPage, SitemapResponse} from '../../lib/types-public';
+import {cache} from '../../platform/cache';
 import {problem, withDb} from '../../platform/guards';
+import {after} from '../board/after';
 import {cachedBoardSettings} from '../board/brand';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
+import {SITEMAP_KEY} from '../board/public-cache';
 import {cursorHour, cursorWhere, encodeCursor, featuredCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
 import {jobDetailSelect, jobSummarySelect, toJobDetail, toJobSummary} from '../board/public-shapes';
 import {isSingleCompany} from '../board/settings';
@@ -29,6 +33,8 @@ const MORE_AT_COMPANY = 5;
 const MAX_SAVED = 100;
 const SITEMAP_JOBS = 5000;
 const SITEMAP_COMPANIES = 1000;
+/** The sitemap is public and crawlers tolerate an hour: time-based (also cleared on job and settings changes). */
+const SITEMAP_TTL = 3600;
 
 const sha256Hex = async (text: string) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -104,23 +110,26 @@ export const jobRoutes = new Hono()
 
   .get('/sitemap', withDb, async c => {
     const db = c.var.db;
-    const now = new Date();
     const settings = await cachedBoardSettings(db);
-    const open = publicJobWhere(settings, now);
-    const marketplace = !isSingleCompany(settings);
-    const [jobs, companies] = await Promise.all([
-      db.job.findMany({where: open, orderBy: NEWEST, take: SITEMAP_JOBS, select: {slug: true, updatedAt: true}}),
-      marketplace
-        ? db.company.findMany({
-            where: {isBlocked: false, jobs: {some: open}},
-            orderBy: {id: 'desc'},
-            take: SITEMAP_COMPANIES,
-            select: {slug: true, updatedAt: true},
-          })
-        : [],
-    ]);
-    const iso = (rows: {slug: string; updatedAt: Date}[]) => rows.map(r => ({slug: r.slug, updatedAt: r.updatedAt.toISOString()}));
-    const body: SitemapResponse = {jobs: iso(jobs), companies: iso(companies), marketplace};
+    // Dates are cached as the ISO strings the answer carries (JSON-safe). A board too big for one
+    // cache value (256 KB) is simply not stored: every request reads the database, as before.
+    const body = await cache.getOrSet(SITEMAP_KEY, SITEMAP_TTL, async (): Promise<SitemapResponse> => {
+      const open = publicJobWhere(settings, new Date());
+      const marketplace = !isSingleCompany(settings);
+      const [jobs, companies] = await Promise.all([
+        db.job.findMany({where: open, orderBy: NEWEST, take: SITEMAP_JOBS, select: {slug: true, updatedAt: true}}),
+        marketplace
+          ? db.company.findMany({
+              where: {isBlocked: false, jobs: {some: open}},
+              orderBy: {id: 'desc'},
+              take: SITEMAP_COMPANIES,
+              select: {slug: true, updatedAt: true},
+            })
+          : [],
+      ]);
+      const iso = (rows: {slug: string; updatedAt: Date}[]) => rows.map(r => ({slug: r.slug, updatedAt: r.updatedAt.toISOString()}));
+      return {jobs: iso(jobs), companies: iso(companies), marketplace};
+    });
     c.header('Cache-Control', 'public, max-age=3600');
     return c.json(body);
   })
@@ -168,40 +177,46 @@ export const jobRoutes = new Hono()
 
   .post('/:slug/view', slugParam, withDb, async c => {
     const db = c.var.db;
-    const now = new Date();
     const {slug} = c.req.valid('param');
-    // At most one counted view per visitor (keyed IP hash) and job a day: the attempt row's key is
-    // the SHA-256 of the IP hash and the slug. A quick indexed lookup (in parallel with the settings)
-    // skips the usual repeat; the atomic insert below decides.
-    const ipHash = await ipHashOf(c);
-    const key = ipHash ? await sha256Hex(`${ipHash}:job:${slug}`) : null;
-    const [settings, seen] = await Promise.all([
-      cachedBoardSettings(db),
-      key
-        ? db.boardAttempt.findFirst({where: {kind: 'view', ipHash: key, createdAt: {gt: new Date(now.getTime() - 86_400_000)}}, select: {id: true}})
-        : null,
-    ]);
-    if (seen) return c.json({ok: true});
-    const job = await db.job.findFirst({where: {...publicJobWhere(settings, now), slug}, select: {id: true}});
-    if (!job) return c.json({ok: true});
-    if (key) {
-      // Record the (visitor, job, day) attempt FIRST, atomically: under a transaction-scoped
-      // advisory lock on the key, insert only when none exists today. A parallel burst inserts
-      // (and so counts) once.
-      const since = new Date(now.getTime() - 86_400_000);
-      // A view is a vanity metric: a failed or contended attempt is simply not counted.
-      const inserted = await db
-        .$transaction([
-          db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`,
-          db.$executeRaw`INSERT INTO board_attempts (kind, ip_hash, created_at)
-            SELECT 'view', ${key}, now()
-            WHERE NOT EXISTS (SELECT 1 FROM board_attempts WHERE kind = 'view' AND ip_hash = ${key} AND created_at > ${since})`,
-        ])
-        .then(([, count]) => count)
-        .catch(() => 0);
-      if (inserted !== 1) return c.json({ok: true});
-    }
-    // Raw by id, NOT updateMany: Prisma's @updatedAt would move `updated_at` (the sitemap's lastmod).
-    await db.$executeRaw`UPDATE jobs SET view_count = view_count + 1 WHERE id = ${job.id}`;
+    // Answered at once; the count runs after the answer (a vanity metric: a failed or contended
+    // attempt is simply not counted).
+    after(c, 'job view', () => countView(c, db, slug));
     return c.json({ok: true});
   });
+
+/**
+ * +1 view, at most once per visitor (keyed IP hash) and job a day: the attempt row's key is the
+ * SHA-256 of the IP hash and the slug. ONE short transaction (one batch): a transaction-scoped
+ * advisory lock on the key, then ONE statement that records the attempt only when none exists
+ * today AND the job is public, and bumps the counter only when it did. A parallel burst counts once.
+ * Raw SQL, not updateMany: Prisma's @updatedAt would move `updated_at` (the sitemap's lastmod).
+ */
+async function countView(c: Context, db: PrismaClient, slug: string): Promise<void> {
+  const [ipHash, settings] = await Promise.all([ipHashOf(c), cachedBoardSettings(db)]);
+  const key = ipHash ? await sha256Hex(`${ipHash}:job:${slug}`) : null;
+  // `publicJobWhere` in SQL: published, unexpired, company not blocked, the single-company scope.
+  const scope = isSingleCompany(settings) ? settings.ownerCompanyId : null;
+  const job = Prisma.sql`
+    SELECT j."id" FROM "jobs" j JOIN "companies" co ON co."id" = j."company_id"
+    WHERE j."slug" = ${slug} AND j."status" = 'published' AND j."expires_at" > now() AND co."is_blocked" = false
+      AND (${scope}::int IS NULL OR j."company_id" = ${scope}::int)`;
+  if (!key) {
+    // No secret to key visitors by (local only): count without the daily check.
+    await db.$executeRaw`UPDATE "jobs" SET "view_count" = "view_count" + 1 WHERE "id" = (${job})`;
+    return;
+  }
+  const since = new Date(Date.now() - 86_400_000);
+  await db.$transaction([
+    db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`,
+    db.$executeRaw`
+      WITH job AS (${job}),
+      seen AS (
+        INSERT INTO "board_attempts" ("kind", "ip_hash", "created_at")
+        SELECT 'view', ${key}, now() FROM job
+        WHERE NOT EXISTS (SELECT 1 FROM "board_attempts" WHERE "kind" = 'view' AND "ip_hash" = ${key} AND "created_at" > ${since})
+        RETURNING 1
+      )
+      UPDATE "jobs" SET "view_count" = "view_count" + 1
+      WHERE "id" = (SELECT "id" FROM job) AND EXISTS (SELECT 1 FROM seen)`,
+  ]);
+}

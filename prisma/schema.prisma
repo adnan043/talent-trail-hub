@@ -479,6 +479,8 @@ model Company {
   ownerOfBoards BoardSettings[] @relation("BoardOwnerCompany")
 
   @@index([isBlocked, name, id])
+  /// The companies directory and "Hiring now": most open jobs first (keyset `<count>.<id>`).
+  @@index([isBlocked, activeJobCount(sort: Desc), id])
   @@map("companies")
 }
 
@@ -554,6 +556,9 @@ model Job {
   /// The user (`users.id`) who created it. No foreign key: a job outlives its poster.
   createdBy          Int?      @map("created_by")
   isSeed             Boolean   @default(false) @map("is_seed")
+  /// Keyword search: title, company name, tags and description, lower-cased. Kept by database
+  /// triggers (migration 20261113090000_perf_indexes) on every write; code never writes it.
+  searchText         String    @default("") @map("search_text") @db.Text
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -577,6 +582,15 @@ model Job {
   @@index([companyId, id(sort: Desc)])
   @@index([status, expiresAt])
   @@index([tierId])
+  /// `/jobs?sort=salary` (the SQL index is `salary_max_cents DESC NULLS LAST`, matching the order).
+  @@index([status, salaryMaxCents(sort: Desc), id(sort: Desc)])
+  /// The moderation queue (pending_review, flagged first, then oldest id).
+  @@index([status, flagged(sort: Desc), id])
+  /// Keyword and location search (ILIKE '%term%'): trigram GIN (pg_trgm). Also in SQL only:
+  /// `jobs_with_applications_idx` (id DESC WHERE application_count > 0), a partial index.
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_search_text_trgm_idx")
+  @@index([locationCity(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_location_city_trgm_idx")
+  @@index([locationRegion(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_location_region_trgm_idx")
   @@map("jobs")
 }
 
@@ -745,6 +759,8 @@ model EmailLog {
 
   @@index([status, id(sort: Desc)])
   @@index([to, id(sort: Desc)])
+  /// The purge job's retention sweep.
+  @@index([createdAt])
   @@map("email_logs")
 }
 

@@ -8,7 +8,7 @@ import {EMPLOYER_JOB_NOTE} from '../../../lib/types-manage';
 import {api, ApiError, read} from '../../api';
 import {JobForm} from '../../board/JobForm';
 import {buttonClass, Card, EmptyState, ErrorNote, Field, LoadingBlock, Notice, PageHeader, rules, Select, useForm, useToast} from '../../ui';
-import {adminJobQuery, companiesQuery, jobFormOptionsQuery} from '../queries';
+import {adminJobQuery, companiesQuery, invalidateAdminJobs, jobFormOptionsQuery} from '../queries';
 
 const fieldsOf = (err: unknown) => (err instanceof ApiError ? err.fields : undefined);
 const statusOf = (err: unknown) => (err && !(err instanceof ApiError && Object.keys(err.fields).length) ? <ErrorNote error={err as Error} /> : null);
@@ -39,7 +39,10 @@ export function NewAdminJob() {
     },
     onSuccess: job => {
       toast.success('The job is live.');
-      void queryClient.invalidateQueries({queryKey: ['manage']});
+      // Live at once: the jobs list, the dashboard's numbers, and the company picker (a new company).
+      void queryClient.invalidateQueries({queryKey: ['manage', 'jobs', 'list']});
+      void queryClient.invalidateQueries({queryKey: ['manage', 'overview']});
+      void queryClient.invalidateQueries({queryKey: ['manage', 'companies']});
       void navigate({to: '/manage/jobs/$id', params: {id: String(job.id)}});
     },
     onError: err => {
@@ -103,7 +106,8 @@ export function EditAdminJob() {
     mutationFn: (values: JobValues) => read(api.manage.jobs[':id'].$put({param: {id}, json: {values}})),
     onSuccess: () => {
       toast.success('Job saved.');
-      void queryClient.invalidateQueries({queryKey: ['manage', 'jobs']});
+      // The list and this job; the form options under the same prefix did not change.
+      void invalidateAdminJobs(queryClient, {status: false});
     },
   });
 

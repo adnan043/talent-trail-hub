@@ -13,7 +13,7 @@
  * (performance.md "Scripts with the ClientRouter"); the portal has no router, so
  * it is a full load. Only links to PRERENDERED pages carry `data-astro-prefetch` (fetched on hover;
  * the header nav as soon as it is on screen). Pages rendered per visit
- * (`/jobs/<slug>/`, `/dashboard`) answer `no-store`: a prefetch of them is thrown away.
+ * (`/`, `/jobs/`, `/jobs/<slug>/`, `/dashboard`) answer `no-store`: a prefetch of them is thrown away.
  *
  * Structured data (JSON-LD, src/lib/seo.ts): the home page gets `WebSite` +
  * `Organization`; a page passes its own in `jsonLd` (a post, a job).
@@ -33,6 +33,10 @@ import type {PublicBoard} from '../lib/types-public';
 import {absoluteUrl, type JsonLd, jsonLdText, siteJsonLd} from '../lib/seo';
 import {config} from '../platform/config';
 import {THEME_BOOT, THEME_BOOT_HASH} from '../lib/theme-boot';
+import {BRAND_CSS_HREF, styleHash} from '../lib/brand-style';
+import {brandCss} from '../server/board/brand';
+// The one font file every page needs first (latin, upright): the same hashed URL the stylesheet uses.
+import fontLatin from '@fontsource-variable/plus-jakarta-sans/files/plus-jakarta-sans-latin-wght-normal.woff2?url';
 
 interface Props {
   site: Site | null;
@@ -67,9 +71,11 @@ interface Props {
   /** The page's own structured data (src/lib/seo.ts): `jobJsonLd(…)`. */
   jsonLd?: JsonLd;
   /**
-   * The board's public settings (SSR board pages: `boardPage()`): footer links and the
-   * single-company mode. Without it (prerendered pages) the browser fills the footer links in,
-   * and the brand stylesheet hides marketplace-only links on a single-company board.
+   * The board's public settings (SSR board pages: `boardPage()`): footer links, the
+   * single-company mode and the brand, written INLINE (`<style>`, hashed into the CSP) so the page
+   * waits on no stylesheet request. Without it (prerendered pages) the browser fills the footer
+   * links in, and the linked brand stylesheet (`/site-api/board/brand.css`) brings the colours and
+   * hides marketplace-only links on a single-company board.
    */
   board?: PublicBoard | null;
   /** `noindex,follow` (filtered job searches): out of search, links still followed. */
@@ -98,6 +104,14 @@ const {
 const single = board?.singleCompany ?? false;
 // The theme-before-paint script's hash joins this page's CSP (src/lib/theme-boot.ts).
 Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
+// The board's brand, inline when this page has the settings (src/lib/brand-style.ts): the same CSS as
+// `/site-api/board/brand.css` (no sidebar on the website), its hash in this page's CSP.
+const brandStyle = board
+  ? brandCss({primaryColor: board.primaryColor, fontPreset: board.fontPreset, sidebarBg: null, sidebarText: null}, board.singleCompany)
+  : null;
+if (brandStyle) Astro.csp?.insertStyleHash(await styleHash(brandStyle));
+// Another font preset (serif, mono) never uses the web font: nothing to preload.
+const preloadFont = !board || board.fontPreset === 'inter';
 const name = site?.name ?? 'My site';
 const fullTitle = title ? `${title} · ${name}` : name;
 const description = pageDescription ?? withName(SITE.description, name);
@@ -111,7 +125,10 @@ const socialImage = absoluteUrl(image || '/og-default.png');
 const socialAlt = image ? imageAlt : `${name}: hand-picked roles from companies that are hiring now`;
 const active = (href: string) => (href === '/' ? path === '/' : withSlash(path).startsWith(withSlash(href)));
 // Back to this page after signing in. A PATH only (`safeNext` refuses anything else).
-const back = encodeURIComponent(path.startsWith('/account') ? '/dashboard' : `${path}${isStatic ? '' : Astro.url.search}`);
+// The prerendered 404 page is built at `/404`: back to home from there.
+const back = encodeURIComponent(
+  path.startsWith('/account') ? '/dashboard' : path === '/404' || path === '/404/' ? '/' : `${path}${isStatic ? '' : Astro.url.search}`
+);
 // The editor Preview's gateway drops cookies: the server never sees the session
 // there, so every page fills the visitor in in the browser, like a prerendered one.
 const hydrate = isStatic || (config.preview && viewer.state !== 'user');
@@ -152,8 +169,16 @@ const structured = indexable
     <meta name="color-scheme" content="light dark" />
     {/* The saved theme before first paint: a fixed string, hashed into the CSP (no data in it). */}
     <script is:inline set:html={THEME_BOOT} />
-    {/* The board's brand (F30): colours, font, single-company mode. A stylesheet, never inline (CSP). */}
-    <link rel="stylesheet" href="/site-api/board/brand.css" />
+    {preloadFont && <link rel="preload" href={fontLatin} as="font" type="font/woff2" crossorigin="anonymous" />}
+    {/* The board's brand (F30): colours, font, single-company mode. Inline on rendered board pages (its
+        hash is in the CSP: no style ATTRIBUTES anywhere); a stylesheet on prerendered pages. */}
+    {
+      brandStyle ? (
+        <style is:inline data-brand-style set:html={brandStyle} />
+      ) : (
+        <link rel="stylesheet" href={BRAND_CSS_HREF} data-brand-style />
+      )
+    }
     {site?.favIcon ? <link rel="icon" href={site.favIcon} /> : <link rel="icon" href="/favicon.svg" type="image/svg+xml" />}
     <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
     {structured.map(data => <script type="application/ld+json" set:html={jsonLdText(data)} />)}
@@ -165,7 +190,7 @@ const structured = indexable
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap site-header-inner">
-        <a href="/" class="brand" aria-label={name} data-astro-prefetch>
+        <a href="/" class="brand" aria-label={name}>
           {site?.logo ? (
             <span class="brand-plate">
               <BrandMark site={site} />
@@ -190,16 +215,25 @@ const structured = indexable
         </nav>
         <div class="site-header-actions">
           <ThemeMenu />
-          <AccountMenu viewer={viewer} hydrate={hydrate} single={single} />
+          {/* One slot as wide signed in as signed out (global.css `.account-slot`): no shift when a
+              prerendered page learns the visitor. */}
+          <div class="account-slot">
+            <AccountMenu viewer={viewer} hydrate={hydrate} single={single} />
+            <a
+              class="button button-ghost sign-in-link"
+              href={`/account/login/?next=${back}`}
+              data-astro-prefetch
+              data-guest-only
+              hidden={viewer.state === 'user'}>
+              Sign in
+            </a>
+          </div>
           <a
-            class="button button-ghost sign-in-link"
-            href={`/account/login/?next=${back}`}
+            class="button post-job-cta"
+            href={POST_A_JOB.href}
             data-astro-prefetch
-            data-guest-only
-            hidden={viewer.state === 'user'}>
-            Sign in
-          </a>
-          <a class="button post-job-cta" href={POST_A_JOB.href} data-marketplace-only hidden={single ? true : undefined}>
+            data-marketplace-only
+            hidden={single ? true : undefined}>
             {POST_A_JOB.label}
           </a>
           <MobileMenu
@@ -219,7 +253,7 @@ const structured = indexable
     <footer class="site-footer">
       <div class="wrap site-footer-inner">
         <div class="footer-brand">
-          <a href="/" class="brand" aria-label={name} data-astro-prefetch>
+          <a href="/" class="brand" aria-label={name}>
             {site?.logo ? (
               <span class="brand-plate">
                 <BrandMark site={site} />
@@ -249,7 +283,7 @@ const structured = indexable
           <h2 class="footer-title">Employers</h2>
           <ul>
             <li>
-              <a href={POST_A_JOB.href}>{POST_A_JOB.label}</a>
+              <a href={POST_A_JOB.href} data-astro-prefetch>{POST_A_JOB.label}</a>
             </li>
             <li>
               <a href="/pricing/">Pricing</a>
@@ -291,13 +325,17 @@ const structured = indexable
     <script>
       import {logout, refreshSession} from '../platform/browser';
       import {hydrateStaticPage} from '../platform/static-page';
-      import {notifyPaymentOpener} from '../lib/checkout-session';
+      import {keepBrandStyleAllowed} from '../lib/brand-style';
       import {hydrateFooterLinks} from '../lib/footer-links';
       import {fillAccount} from '../lib/account-fill';
       import {showSavedCount} from '../lib/saved-count';
       import {installPageProgress} from '../lib/page-progress';
 
       installPageProgress();
+      keepBrandStyleAllowed();
+      // Footer links on a prerendered page: filled in right after the swap when the board settings are
+      // already known this visit (before the new page is painted: no shift), else on page load.
+      document.addEventListener('astro:after-swap', () => void hydrateFooterLinks());
 
       // Every button shows when it is busy (AGENTS.md "Buttons and forms").
       const busy = (button: HTMLButtonElement, label?: string) => {
@@ -309,8 +347,10 @@ const structured = indexable
       // Each page, the first load and every client navigation (ClientRouter): the body is new.
       document.addEventListener('astro:page-load', () => {
         // Back from the payment provider INSIDE the payment window: tell the checkout page, close.
-        notifyPaymentOpener();
-        // A prerendered page: the visitor and the site name arrive now; then the account menu's email.
+        // Its code (checkout session, idempotency) loads only on such a return (`?checkout=…`).
+        if (new URLSearchParams(window.location.search).has('checkout')) {
+          void import('../lib/checkout-session').then(({notifyPaymentOpener}) => notifyPaymentOpener());
+        }
         // A prerendered page: the visitor and the site name arrive now. Then (every page) the account
         // menu's email and Admin item, and the saved-jobs count.
         void (document.body.dataset.static === '1' ? hydrateStaticPage() : Promise.resolve()).then(fillAccount);

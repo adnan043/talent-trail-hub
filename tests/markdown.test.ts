@@ -26,6 +26,18 @@ describe('renderMarkdown', () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
+  it('cuts closing hashes from headings', () => {
+    expect(renderMarkdown('## Role ##')).toBe('<h3>Role</h3>');
+    expect(renderMarkdown('#### Small')).toBe('<h4>Small</h4>');
+  });
+
+  it('stays fast on a long run of spaces in a heading (no ReDoS)', () => {
+    const start = Date.now();
+    renderMarkdown('# a' + ' '.repeat(10_000) + 'b');
+    renderMarkdown('# a' + '\t'.repeat(10_000) + 'b' + '#'.repeat(5_000) + ' x');
+    expect(Date.now() - start).toBeLessThan(200);
+  });
+
   it('round-trips through htmlToMarkdown', () => {
     const md = '### Title\n\nA **bold** line\n\n- item';
     expect(renderMarkdown(htmlToMarkdown(renderMarkdown(md)))).toBe(renderMarkdown(md));

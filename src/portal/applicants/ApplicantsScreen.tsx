@@ -1,4 +1,4 @@
-import {useInfiniteQuery, useMutation, useQuery} from '@tanstack/react-query';
+import {keepPreviousData, useInfiniteQuery, useMutation, useQuery} from '@tanstack/react-query';
 import {useNavigate, useParams, useSearch} from '@tanstack/react-router';
 import {type ReactNode, useState} from 'react';
 
@@ -52,7 +52,7 @@ function ApplicantsTable({
   emptyAction,
 }: {
   rows: ApplicantRow[] | undefined;
-  query: {isPending: boolean; error: Error | null; hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown};
+  query: {isPending: boolean; error: Error | null; hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown; isPlaceholderData?: boolean};
   withJob?: boolean;
   filtered: boolean;
   /** The empty state's one action: "Show all" when filtered, else what brings applicants. */
@@ -174,7 +174,8 @@ export function JobApplicants() {
   const {id = ''} = useParams({strict: false}) as {id?: string};
   const [{status}, setFilters] = useUrlFilters();
   const setStatus = (next: StatusFilter) => setFilters({status: next, job: ''});
-  const list = useInfiniteQuery(jobApplicantsQuery(id, status));
+  // A status change keeps the last rows on screen while it loads; another job never shows this one's.
+  const list = useInfiniteQuery({...jobApplicantsQuery(id, status), placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === id ? previous : undefined)});
   const csv = useCsv();
   const job = list.data?.pages[0]?.job;
   const rows = list.data?.pages.flatMap(page => page.items);
@@ -224,7 +225,8 @@ export function JobApplicants() {
 export function AllApplicants() {
   const [filter, setFilters] = useUrlFilters();
   const setFilter = (change: (f: typeof filter) => typeof filter) => setFilters(change(filter));
-  const list = useInfiniteQuery(allApplicantsQuery(filter));
+  // The last list stays on screen while a new filter loads (no flash of the empty skeleton).
+  const list = useInfiniteQuery({...allApplicantsQuery(filter), placeholderData: keepPreviousData});
   const jobs = useQuery(applicantJobsQuery);
   const csv = useCsv();
   const rows = list.data?.pages.flatMap(page => page.items);

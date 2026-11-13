@@ -347,7 +347,7 @@ function LogoCard({
       <div className="logo-editor">
         <div className="logo-preview" aria-hidden="true">
           {company.logoUrl ? (
-            <img src={company.logoUrl} alt="" decoding="async" />
+            <img src={company.logoUrl} alt="" width={112} height={112} decoding="async" />
           ) : (
             <span>{initials(company.name) || "?"}</span>
           )}

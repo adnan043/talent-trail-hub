@@ -1,5 +1,6 @@
 import type {PrismaClient} from '../../generated/prisma/client';
-import {getBoardSettings} from './settings';
+import {cachedBoardSettings} from './brand';
+import type {BoardSettings} from './settings';
 
 /**
  * A job's way onto the board, shared by every area: the employer's paid / free post
@@ -12,10 +13,16 @@ const DAY_MS = 86_400_000;
 /**
  * Where a submitted employer job goes: straight live (`auto` mode only; no company skips review), or
  * into the review queue. `first_post` is reserved (Release 2) and treated as `all`.
+ * `settings`: the settings the caller already holds; without them, the cached copy (brand.ts:
+ * cleared on every settings save), never a query.
  */
-export async function submissionTarget(db: PrismaClient, _companyId: number): Promise<'published' | 'pending_review'> {
-  const settings = await getBoardSettings(db);
-  return settings.moderationMode === 'auto' ? 'published' : 'pending_review';
+export async function submissionTarget(
+  db: PrismaClient,
+  _companyId: number,
+  settings?: Pick<BoardSettings, 'moderationMode'>
+): Promise<'published' | 'pending_review'> {
+  const mode = (settings ?? (await cachedBoardSettings(db))).moderationMode;
+  return mode === 'auto' ? 'published' : 'pending_review';
 }
 
 /**
@@ -23,11 +30,13 @@ export async function submissionTarget(db: PrismaClient, _companyId: number): Pr
  * listing when its tier included it. A job that was already live (an approved EDIT) keeps its
  * dates (`keepDates`). Conditional on the current status, so a double call (a retried payment
  * event and the thanks page's confirm) publishes once: answers whether THIS call did it.
+ * Often runs inside a transaction: the caller clears the public lists after the commit
+ * (`forgetPublicLists`, public-cache.ts).
  */
 export async function publishJob(
   db: PrismaClient,
   jobId: number,
-  options: {from: string[]; keepDates?: boolean; now?: Date} = {from: ['pending_payment', 'pending_review', 'draft']}
+  options: {from: string[]; keepDates?: boolean; now?: Date; needsReview?: boolean} = {from: ['pending_payment', 'pending_review', 'draft']}
 ): Promise<boolean> {
   const now = options.now ?? new Date();
   const job = await db.job.findUnique({
@@ -44,6 +53,8 @@ export async function publishJob(
       publishedAt: keep ? job.publishedAt! : now,
       expiresAt,
       rejectionReason: null,
+      // Set in the same write when the caller says so (a paid post published without review).
+      ...(options.needsReview !== undefined ? {needsReview: options.needsReview} : {}),
       // A new listing period gets its own expiry reminder.
       ...(keep ? {} : {expiryReminderSentAt: null}),
       ...(job.listingFeatured && !keep ? {isFeatured: true, featuredUntil: expiresAt} : {}),
