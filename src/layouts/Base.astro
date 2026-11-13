@@ -215,13 +215,14 @@ const structured = indexable
     <footer class="site-footer">
       <div class="wrap site-footer-inner">
         <div class="footer-brand">
-          <a href="/" class="brand" data-astro-prefetch>
-            {site?.logo && (
+          <a href="/" class="brand" aria-label={name} data-astro-prefetch>
+            {site?.logo ? (
               <span class="brand-plate">
                 <BrandMark site={site} />
               </span>
+            ) : (
+              <span class="brand-name footer-brand-name" data-brand-text="{name}">{name}</span>
             )}
-            <span class="brand-name footer-brand-name" data-brand-text="{name}">{name}</span>
           </a>
           <p data-brand-text={SITE.description}>{withName(SITE.description, name)}</p>
         </div>
