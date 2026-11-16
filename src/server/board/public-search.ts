@@ -68,22 +68,23 @@ export function searchWhere(s: JobSearch, settings: BoardSettings, now: Date): P
 }
 
 export const NEWEST: Prisma.JobOrderByWithRelationInput[] = [{publishedAt: 'desc'}, {id: 'desc'}];
-const SALARY: Prisma.JobOrderByWithRelationInput[] = [{salaryMaxCents: {sort: 'desc', nulls: 'last'}}, {id: 'desc'}];
+/** Highest yearly pay first (`salary_sort_cents`: max, else min, per year), then no salary. */
+const SALARY: Prisma.JobOrderByWithRelationInput[] = [{salarySortCents: {sort: 'desc', nulls: 'last'}}, {id: 'desc'}];
 
 export const orderFor = (sort: JobSearch['sort']) => (sort === 'salary' ? SALARY : NEWEST);
 
 interface CursorRow {
   id: number;
   publishedAt: Date | null;
-  salaryMaxCents: number | null;
+  salarySortCents: bigint | null;
 }
 
 /**
- * `n<publishedAt ms>_<id>` (newest) or `s<max cents | x>_<id>` (salary), plus `_h<UTC hour>`: the
+ * `n<publishedAt ms>_<id>` (newest) or `s<yearly cents | x>_<id>` (salary), plus `_h<UTC hour>`: the
  * pin rotation's hour of page 1, so later pages leave out the SAME pinned jobs across the hour.
  */
 export function encodeCursor(sort: JobSearch['sort'], row: CursorRow, hour: number): string {
-  const key = sort === 'salary' ? `s${row.salaryMaxCents ?? 'x'}_${row.id}` : `n${row.publishedAt?.getTime() ?? 0}_${row.id}`;
+  const key = sort === 'salary' ? `s${row.salarySortCents ?? 'x'}_${row.id}` : `n${row.publishedAt?.getTime() ?? 0}_${row.id}`;
   return `${key}_h${hour}`;
 }
 
@@ -110,10 +111,10 @@ export function cursorWhere(sort: JobSearch['sort'], cursor: string): Prisma.Job
     if (Number.isNaN(at.getTime()) || at.getUTCFullYear() > 9999) return null;
     return {OR: [{publishedAt: {lt: at}}, {publishedAt: at, id: {lt: id}}]};
   }
-  if (m[2] === 'x') return {salaryMaxCents: null, id: {lt: id}};
-  const cents = Number(m[2]);
-  if (cents > DB_INT_MAX) return null;
-  return {OR: [{salaryMaxCents: {lt: cents}}, {salaryMaxCents: cents, id: {lt: id}}, {salaryMaxCents: null}]};
+  if (m[2] === 'x') return {salarySortCents: null, id: {lt: id}};
+  // 15 digits at most: well inside int8.
+  const cents = BigInt(m[2]);
+  return {OR: [{salarySortCents: {lt: cents}}, {salarySortCents: cents, id: {lt: id}}, {salarySortCents: null}]};
 }
 
 /** FNV-1a, 32 bit: small and the same on every runtime. */

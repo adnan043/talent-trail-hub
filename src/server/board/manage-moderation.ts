@@ -9,7 +9,7 @@ import {problem, requireAuth, requirePermission, withDb, withViewer} from '../..
 import {PERMISSIONS} from '../permissions';
 import {sendBoardEmail} from './email';
 import {publishJob} from './lifecycle';
-import {actorOf, asObject, effectiveStatus, employerEmail, idParam, invalid, notFound, originOf, refreshActiveJobCount, str} from './manage-shared';
+import {actorOf, asObject, effectiveStatus, employerEmail, idParam, invalid, notFound, refreshActiveJobCount, str} from './manage-shared';
 import {after} from './after';
 import {cachedBoardSettings} from './brand';
 
@@ -253,10 +253,10 @@ export const manageModerationRoutes = new Hono()
         vars: {
           boardName: settings.name,
           jobTitle: job.title,
-          jobUrl: `${originOf(requestUrl)}/jobs/${job.slug}/`,
+          jobUrl: `/jobs/${job.slug}/`,
           expiresOn: expires ? expires.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'}) : '',
         },
-      });
+      }, settings);
     });
     const body: ModerationResult = {status: 'published', message: `${job.title} is live.`, refundNote: null};
     return c.json(body);
@@ -295,9 +295,11 @@ export const manageModerationRoutes = new Hono()
           jobTitle: job.title,
           rejectionReason: reason,
           refundMessage: '',
-          dashboardUrl: `${originOf(requestUrl)}/dashboard/employer/jobs`,
+          // A site path: sendBoardEmail makes it absolute, and on a single-company board (no
+          // employer area) sends it to the home page instead.
+          dashboardUrl: '/dashboard/employer/jobs',
         },
-      });
+      }, settings);
     });
     const paid = order ? money(order.amountCents, order.currency) : null;
     const body: ModerationResult = {

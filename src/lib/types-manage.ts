@@ -171,6 +171,8 @@ export interface AdminTiers {
   prices: CataloguePrice[] | null;
   pricesError: string | null;
   maxActive: number;
+  /** Every tier, active or not (tiers are never deleted). */
+  maxTiers: number;
   daysMax: number;
 }
 

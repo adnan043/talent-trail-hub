@@ -34,8 +34,12 @@ function BoardModeForm({data}: {data: AdminBoardMode}) {
       read<AdminBoardMode>(
         api.manage.settings.board.$put({json: {mode, ownerCompanyId: owner && owner !== NEW ? Number(owner) : null, newCompanyName: owner === NEW ? newName.trim() : ''}})
       ),
-    onSuccess: () => {
-      toast.success(mode === 'single_company' ? 'The board now lists one company.' : 'The board is a marketplace again.');
+    onSuccess: r => {
+      toast.success(r.mode === 'single_company' ? 'The board now lists one company.' : 'The board is a marketplace again.');
+      // The saved answer (a "new company" is now a real one): the form shows it, not "A new company…".
+      queryClient.setQueryData(boardModeQuery.queryKey, r);
+      setMode(r.mode);
+      setOwner(r.ownerCompany ? String(r.ownerCompany.id) : '');
       setNewName('');
       void queryClient.invalidateQueries({queryKey: ['manage']});
       void queryClient.invalidateQueries({queryKey: ['me']});

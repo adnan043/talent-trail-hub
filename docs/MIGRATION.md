@@ -58,7 +58,8 @@ app's habits. Never edit `src/platform/**` or `docs/agent/**`.
   `src/server/routes/{jobs,companies,board}.ts`, `src/lib/types-public.ts`, `src/lib/seo.ts`, `src/lib/job-display.ts`, `src/lib/json-ld.ts`.
 - **B, apply + applicants**: apply form on the job page (`src/components/apply/`, included by A's
   detail page as `<ApplySection job={…} />`), resume upload, apply (F4, consent F36, honeypot, 5/IP/h,
-  duplicate email → friendly 409), apply-click count for url/email methods, emails to candidate +
+  duplicate email → the same 201 as a new application, nothing stored or sent again, so nobody
+  can learn whether a named person applied), apply-click count for url/email methods, emails to candidate +
   employer, resume links (10 min, retention guard 410 `resume_expired`, admin downloads audited),
   applicants API (own company or `site:applicant:read`; status, notes, CSV, status emails once) and the
   shared applicants screens. Files: `src/server/routes/applications.ts`, `src/server/board/applicants.ts`,

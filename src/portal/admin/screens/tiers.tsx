@@ -62,7 +62,7 @@ export function Tiers() {
       <PageHeader
         title="Listing tiers"
         description={`What a job post costs and gives. ${data?.maxActive ?? 3} tiers can be active at once; tiers are never deleted.`}
-        actions={<Button icon="plus" onClick={() => setEditing('new')} disabled={!data || active >= data.maxActive}>New tier</Button>}
+        actions={<Button icon="plus" onClick={() => setEditing('new')} disabled={!data || data.tiers.length >= data.maxTiers}>New tier</Button>}
       />
       <Card flush>
         <DataTable
@@ -115,9 +115,12 @@ export function Tiers() {
 function TierDrawer({tier, data, onClose, onSaved}: {tier: AdminTier | null; data: AdminTiers; onClose: () => void; onSaved: () => void}) {
   const prices: CataloguePrice[] = data.prices ?? [];
   // The price rule reads the CURRENT "Active" box (a tier without a price may be inactive).
-  const activeNow = useRef(tier?.isActive ?? true);
+  // A new tier starts inactive when the active ones are already at the cap (it can be made
+  // active later, after another is deactivated).
+  const startActive = tier ? tier.isActive : data.tiers.filter(t => t.isActive).length < data.maxActive;
+  const activeNow = useRef(startActive);
   const form = useForm(
-    {name: tier?.name ?? '', priceKey: tier?.priceKey ?? '', durationDays: String(tier?.durationDays ?? 30), includesFeatured: tier?.includesFeatured ?? false, isActive: tier?.isActive ?? true},
+    {name: tier?.name ?? '', priceKey: tier?.priceKey ?? '', durationDays: String(tier?.durationDays ?? 30), includesFeatured: tier?.includesFeatured ?? false, isActive: startActive},
     {
       name: [rules.required('Give the tier a name, like "Standard".'), rules.maxLength(MANAGE_LIMITS.tierName)],
       durationDays: [rules.required('Enter a number of days.'), rules.wholeNumber(), v => (Number(v) >= 1 && Number(v) <= data.daysMax ? null : `Pick 1 to ${data.daysMax} days.`)],

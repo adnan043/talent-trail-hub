@@ -95,10 +95,12 @@ export const jobRoutes = new Hono()
       const shown = firstPage ? pinned : [];
       const take = LIMITS.pageSize - shown.length;
       const orderBy = orderFor(search.sort);
+      // The salary sort's cursor key (a bigint, kept out of the shared select and the JSON).
+      const listSelect = {...jobSummarySelect, salarySortCents: true} as const;
       const restWhere = {AND: [where, ...(pinned.length ? [{id: {notIn: pinned}}] : []), ...(after ? [after] : [])]};
       const [top, rest] = await Promise.all([
         shown.length ? db.job.findMany({where: {AND: [where, {id: {in: shown}}]}, orderBy, select: jobSummarySelect}) : [],
-        db.job.findMany({where: restWhere, orderBy, take: take + 1, select: jobSummarySelect}),
+        db.job.findMany({where: restWhere, orderBy, take: take + 1, select: listSelect}),
       ]);
       const page = rest.slice(0, take);
       const last = page.at(-1);

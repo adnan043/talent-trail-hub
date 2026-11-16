@@ -101,6 +101,25 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect(companies.status).toBe(200);
   });
 
+  it('"Highest salary" compares yearly pay, using the minimum when there is no maximum', async () => {
+    const acme = await company('Acme');
+    const yearly = (min: number | null, max: number | null, period: string) => ({salaryMinCents: min, salaryMaxCents: max, salaryCurrency: 'USD', salaryPeriod: period});
+    await job(acme.id, 'no-salary');
+    await job(acme.id, 'yearly-90k', yearly(null, 9_000_000, 'YEAR'));
+    await job(acme.id, 'min-only-100k', yearly(10_000_000, null, 'YEAR'));
+    await job(acme.id, 'hourly-60', yearly(4_000, 6_000, 'HOUR')); // 124,800 a year
+    const monthly = await job(acme.id, 'monthly-5k', yearly(null, 500_000, 'MONTH')); // 60,000 a year
+    const slugs = async (before = '') => {
+      const res = await browser.get(`/site-api/jobs?sort=salary&before=${before}`);
+      expect(res.status).toBe(200);
+      return res;
+    };
+    expect(((await slugs()).json.jobs as {slug: string}[]).map(j => j.slug)).toEqual(['hourly-60', 'min-only-100k', 'yearly-90k', 'monthly-5k', 'no-salary']);
+    // An edit moves the job (the trigger keeps the sort column).
+    await db.job.update({where: {id: monthly.id}, data: {salaryMaxCents: 1_500_000}});
+    expect(((await slugs()).json.jobs as {slug: string}[])[0]!.slug).toBe('monthly-5k');
+  });
+
   it('never serves an expired or closed job whose edit awaits review', async () => {
     const acme = await company('Acme');
     await job(acme.id, 'closed-edited', {status: 'closed', needsReview: true});
