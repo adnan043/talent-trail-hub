@@ -22,11 +22,12 @@ import {
   toEmployerCompany,
 } from '../board/employer';
 import {createJob, jobData, setJobTags, validateJob} from '../board/employer-jobs';
-import {dropLogoFile, finishLogoUpload, isLogoImage, LOGO_MAX_BYTES, LOGO_TYPES, logoAttemptAllowed, startLogoUpload} from '../board/employer-logo';
+import {dropLogoFile, finishLogoUpload, isLogoImage, LOGO_MAX_BYTES, LOGO_TYPES, logoAttemptAllowed, POSTS_PER_HOUR, startLogoUpload, userAttemptAllowed} from '../board/employer-logo';
 import {activeTiers, chooseTier, startListing} from '../board/employer-orders';
 import {employerJobRoutes} from '../board/employer-routes';
 import {ipHashOf} from '../board/ip';
 import {cachedBoardSettings} from '../board/brand';
+import {getBoardSettings} from '../board/settings';
 import {createWithUniqueSlug, isUniqueViolation} from '../board/slug';
 
 /**
@@ -197,8 +198,12 @@ export const employerRoutes = new Hono<Env>()
   .post('/post', postBody, async c => {
     const db = c.var.db;
     const viewer = c.var.viewer;
+    if (!(await userAttemptAllowed(db, 'post', viewer.id!, POSTS_PER_HOUR))) {
+      return c.json(problem('rate_limited', 'Too many jobs posted or renewed in the last hour. Try again later.'), 429);
+    }
     const input = c.req.valid('json');
-    const settings = await cachedBoardSettings(db);
+    // From the database, never the Site Cache: it decides free vs paid (and the currency charged).
+    const settings = await getBoardSettings(db);
     const [checked, existing, chosen] = await Promise.all([
       validateJob(db, input.job),
       ownCompany(db, viewer.id!),
@@ -239,13 +244,17 @@ export const employerRoutes = new Hono<Env>()
       ? await db.job.findFirst({where: {id: input.jobId, companyId: company.id, status: {in: ['draft', 'pending_payment']}}, select: {id: true}})
       : null;
     if (reuse) {
+      // Reset only while it is STILL unpaid, in one conditional statement: a payment that settled
+      // since the read above (another tab, a late event) keeps its live job.
+      const {count} = await db.job.updateMany({where: {id: reuse.id, companyId: company.id, status: {in: ['draft', 'pending_payment']}}, data: {...data, status: 'pending_payment'}});
+      if (!count) return c.json({...problem('already_paid', 'This job was paid for a moment ago. Open your jobs to see it.'), jobId: reuse.id}, 409);
       // Its earlier checkouts are superseded by this one: their orders become `failed` (the
       // allowed status for "will not be fulfilled"), so a late payment of one can never move the
       // job; the payment hook flags such a payment for a refund.
       await db.listingOrder.updateMany({where: {jobId: reuse.id, status: 'pending'}, data: {status: 'failed'}});
     }
     const jobId = reuse
-      ? (await db.job.update({where: {id: reuse.id}, data: {...data, status: 'pending_payment'}, select: {id: true}})).id
+      ? reuse.id
       : (await createJob(db, {companyId: company.id, companyName: company.name, userId: viewer.id!, data, status: 'pending_payment'})).id;
     await setJobTags(db, jobId, checked.columns.tags);
 

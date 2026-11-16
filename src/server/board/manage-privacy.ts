@@ -8,7 +8,7 @@ import {SiteKeyMissing} from '../../platform/api';
 import {config} from '../../platform/config';
 import {problem, requireAuth, requirePermission, withDb, withViewer} from '../../platform/guards';
 import {PERMISSIONS} from '../permissions';
-import {actorOf, asObject, deleteStoredFiles, idParam, invalid} from './manage-shared';
+import {actorOf, asObject, deleteStoredFiles, handFilesToPurge, idParam, invalid} from './manage-shared';
 import {runPurge} from './tasks';
 
 /**
@@ -44,7 +44,8 @@ async function deleteApplications(db: PrismaClient, ids: number[]): Promise<{fil
   if (!ids.length) return {files: [], count: 0};
   return db.$transaction(async tx => {
     const apps = await tx.application.findMany({where: {id: {in: ids}}, select: {id: true, jobId: true, resumeFileId: true}});
-    await tx.resumeUpload.deleteMany({where: {applicationId: {in: apps.map(a => a.id)}}});
+    const files = apps.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : []));
+    await handFilesToPurge(tx as unknown as PrismaClient, apps.map(a => a.id), files);
     const {count} = await tx.application.deleteMany({where: {id: {in: apps.map(a => a.id)}}});
     const perJob = new Map<number, number>();
     for (const a of apps) perJob.set(a.jobId, (perJob.get(a.jobId) ?? 0) + 1);
@@ -57,14 +58,14 @@ async function deleteApplications(db: PrismaClient, ids: number[]): Promise<{fil
         FROM unnest(${jobIds}::int[], ${counts}::int[]) AS d(id, n)
         WHERE j."id" = d.id`;
     }
-    return {files: apps.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : [])), count};
+    return {files, count};
   });
 }
 
-/** Files go once the rows are gone, so no application points at a missing file. */
-async function deleteFiles(requestUrl: string, fileIds: string[]): Promise<number> {
-  const left = await deleteStoredFiles(requestUrl, fileIds, Date.now() + 20_000);
-  if (left) console.warn(`privacy: ${left} resume files could not be deleted`);
+/** Files go once the rows are gone (no application points at a missing file); any left, the nightly purge deletes. */
+async function deleteFiles(db: PrismaClient, requestUrl: string, fileIds: string[]): Promise<number> {
+  const left = await deleteStoredFiles(db, requestUrl, fileIds, Date.now() + 20_000);
+  if (left) console.warn(`privacy: ${left} resume files left for the nightly purge`);
   return left;
 }
 
@@ -123,7 +124,7 @@ export const managePrivacyRoutes = new Hono()
       target: ['email', await emailAuditHash(email)],
       meta: {applications: result.applications, resumeFiles: result.resumeFiles, emailLogs: result.emailLogs},
     });
-    const filesLeft = await deleteFiles(c.req.url, files);
+    const filesLeft = await deleteFiles(db, c.req.url, files);
     return c.json({deleted: result, filesLeft});
   })
 
@@ -141,7 +142,7 @@ export const managePrivacyRoutes = new Hono()
       target: ['email', await emailAuditHash(email)],
       meta: {jobId: app.jobId, resumeFile: done.files.length > 0},
     });
-    const filesLeft = await deleteFiles(c.req.url, done.files);
+    const filesLeft = await deleteFiles(db, c.req.url, done.files);
     return c.json({ok: true, filesLeft});
   })
 

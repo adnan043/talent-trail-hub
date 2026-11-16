@@ -78,6 +78,55 @@ async function deliver(apiKey: string, to: string, message: {subject: string; te
  * Sends one board email and logs it. `settings`: the board settings the caller already holds (the
  * board's name, the single-company mode); without them, the cached copy (brand.ts), never a query.
  */
+/**
+ * The emails that go to an address a VISITOR typed (the apply form): anyone can type someone
+ * else's. At most `CANDIDATE_DAILY` of them reach one address a day, so the board's sender can't
+ * be used to flood a stranger's inbox (a real candidate applies to far fewer jobs a day).
+ */
+const CANDIDATE_TEMPLATES = ['application-confirmation', 'application-shortlisted', 'application-rejected'];
+export const CANDIDATE_DAILY = 20;
+
+/**
+ * The inbox an address reaches: `+tag` dropped (most providers deliver `a+x@` to `a@`), and Gmail's
+ * dots, which it ignores. `v.ictim+1@gmail.com` and `victim@googlemail.com` are one inbox.
+ */
+export function inboxOf(address: string): string {
+  const at = address.lastIndexOf('@');
+  let local = address.slice(0, at).toLowerCase();
+  let domain = address.slice(at + 1).toLowerCase().replace(/\.+$/, '');
+  local = local.split('+')[0] || local;
+  if (domain === 'googlemail.com') domain = 'gmail.com';
+  if (domain === 'gmail.com') local = local.replaceAll('.', '');
+  return `${local}@${domain}`;
+}
+
+const inboxKey = async (address: string, secret: string) => {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(`board-inbox:${secret}`), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(inboxOf(address)));
+  return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+async function overCandidateLimit(db: PrismaClient, template: string, to: string): Promise<boolean> {
+  if (!CANDIDATE_TEMPLATES.includes(template)) return false;
+  const since = new Date(Date.now() - 86_400_000);
+  const secret = config.jwtSecret;
+  if (secret) {
+    // Counted per INBOX (keyed hash, never the address in clear), so address variants share one
+    // budget. Recorded FIRST, then counted: parallel sends all see each other.
+    const ipHash = await inboxKey(to, secret);
+    await db.boardAttempt.create({data: {kind: 'inbox', ipHash}, select: {id: true}});
+    const recent = await db.boardAttempt.findMany({where: {kind: 'inbox', ipHash, createdAt: {gt: since}}, select: {id: true}, take: CANDIDATE_DAILY + 1});
+    return recent.length > CANDIDATE_DAILY;
+  }
+  const recent = await db.emailLog.findMany({
+    where: {to, templateKey: {in: CANDIDATE_TEMPLATES}, status: 'sent', createdAt: {gt: since}},
+    select: {id: true},
+    orderBy: {id: 'desc'},
+    take: CANDIDATE_DAILY,
+  });
+  return recent.length >= CANDIDATE_DAILY;
+}
+
 export async function sendBoardEmail(
   db: PrismaClient,
   requestUrl: string,
@@ -93,7 +142,9 @@ export async function sendBoardEmail(
     else {
       const apiKey = config.ownerSecret('RESEND_API_KEY');
       if (!apiKey) outcome = {status: 'skipped', error: 'No mail service: add the RESEND_API_KEY secret.'};
-      else {
+      else if (await overCandidateLimit(db, email.template, to)) {
+        outcome = {status: 'skipped', error: `This address already got ${CANDIDATE_DAILY} candidate emails today.`};
+      } else {
         const given = email.vars ?? {};
         const board = settings ?? (await cachedBoardSettings(db));
         const boardName = given.boardName || board.name;

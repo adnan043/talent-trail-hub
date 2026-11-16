@@ -16,6 +16,7 @@ import {after} from './after';
 import {cachedBoardSettings} from './brand';
 import {forgetPublicLists} from './public-cache';
 import {getBoardSettings} from './settings';
+import {POSTS_PER_HOUR, userAttemptAllowed} from './employer-logo';
 
 /**
  * The employer's jobs and orders: `/site-api/employer/jobs…`, `/site-api/employer/orders…`.
@@ -83,7 +84,8 @@ export const employerJobRoutes = new Hono<Env>()
     if (!isEditable(status)) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
     const checked = await validateJob(db, c.req.valid('json').job);
     if ('fields' in checked) return c.json({...problem('invalid_input', Object.values(checked.fields)[0]!), fields: checked.fields}, 422);
-    const settings = await cachedBoardSettings(db);
+    // From the database, never the Site Cache: it decides whether the edit skips review.
+    const settings = await getBoardSettings(db);
     // The slug never changes, so links keep working. EVERY content edit needs a review before
     // the job is (again) live: `needs_review` (cleared by an approval, or here when the board
     // publishes without review). A live job leaves the board for review now; one that is down
@@ -136,6 +138,9 @@ export const employerJobRoutes = new Hono<Env>()
 
   .post('/jobs/:id/renew', renewBody, async c => {
     const db = c.var.db;
+    if (!(await userAttemptAllowed(db, 'post', c.var.viewer.id!, POSTS_PER_HOUR))) {
+      return c.json(problem('rate_limited', 'Too many jobs posted or renewed in the last hour. Try again later.'), 429);
+    }
     const company = await companyOf(db, c.var.viewer);
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);

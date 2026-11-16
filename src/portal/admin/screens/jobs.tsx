@@ -79,7 +79,7 @@ export function Jobs() {
   const ask = async (job: AdminJobRow, action: 'unfeature' | 'close' | 'delete') => {
     const words = {
       unfeature: {title: `Stop featuring “${job.title}”?`, body: 'It stays live, without the featured pin.', confirmLabel: 'Stop featuring', tone: 'primary' as const, done: 'No longer featured.'},
-      close: {title: `Close “${job.title}”?`, body: 'It leaves the board at once. You can extend it later to list it again.', confirmLabel: 'Close job', tone: 'danger' as const, done: 'Job closed.'},
+      close: {title: `Close “${job.title}”?`, body: 'It leaves the board at once; its page stays, marked closed. You can extend it later to list it again. To remove abusive content, delete the job or block the company instead.', confirmLabel: 'Close job', tone: 'danger' as const, done: 'Job closed.'},
       delete: {title: `Delete “${job.title}”?`, body: 'The job, its applications and their resumes are deleted for good. Orders keep their record.', confirmLabel: 'Delete job', tone: 'danger' as const, done: 'Job deleted.'},
     }[action];
     if (await confirm({...words, pendingLabel: 'Working…', action: () => act.mutateAsync({job, action})})) toast.success(words.done);

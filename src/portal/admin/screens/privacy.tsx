@@ -71,7 +71,7 @@ export function Privacy() {
       },
     });
     if (ok) {
-      toast.success(filesLeft ? 'Deleted. Some resume files could not be removed yet: try again later.' : 'Everything for this email is deleted.');
+      toast.success(filesLeft ? 'Deleted. A few resume files could not be removed yet; the nightly clean-up removes them.' : 'Everything for this email is deleted.');
       again(email);
     }
   };
