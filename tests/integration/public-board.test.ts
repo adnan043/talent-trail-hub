@@ -2,7 +2,7 @@ import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
-import {forgetHiringRanking} from '../../src/server/routes/companies';
+import {refreshActiveJobCount} from '../../src/server/board/employer';
 import {Browser, configureEnv, DATABASE_URL, db, resetDatabase} from './support/harness';
 
 /**
@@ -20,7 +20,7 @@ async function company(name: string, over: {isBlocked?: boolean} = {}) {
 
 async function job(companyId: number, slug: string, over: Record<string, unknown> = {}) {
   const now = Date.now();
-  return db.job.create({
+  const row = await db.job.create({
     data: {
       companyId,
       categoryId,
@@ -37,6 +37,9 @@ async function job(companyId: number, slug: string, over: Record<string, unknown
     },
     select: {id: true, updatedAt: true},
   });
+  // The app keeps the directory's counter on every job write; a row made here does the same.
+  await refreshActiveJobCount(db, companyId);
+  return row;
 }
 
 describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () => {
@@ -49,7 +52,6 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
   beforeEach(async () => {
     await resetDatabase();
     forgetBoardSettings();
-    forgetHiringRanking();
     categoryId = (await db.category.upsert({where: {slug: 'design'}, create: {name: 'Design', slug: 'design'}, update: {}, select: {id: true}})).id;
     browser = new Browser(app, '203.0.113.50');
   });

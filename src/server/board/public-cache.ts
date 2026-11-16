@@ -1,3 +1,5 @@
+import type {MiddlewareHandler} from 'hono';
+
 import {cache} from '../../platform/cache';
 
 /**
@@ -20,3 +22,13 @@ export const SITEMAP_KEY = 'seo:sitemap';
 export async function forgetPublicLists(): Promise<void> {
   await Promise.all([cache.delPrefix(HOME_PREFIX), cache.delPrefix(CATEGORY_COUNTS_PREFIX), cache.del(SITEMAP_KEY)]).catch(() => undefined);
 }
+
+/**
+ * After any successful write under an area that can change what the public lists show (admin and
+ * employer job, company and settings routes), clears them. One place instead of a call per route,
+ * so a new route can't forget it; deletes are cheap and never rate limited.
+ */
+export const clearPublicListsAfterWrite: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD' && c.res.status < 400) await forgetPublicLists();
+};

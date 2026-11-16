@@ -19,6 +19,7 @@ import {runPurge} from './tasks';
  * request be matched to this one.
  */
 const ITEMS = 100;
+const MAX_DELETE_ROUNDS = 50;
 const DELETE_BATCH = 500;
 const encoder = new TextEncoder();
 
@@ -47,8 +48,14 @@ async function deleteApplications(db: PrismaClient, ids: number[]): Promise<{fil
     const {count} = await tx.application.deleteMany({where: {id: {in: apps.map(a => a.id)}}});
     const perJob = new Map<number, number>();
     for (const a of apps) perJob.set(a.jobId, (perJob.get(a.jobId) ?? 0) + 1);
-    for (const [jobId, n] of perJob) {
-      await tx.job.updateMany({where: {id: jobId, applicationCount: {gte: n}}, data: {applicationCount: {decrement: n}}});
+    if (perJob.size) {
+      // Every job's counter in ONE statement (never a query per job), never below zero.
+      const jobIds = [...perJob.keys()];
+      const counts = jobIds.map(id => perJob.get(id)!);
+      await tx.$executeRaw`
+        UPDATE "jobs" j SET "application_count" = GREATEST(j."application_count" - d.n, 0)
+        FROM unnest(${jobIds}::int[], ${counts}::int[]) AS d(id, n)
+        WHERE j."id" = d.id`;
     }
     return {files: apps.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : [])), count};
   });
@@ -98,8 +105,10 @@ export const managePrivacyRoutes = new Hono()
     const db = c.var.db;
     const result: PrivacyDeleted = {applications: 0, resumeFiles: 0, emailLogs: 0};
     const files: string[] = [];
-    // In batches, so a long history never builds one huge statement.
-    for (;;) {
+    // In batches, so a long history never builds one huge statement; bounded in time (a person
+    // with even more rows is finished by running it again: the lookup shows what is left).
+    const deadline = Date.now() + 20_000;
+    for (let round = 0; round < MAX_DELETE_ROUNDS && Date.now() < deadline; round++) {
       const batch = await db.application.findMany({where: {email}, select: {id: true}, take: DELETE_BATCH});
       const done = await deleteApplications(db, batch.map(a => a.id));
       result.applications += done.count;

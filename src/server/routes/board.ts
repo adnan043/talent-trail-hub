@@ -11,8 +11,8 @@ import {getDb} from '../../platform/db';
 import {brandCss, cachedBoardSettings, isHexColor} from '../board/brand';
 import {publicJobWhere} from '../board/public';
 import {CATEGORY_COUNTS_PREFIX, HOME_PREFIX} from '../board/public-cache';
-import {featuredCount, moreFeatured, NEWEST, pinnedIds} from '../board/public-search';
-import {companySelect, jobSummarySelect, safeUrl, toCompany, toJobSummary} from '../board/public-shapes';
+import {featuredPinsAndCount, moreFeatured, NEWEST} from '../board/public-search';
+import {companySelect, jobSummarySelect, logoCacheControl, safeUrl, toCompany, toJobSummary} from '../board/public-shapes';
 import {type BoardSettings, isSingleCompany} from '../board/settings';
 import {companySummaries, hiringRanking} from './companies';
 
@@ -93,9 +93,8 @@ async function homeLists(db: PrismaClient, settings: BoardSettings, workplace: s
   const now = new Date();
   const open = publicJobWhere(settings, now);
   const single = isSingleCompany(settings);
-  const [pinned, featuredTotal, latest, categories, owner, ranks] = await Promise.all([
-    pinnedIds(db, open, now),
-    featuredCount(db, settings, now),
+  const [{pinned, count: featuredTotal}, latest, categories, owner, ranks] = await Promise.all([
+    featuredPinsAndCount(db, settings, now),
     db.job.findMany({
       where: {
         AND: [open, ...(workplace ? [{workplaceType: workplace}] : [])],
@@ -144,7 +143,7 @@ export const boardRoutes = new Hono()
     const row = await c.var.db.boardLogo.findUnique({where: {id: 1}, select: {contentType: true, data: true}});
     if (!row) return c.json(problem('not_found', 'No logo.'), 404);
     return new Response(row.data, {
-      headers: {'content-type': row.contentType, 'x-content-type-options': 'nosniff', 'cache-control': 'public, max-age=86400'},
+      headers: {'content-type': row.contentType, 'x-content-type-options': 'nosniff', 'cache-control': logoCacheControl(c.req.query('v'))},
     });
   })
   .get('/settings', withDb, async c => {

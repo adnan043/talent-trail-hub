@@ -9,6 +9,7 @@ import {
   SOCIAL_LABELS,
 } from "../../../lib/types-employer";
 import { putFile } from "../../../platform/files-browser";
+import { imageForStorage } from "../../board/image";
 import { siteFetch } from "../../../platform/browser";
 import { api, ApiError, read } from "../../api";
 import {
@@ -293,16 +294,17 @@ function LogoCard({
         toast.success("Logo updated.");
         return;
       }
+      const stored = await imageForStorage(file, 256);
       const grant = await read<{
         fileId: string;
         token: string;
         upload: Parameters<typeof putFile>[0];
       }>(
         api.employer.company.logo.$post({
-          json: { name: file.name, contentType: file.type, size: file.size },
+          json: { name: stored.name, contentType: stored.type, size: stored.size },
         }),
       );
-      const put = await putFile(grant.upload, file);
+      const put = await putFile(grant.upload, stored);
       if (!put.ok) throw new Error(put.message);
       const next = await read<{ company: EmployerCompany }>(
         api.employer.company.logo.complete.$post({

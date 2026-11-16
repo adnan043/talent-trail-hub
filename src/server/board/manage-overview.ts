@@ -6,19 +6,19 @@ import {requireAuth, requirePermission, withDb, withViewer} from '../../platform
 import {PERMISSIONS} from '../permissions';
 import {DAY_MS} from './manage-shared';
 import {cachedBoardSettings} from './brand';
+import {cache} from '../../platform/cache';
 
 /**
- * F19 overview numbers. Cheap and bounded (docs/agent/performance.md): every number is a capped,
- * indexed read summed here, shown "1000+" when it hit the cap; never a count over a whole table.
+ * F19 overview numbers and the activity chart. Each is ONE aggregate `$queryRaw` (counted in the
+ * database, never thousands of rows loaded to count here; docs/agent/performance.md) over indexed
+ * columns, and kept in the Site Cache for a short time (docs/agent/cache.md): reports may be a
+ * couple of minutes old, and nothing per viewer is in them (the route checks the permission first).
  */
-const CAP = 1000;
 const TOP_JOBS = 5;
-
-const bounded = (rows: unknown[], cap = CAP): Bounded => ({value: Math.min(rows.length, cap), more: rows.length > cap});
+const REPORT_TTL = 120; // seconds: time-based, nothing clears it
 
 const RANGES = {'7d': 7, '30d': 30, '90d': 90, '12m': 12} as const;
 type Range = keyof typeof RANGES;
-const ROWS_CAP = 5000;
 
 const rangeQuery = validator('query', v => ({
   range: (typeof v.range === 'string' && v.range in RANGES ? v.range : '30d') as Range,
@@ -27,6 +27,8 @@ const rangeQuery = validator('query', v => ({
 /** Start of the UTC day (or month) the instant falls in, as the bucket's key. */
 const bucketKey = (date: Date, monthly: boolean) =>
   monthly ? Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1) : Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+
+const exact = (value: number | bigint | null): Bounded => ({value: Number(value ?? 0), more: false});
 
 export const manageOverviewRoutes = new Hono()
   .get(
@@ -37,117 +39,85 @@ export const manageOverviewRoutes = new Hono()
   withDb,
   async c => {
     const db = c.var.db;
-    const now = new Date();
-    const since = new Date(now.getTime() - 30 * DAY_MS);
     const settings = await cachedBoardSettings(db);
-    const paid = {status: 'paid', currency: settings.currency} as const;
-    const [paidAll, pending, active, applications, top, companies] = await Promise.all([
-      // Newest paid orders first (index status, paid_at): the 30-day sum is a prefix of it.
-      db.listingOrder.findMany({where: paid, select: {amountCents: true, paidAt: true}, orderBy: {paidAt: 'desc'}, take: CAP + 1}),
-      db.job.findMany({where: {status: 'pending_review'}, select: {id: true}, take: 101}),
-      db.job.findMany({where: {status: 'published', expiresAt: {gt: now}}, select: {id: true}, take: CAP + 1}),
-      db.application.findMany({where: {createdAt: {gte: since}}, select: {id: true}, orderBy: {createdAt: 'desc'}, take: CAP + 1}),
-      db.job.findMany({
-        where: {status: 'published', expiresAt: {gt: now}},
-        orderBy: [{viewCount: 'desc'}, {id: 'desc'}],
-        take: TOP_JOBS,
-        select: {id: true, title: true, slug: true, viewCount: true, applicationCount: true, company: {select: {name: true}}},
-      }),
-      db.company.findMany({where: {isBlocked: false}, select: {id: true}, take: CAP + 1}),
-    ]);
-    const counted = paidAll.slice(0, CAP);
-    const recent = counted.filter(o => o.paidAt && o.paidAt >= since);
-    const sum = (rows: {amountCents: number}[]) => rows.reduce((total, o) => total + o.amountCents, 0);
-    const body: ManageOverview = {
-      currency: settings.currency,
-      revenueAll: {value: sum(counted), more: paidAll.length > CAP},
-      // Every order of the last 30 days is in the newest CAP unless the cap was hit inside them.
-      revenue30d: {value: sum(recent), more: paidAll.length > CAP && recent.length === counted.length},
-      paidOrders: bounded(paidAll),
-      pendingApprovals: bounded(pending, 100),
-      activeJobs: bounded(active),
-      applications30d: bounded(applications),
-      companies: bounded(companies),
-      topJobs: top.map(j => ({
-        id: j.id,
-        title: j.title,
-        slug: j.slug,
-        company: j.company.name,
-        views: j.viewCount,
-        applicants: j.applicationCount,
-      })),
-    };
+    const body = await cache.getOrSet(`report:overview:${settings.currency}`, REPORT_TTL, async (): Promise<ManageOverview> => {
+      const now = new Date();
+      const since = new Date(now.getTime() - 30 * DAY_MS);
+      type Totals = {revenue_all: bigint | null; revenue_30d: bigint | null; paid_orders: number; pending: number; active: number; applications: number; companies: number};
+      const [[totals], top] = await Promise.all([
+        db.$queryRaw<Totals[]>`
+          SELECT
+            (SELECT sum("amount_cents")::bigint FROM "listing_orders" WHERE "status" = 'paid' AND "currency" = ${settings.currency}) AS revenue_all,
+            (SELECT sum("amount_cents")::bigint FROM "listing_orders" WHERE "status" = 'paid' AND "currency" = ${settings.currency} AND "paid_at" >= ${since}) AS revenue_30d,
+            (SELECT count(*)::int FROM "listing_orders" WHERE "status" = 'paid' AND "currency" = ${settings.currency}) AS paid_orders,
+            (SELECT count(*)::int FROM "jobs" WHERE "status" = 'pending_review') AS pending,
+            (SELECT count(*)::int FROM "jobs" WHERE "status" = 'published' AND "expires_at" > ${now}) AS active,
+            (SELECT count(*)::int FROM "applications" WHERE "created_at" >= ${since}) AS applications,
+            (SELECT count(*)::int FROM "companies" WHERE NOT "is_blocked") AS companies`,
+        db.job.findMany({
+          where: {status: 'published', expiresAt: {gt: now}},
+          orderBy: [{viewCount: 'desc'}, {id: 'desc'}],
+          take: TOP_JOBS,
+          select: {id: true, title: true, slug: true, viewCount: true, applicationCount: true, company: {select: {name: true}}},
+        }),
+      ]);
+      return {
+        currency: settings.currency,
+        revenueAll: exact(totals?.revenue_all ?? 0),
+        revenue30d: exact(totals?.revenue_30d ?? 0),
+        paidOrders: exact(totals?.paid_orders ?? 0),
+        pendingApprovals: exact(totals?.pending ?? 0),
+        activeJobs: exact(totals?.active ?? 0),
+        applications30d: exact(totals?.applications ?? 0),
+        companies: exact(totals?.companies ?? 0),
+        topJobs: top.map(j => ({id: j.id, title: j.title, slug: j.slug, company: j.company.name, views: j.viewCount, applicants: j.applicationCount})),
+      };
+    });
     return c.json(body);
   }
 )
   .get('/activity', rangeQuery, withViewer, requireAuth, requirePermission(PERMISSIONS.BOARD_REPORTS), withDb, async c => {
     const db = c.var.db;
     const {range} = c.req.valid('query');
-    const monthly = range === '12m';
-    const now = new Date();
-    // Newest bucket first; `starts` are the buckets' UTC start instants.
-    const starts: number[] = [];
-    for (let i = 0; i < RANGES[range]; i++) {
-      starts.push(
-        monthly
-          ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)
-          : bucketKey(now, false) - i * DAY_MS
-      );
-    }
-    const since = new Date(starts[starts.length - 1]!);
     const settings = await cachedBoardSettings(db);
-    const [paid, refunded, jobs, applications] = await Promise.all([
-      db.listingOrder.findMany({
-        where: {status: 'paid', currency: settings.currency, paidAt: {gte: since}},
-        select: {amountCents: true, paidAt: true},
-        orderBy: {paidAt: 'desc'},
-        take: ROWS_CAP + 1,
-      }),
-      db.listingOrder.findMany({
-        where: {status: 'refunded', refundedAt: {gte: since}},
-        select: {refundedAt: true},
-        take: ROWS_CAP + 1,
-      }),
-      db.job.findMany({
-        where: {status: {in: ['published', 'expired', 'closed']}, publishedAt: {gte: since}},
-        select: {publishedAt: true},
-        orderBy: {publishedAt: 'desc'},
-        take: ROWS_CAP + 1,
-      }),
-      db.application.findMany({
-        where: {createdAt: {gte: since}},
-        select: {createdAt: true},
-        orderBy: {createdAt: 'desc'},
-        take: ROWS_CAP + 1,
-      }),
-    ]);
-    const rows = new Map(starts.map(start => [start, {period: new Date(start).toISOString(), revenueCents: 0, paidOrders: 0, refunds: 0, jobsPublished: 0, applications: 0}]));
-    const into = (date: Date | null) => (date ? rows.get(bucketKey(date, monthly)) : undefined);
-    for (const o of paid.slice(0, ROWS_CAP)) {
-      const row = into(o.paidAt);
-      if (row) {
-        row.revenueCents += o.amountCents;
-        row.paidOrders += 1;
+    const body = await cache.getOrSet(`report:activity:${range}:${settings.currency}`, REPORT_TTL, async (): Promise<ManageActivity> => {
+      const monthly = range === '12m';
+      const unit = monthly ? 'month' : 'day';
+      const now = new Date();
+      // Newest bucket first; `starts` are the buckets' UTC start instants.
+      const starts: number[] = [];
+      for (let i = 0; i < RANGES[range]; i++) {
+        starts.push(monthly ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1) : bucketKey(now, false) - i * DAY_MS);
       }
-    }
-    for (const o of refunded.slice(0, ROWS_CAP)) {
-      const row = into(o.refundedAt);
-      if (row) row.refunds += 1;
-    }
-    for (const j of jobs.slice(0, ROWS_CAP)) {
-      const row = into(j.publishedAt);
-      if (row) row.jobsPublished += 1;
-    }
-    for (const a of applications.slice(0, ROWS_CAP)) {
-      const row = into(a.createdAt);
-      if (row) row.applications += 1;
-    }
-    const body: ManageActivity = {
-      currency: settings.currency,
-      range,
-      granularity: monthly ? 'month' : 'day',
-      more: [paid, refunded, jobs, applications].some(list => list.length > ROWS_CAP),
-      rows: starts.map(start => rows.get(start)!),
-    };
+      const since = new Date(starts[starts.length - 1]!);
+      // One statement: each source bucketed by UTC day/month in the database (indexes: listing_orders
+      // (status, paid_at), jobs (status, published_at), applications (created_at)).
+      type Bucket = {kind: string; bucket: bigint; n: number; cents: bigint | null};
+      const buckets = await db.$queryRaw<Bucket[]>`
+        SELECT 'paid' AS kind, (extract(epoch FROM date_trunc(${unit}, "paid_at" AT TIME ZONE 'UTC')) * 1000)::bigint AS bucket, count(*)::int AS n, sum("amount_cents")::bigint AS cents
+          FROM "listing_orders" WHERE "status" = 'paid' AND "currency" = ${settings.currency} AND "paid_at" >= ${since} GROUP BY 2
+        UNION ALL
+        SELECT 'refund', (extract(epoch FROM date_trunc(${unit}, "refunded_at" AT TIME ZONE 'UTC')) * 1000)::bigint, count(*)::int, NULL
+          FROM "listing_orders" WHERE "status" = 'refunded' AND "refunded_at" >= ${since} GROUP BY 2
+        UNION ALL
+        SELECT 'job', (extract(epoch FROM date_trunc(${unit}, "published_at" AT TIME ZONE 'UTC')) * 1000)::bigint, count(*)::int, NULL
+          FROM "jobs" WHERE "status" IN ('published', 'expired', 'closed') AND "published_at" >= ${since} GROUP BY 2
+        UNION ALL
+        SELECT 'application', (extract(epoch FROM date_trunc(${unit}, "created_at" AT TIME ZONE 'UTC')) * 1000)::bigint, count(*)::int, NULL
+          FROM "applications" WHERE "created_at" >= ${since} GROUP BY 2`;
+      const rows = new Map(starts.map(start => [start, {period: new Date(start).toISOString(), revenueCents: 0, paidOrders: 0, refunds: 0, jobsPublished: 0, applications: 0}]));
+      for (const b of buckets) {
+        // The bucket's UTC start, in epoch milliseconds (the same key as `starts`).
+        const row = rows.get(Number(b.bucket));
+        if (!row) continue;
+        if (b.kind === 'paid') {
+          row.paidOrders += b.n;
+          row.revenueCents += Number(b.cents ?? 0);
+        } else if (b.kind === 'refund') row.refunds += b.n;
+        else if (b.kind === 'job') row.jobsPublished += b.n;
+        else row.applications += b.n;
+      }
+      return {currency: settings.currency, range, granularity: monthly ? 'month' : 'day', more: false, rows: starts.map(start => rows.get(start)!)};
+    });
     return c.json(body);
   });

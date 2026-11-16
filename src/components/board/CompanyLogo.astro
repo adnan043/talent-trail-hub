@@ -12,11 +12,13 @@ interface Props {
   logoUrl: string | null;
   size?: 'sm' | 'md' | 'lg';
   class?: string;
+  /** Above the fold on its page (a job's or company's header): loaded at once, not lazily. */
+  eager?: boolean;
 }
 
 const TINTS = ['tone-brand', 'tone-success', 'tone-info', 'tone-warning', 'tone-neutral'] as const;
 
-const {name, logoUrl, size = 'md', class: className} = Astro.props;
+const {name, logoUrl, size = 'md', class: className, eager = false} = Astro.props;
 const px = size === 'sm' ? 36 : size === 'lg' ? 64 : 52;
 let hash = 0;
 for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
@@ -25,7 +27,7 @@ const tint = TINTS[hash % TINTS.length];
 
 {
   logoUrl ? (
-    <img class:list={['co-logo', `co-logo-${size}`, className]} src={logoUrl} alt="" width={px} height={px} loading="lazy" decoding="async" />
+    <img class:list={['co-logo', `co-logo-${size}`, className]} src={logoUrl} alt="" width={px} height={px} loading={eager ? 'eager' : 'lazy'} decoding="async" />
   ) : (
     <span class:list={['co-logo', 'co-logo-mono', `co-logo-${size}`, tint, className]} aria-hidden="true">
       {initials(name)}

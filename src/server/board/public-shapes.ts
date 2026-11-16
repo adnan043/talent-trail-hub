@@ -72,6 +72,13 @@ const countryCodes = (value: unknown): string[] =>
 /** Only https links leave the server (stored links are checked on write; this is the second gate). */
 /** A logo kept in the Site Database (`/site-api/companies/<slug>/logo?v=<time>`). */
 const LOCAL_LOGO = /^\/site-api\/(?:companies\/[a-z0-9-]{1,100}|board)\/logo\?v=\d{1,15}$/;
+/**
+ * Cache-Control for a logo kept in the Site Database. Every upload writes a new `?v=<time>` into the
+ * stored URL, so the bytes behind one versioned URL never change: a year, immutable. Without `v`
+ * (an old link) a day.
+ */
+export const logoCacheControl = (version: string | undefined): string =>
+  version && /^\d{1,15}$/.test(version) ? 'public, max-age=31536000, immutable' : 'public, max-age=86400';
 /** A public platform file (`publicFileUrl`: a logo or favicon in storage), same origin. */
 const PLATFORM_FILE = /^\/__platform\/files\/file_[0-9a-z]{26}\/[A-Za-z0-9._~%!*()'-]{1,300}$/;
 

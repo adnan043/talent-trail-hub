@@ -1,4 +1,5 @@
 import {flagForRefund, refundListingOrder, settleListingOrder} from './board/employer-settle';
+import {forgetPublicLists} from './board/public-cache';
 import {config} from '../platform/config';
 import {getDb} from '../platform/db';
 import {type Checkout, definePaymentHooks, type PlatformMembership, type Refund} from '../platform/payments';
@@ -149,6 +150,9 @@ export const paymentHooks = definePaymentHooks({
     });
     // The listing order: refunded when the whole payment was (a partial refund is bookkeeping).
     // A full refund also takes the listing down: unreviewed → rejected, live → closed.
-    if (refund.full) await refundListingOrder(db, refund.checkoutId, dateOf(refund.refundedAt) ?? new Date());
+    if (refund.full) {
+      await refundListingOrder(db, refund.checkoutId, dateOf(refund.refundedAt) ?? new Date());
+      await forgetPublicLists();
+    }
   },
 });

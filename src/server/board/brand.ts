@@ -90,8 +90,9 @@ export function accentTokens(primary: string, scheme: 'light' | 'dark'): Record<
   const fill = readableOn(readableOn(fillBase, surfaces.bg), surfaces.card);
   const ink = contrast('#ffffff', fill) >= contrast('#000000', fill) ? '#ffffff' : '#000000';
   const accent = neutral ? DEFAULT_BRAND : base;
-  const brandText = readableOn(readableOn(accent, surfaces.bg), surfaces.secondary);
   const soft = mix(surfaces.bg, accent, SOFT_TINT[scheme]);
+  // Readable on the page, the secondary surface AND the tint (Featured badges, active nav items).
+  const brandText = readableOn(readableOn(readableOn(accent, surfaces.bg), surfaces.secondary), soft);
   return {
     '--accent': fill,
     '--accent-hover': mix(fill, surfaces.bg, 0.15),

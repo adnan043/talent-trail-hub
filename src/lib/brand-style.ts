@@ -17,14 +17,6 @@
 /** The stylesheet prerendered pages link (and client navigations fall back to). */
 export const BRAND_CSS_HREF = '/site-api/board/brand.css';
 
-/** `sha256-<base64>` of the exact text, as the browser hashes an inline `<style>` element's content. */
-export async function styleHash(text: string): Promise<`sha256-${string}`> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
-  let binary = '';
-  for (const byte of digest) binary += String.fromCharCode(byte);
-  return `sha256-${btoa(binary)}`;
-}
-
 /** Loads a stylesheet before it is put on the page (no flash of the default colours). */
 const preloadStyle = (href: string) =>
   new Promise<void>(resolve => {

@@ -7,7 +7,7 @@ import {problem, withDb} from '../../platform/guards';
 import {cachedBoardSettings} from '../board/brand';
 import {publicJobWhere} from '../board/public';
 import {NEWEST} from '../board/public-search';
-import {companySelect, jobSummarySelect, toCompany, toCompanySummary, toJobSummary} from '../board/public-shapes';
+import {companySelect, jobSummarySelect, logoCacheControl, toCompany, toCompanySummary, toJobSummary} from '../board/public-shapes';
 import {type BoardSettings, isSingleCompany} from '../board/settings';
 
 /**
@@ -55,9 +55,6 @@ export async function hiringRanking(
   return rows.map(({activeJobCount, ...row}) => ({id: row.id, count: activeJobCount, row}));
 }
 
-/** No-op, kept for callers of the old per-isolate memo (there is no module cache any more). */
-export const forgetHiringRanking = () => undefined;
-
 /** The ranked companies' cards, in ranking order (blocked ones never rank). No query when the ranking carried them. */
 export async function companySummaries(db: PrismaClient, ranks: Rank[]): Promise<PublicCompanySummary[]> {
   if (!ranks.length) return [];
@@ -85,7 +82,7 @@ export const companyRoutes = new Hono()
     });
     if (!row) return c.json(problem('not_found', 'No logo.'), 404);
     return new Response(row.data, {
-      headers: {'content-type': row.contentType, 'x-content-type-options': 'nosniff', 'cache-control': 'public, max-age=86400'},
+      headers: {'content-type': row.contentType, 'x-content-type-options': 'nosniff', 'cache-control': logoCacheControl(c.req.query('v'))},
     });
   })
   .get(

@@ -159,6 +159,7 @@ export const employerJobRoutes = new Hono<Env>()
       tier: chosen.tier,
       gateway: input.gateway,
       cancelPath: '/dashboard/employer/jobs',
+      defer: work => after(c, `listing emails for job ${job.id}`, work),
     });
     if ('problem' in answer) return c.json(problem(answer.problem.code, answer.problem.message), answer.problem.status);
     return c.json(answer);

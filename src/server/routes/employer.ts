@@ -8,6 +8,8 @@ import {isDbId} from '../../lib/board';
 import type {EmployerOptions} from '../../lib/types-employer';
 import type {Viewer} from '../../lib/types';
 import {audit} from '../../platform/auth';
+import {after} from '../board/after';
+import {clearPublicListsAfterWrite} from '../board/public-cache';
 import {problem, requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
 import {
   changedFields,
@@ -86,7 +88,7 @@ const logoDone = validator('json', value => {
 });
 
 export const employerRoutes = new Hono<Env>()
-  .use(withViewer, requireAuth, requireVerified, withDb, employerArea)
+  .use(withViewer, requireAuth, requireVerified, withDb, employerArea, clearPublicListsAfterWrite)
 
   .get('/options', async c => {
     const db = c.var.db;
@@ -255,6 +257,7 @@ export const employerRoutes = new Hono<Env>()
       tier: chosen.tier,
       gateway: input.gateway,
       cancelPath: '/dashboard/post-a-job',
+      defer: work => after(c, `listing emails for job ${jobId}`, work),
     });
     if ('problem' in answer) return c.json({...problem(answer.problem.code, answer.problem.message), jobId}, answer.problem.status);
     return c.json(answer, answer.status === 'done' ? 201 : 200);

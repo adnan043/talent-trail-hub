@@ -6,6 +6,7 @@ import type {AdminBranding, FooterLink} from '../../../lib/types-manage';
 import {sidebarTokens} from '../../../lib/sidebar-colours';
 import {HEX_COLOR, isFooterHref, MANAGE_LIMITS} from '../../../lib/types-manage';
 import {putFile} from '../../../platform/files-browser';
+import {imageForStorage} from '../../board/image';
 import {type UploadGrant} from '../../../platform/files-browser';
 import {api, ApiError, read} from '../../api';
 import {Button, Card, ErrorNote, Field, IconButton, LoadingBlock, Notice, PageHeader, rules, Select, useConfirm, useForm, useToast} from '../../ui';
@@ -207,14 +208,17 @@ function LogoCard({logoUrl}: {logoUrl: string | null}) {
   const upload = useMutation({
     mutationFn: async (file: File) => {
       let grant: {fileId: string; token: string; upload: UploadGrant['upload']};
+      let stored = file;
       try {
-        grant = await read(api.manage.settings.branding.logo.$post({json: {name: file.name, contentType: file.type, size: file.size}}));
+        // The header shows it at most 72 px tall and a few hundred wide: 512 px is plenty, even at 2x.
+        stored = await imageForStorage(file, 512);
+        grant = await read(api.manage.settings.branding.logo.$post({json: {name: stored.name, contentType: stored.type, size: stored.size}}));
       } catch (err) {
         // No file storage on this site (local, demo): keep a small copy in the Site Database.
         if (err instanceof ApiError && err.status === 503) return uploadLocal(file);
         throw err;
       }
-      const put = await putFile(grant.upload, file);
+      const put = await putFile(grant.upload, stored);
       if (!put.ok) throw new Error(put.message);
       return read<{logoUrl: string}>(api.manage.settings.branding.logo[':fileId'].complete.$post({param: {fileId: grant.fileId}, json: {token: grant.token}}));
     },

@@ -3,6 +3,7 @@ import {RESUME_RETENTION_DAYS} from '../../lib/board';
 import {SiteKeyMissing} from '../../platform/api';
 import {deleteFile} from '../../platform/files';
 import {sendBoardEmail} from './email';
+import {forgetPublicLists} from './public-cache';
 import {getBoardSettings, isSingleCompany} from './settings';
 
 /**
@@ -115,7 +116,7 @@ export async function runExpiry(db: PrismaClient, requestUrl: string, now = new 
 
   // Featured upgrades end on their own date, whatever the listing does.
   let unfeatured = 0;
-  for (let batch = 0; batch < MAX_BATCHES; batch++) {
+  for (let batch = 0; batch < MAX_BATCHES && Date.now() < deadline; batch++) {
     const due = await db.job.findMany({
       where: {isFeatured: true, featuredUntil: {lte: now}},
       select: {id: true},
@@ -154,6 +155,8 @@ export async function runExpiry(db: PrismaClient, requestUrl: string, now = new 
       )
     : 0;
 
+  // Jobs left the board or lost their pin: the public lists show it now, not at their TTL.
+  if (expired || unfeatured) await forgetPublicLists();
   return {summary: {expired, unfeatured, reminded}};
 }
 
@@ -229,7 +232,7 @@ export async function runPurge(db: PrismaClient, requestUrl: string, now = new D
 
   // 3. Rate-limit rows older than a day, in bounded deletes.
   let attemptsSwept = 0;
-  for (let batch = 0; batch < MAX_BATCHES; batch++) {
+  for (let batch = 0; batch < MAX_BATCHES && Date.now() < deadline; batch++) {
     const n = await db.$executeRaw`
       DELETE FROM "board_attempts" WHERE "id" IN (
         SELECT "id" FROM "board_attempts" WHERE "created_at" < ${dayAgo} ORDER BY "created_at" LIMIT 5000

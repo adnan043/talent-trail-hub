@@ -15,7 +15,7 @@
   --bl-brand: var(--brand, var(--accent));
   --bl-brand-text: var(--brand-text, var(--accent-text));
   --bl-brand-soft: var(--brand-soft, var(--accent-soft));
-  --bl-brand-soft-ink: var(--brand-soft-foreground, var(--accent-text));
+  --bl-brand-soft-ink: var(--brand-soft-ink, var(--accent-text));
   --bl-inverse: var(--inverse, var(--ink));
   --bl-inverse-ink: var(--inverse-foreground, var(--bg));
   --bl-inverse-muted: var(--inverse-muted, var(--line-strong));

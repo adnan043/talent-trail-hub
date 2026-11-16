@@ -12,7 +12,7 @@ import {cachedBoardSettings} from '../board/brand';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
 import {SITEMAP_KEY} from '../board/public-cache';
-import {cursorHour, cursorWhere, encodeCursor, featuredCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
+import {cursorHour, cursorWhere, encodeCursor, featuredCount, featuredPinsAndCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
 import {jobDetailSelect, jobSummarySelect, toJobDetail, toJobSummary} from '../board/public-shapes';
 import {isSingleCompany} from '../board/settings';
 
@@ -82,10 +82,16 @@ export const jobRoutes = new Hono()
       // Featured jobs are pinned on page 1 and left out of every page's main list (F2). Later pages
       // use page 1's hour (carried in the cursor), so the same jobs stay out across an hour change.
       const hour = (after && cursorHour(search.before)) || pinHour(now);
-      const [pinned, featuredTotal] = await Promise.all([
-        search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, new Date(hour * 3_600_000)),
-        firstPage ? featuredCount(db, settings, now) : Promise.resolve(0),
-      ]);
+      const seedAt = new Date(hour * 3_600_000);
+      // No filter (`searchWhere` is the public rule alone) on page 1: the pins and the count read the
+      // same rows, so one read serves both.
+      const unfiltered = firstPage && Array.isArray(where.AND) && where.AND.length === 1;
+      const [pinned, featuredTotal] = unfiltered
+        ? await featuredPinsAndCount(db, settings, now, seedAt).then(r => [r.pinned, r.count] as const)
+        : await Promise.all([
+            search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, seedAt),
+            firstPage ? featuredCount(db, settings, now) : Promise.resolve(0),
+          ]);
       const shown = firstPage ? pinned : [];
       const take = LIMITS.pageSize - shown.length;
       const orderBy = orderFor(search.sort);
