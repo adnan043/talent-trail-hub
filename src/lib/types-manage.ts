@@ -171,6 +171,8 @@ export interface AdminTiers {
   prices: CataloguePrice[] | null;
   pricesError: string | null;
   maxActive: number;
+  /** Every tier, active or not (tiers are never deleted). */
+  maxTiers: number;
   daysMax: number;
 }
 
@@ -277,6 +279,8 @@ export interface AdminJobDetail {
   company: CompanyOption;
   featuredUntil: string | null;
   expiresAt: string | null;
+  /** The currency its salary was entered in (null: no salary): an edit keeps it, whatever the board's is now. */
+  salaryCurrency: string | null;
   actions: AdminJobActions;
   /** The JobForm's values (strings, see src/lib/job-input.ts). */
   values: Record<string, string>;

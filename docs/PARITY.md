@@ -62,7 +62,7 @@ Status:
 | Consent text (180 days) + timestamp stored | DONE `lib/board.ts` (`DEFAULT_CONSENT_TEXT`), `server/routes/applications.ts` |
 | Resume PDF/DOC/DOCX ≤5 MB, TYPE CHECKED BY FIRST BYTES, private | PARTIAL: PDF/DOCX ≤5 MB private upload done (`server/routes/applications.ts`); only the declared content type is checked, no first-bytes check after `completeUpload`; `.doc` dropped (platform storage) |
 | Upload progress in the form | DONE ("Uploading name (x MB)…" state; `putFile` cannot report bytes) `components/apply/apply-form.ts` |
-| Duplicate email per job → 409; honeypot / >5 per IP-hash/hour → silent 201 | DONE `server/routes/applications.ts`; `tests/integration/applications.test.ts` |
+| Duplicate email per job, honeypot, >5 per IP-hash/hour → silent 201 (a duplicate is never a 409: it would tell anyone whether a named person applied) | DONE `server/routes/applications.ts`; `tests/integration/applications.test.ts` |
 | url/email apply link out + click counter capped per IP | DONE `server/routes/applications.ts` (`/jobs/:slug/click`, 120/h) |
 | Emails to candidate + employer | DONE `server/board/applicants.ts` (`notifyNewApplication`) |
 | `new-applicant` to ADMINS for ownerless companies / single-company, link `?job=<id>` | DONE `server/board/applicants.ts` links `?job=<id>`; `ApplicantsScreen.tsx` reads job/status from the URL |

@@ -39,6 +39,7 @@ const editBody = validator('json', value => ({values: readJobValues(asObject(val
 const detailSelect = {
   id: true,
   slug: true,
+  salaryCurrency: true,
   title: true,
   status: true,
   source: true,
@@ -112,6 +113,7 @@ export const manageJobEditRoutes = new Hono()
       company: job.company,
       featuredUntil: status === 'published' && featured ? (job.featuredUntil?.toISOString() ?? null) : null,
       expiresAt: job.expiresAt?.toISOString() ?? null,
+      salaryCurrency: job.salaryCurrency,
       actions: actionsFor(status, job.source),
       values: jobValuesOf({...job, tags: job.tags.map(t => t.tag.name)}),
     };
@@ -175,14 +177,15 @@ export const manageJobEditRoutes = new Hono()
     const id = idParam(c.req.param('id'));
     if (!id) return notFound(c);
     const db = c.var.db;
-    const job = await db.job.findUnique({where: {id}, select: {id: true, slug: true, source: true}});
+    const job = await db.job.findUnique({where: {id}, select: {id: true, slug: true, source: true, salaryCurrency: true}});
     if (!job) return notFound(c);
     if (isEmployerJob(job.source)) return c.json(problem('employer_job_locked', EMPLOYER_JOB_NOTE), 403);
     const checked = await validateJob(db, c.req.valid('json').values);
     if ('fields' in checked) return invalid(c, checked.fields);
     const settings = await getBoardSettings(db);
-    // Admin edits apply as they are (no re-review); the slug never changes.
-    await db.job.update({where: {id}, data: jobData(checked.columns, checked.html, settings.currency), select: {id: true}});
+    // Admin edits apply as they are (no re-review); the slug never changes. A salary keeps the
+    // currency it was entered in (the form showed it): only a job without one takes the board's.
+    await db.job.update({where: {id}, data: jobData(checked.columns, checked.html, job.salaryCurrency ?? settings.currency), select: {id: true}});
     await setJobTags(db, id, checked.columns.tags);
     await audit(db, {...(await actorOf(c)), action: 'job_edited', target: ['job', id]});
     return c.json({id, slug: job.slug});

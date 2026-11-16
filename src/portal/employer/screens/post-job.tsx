@@ -105,6 +105,13 @@ export function PostJob() {
       }
     },
     onError: err => {
+      // The job was saved before the checkout failed: a retry reuses it, never a second one.
+      if (err instanceof ApiError && typeof err.body.jobId === 'number' && err.body.jobId !== draft.jobId) {
+        const next = {...draft, jobId: err.body.jobId};
+        setDraft(next);
+        saveDraft(next);
+        void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
+      }
       if (!(err instanceof ApiError) || !Object.keys(err.fields).length) return;
       setServerErrors(err.fields);
       const keys = Object.keys(err.fields);

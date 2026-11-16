@@ -112,7 +112,8 @@ export const employerRoutes = new Hono<Env>()
 
   .get('/company', async c => {
     const company = await ownCompany(c.var.db, c.var.viewer.id!);
-    return c.json({company: company ? toEmployerCompany(company) : null});
+    // With file storage (a Site Key) the logo goes there; without one, to `/company/logo/local`.
+    return c.json({company: company ? toEmployerCompany(company) : null, logoUploads: Boolean(config.siteKey)});
   })
 
   .put('/company', validator('json', value => (value ?? {}) as Record<string, unknown>), async c => {

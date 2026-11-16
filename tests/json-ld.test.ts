@@ -129,7 +129,7 @@ describe('safeUrl', () => {
 
 describe('keyset cursor', () => {
   it('round-trips and refuses a cursor of the other sort', () => {
-    const cursor = encodeCursor('newest', {id: 7, publishedAt: new Date(1_700_000_000_000), salaryMaxCents: null}, 472222);
+    const cursor = encodeCursor('newest', {id: 7, publishedAt: new Date(1_700_000_000_000), salarySortCents: null}, 472222);
     expect(cursorHour(cursor)).toBe(472222);
     expect(cursorWhere('newest', cursor)).not.toBeNull();
     expect(cursorWhere('salary', cursor)).toBeNull();
@@ -140,7 +140,9 @@ describe('keyset cursor', () => {
     expect(cursorWhere('newest', 'n99999999999999999_1')).toBeNull();
     expect(cursorWhere('newest', 'n1_99999999999')).toBeNull();
     expect(cursorWhere('salary', 's1_99999999999')).toBeNull();
-    expect(cursorWhere('salary', 's3000000000_1')).toBeNull();
+    expect(cursorWhere('salary', 's9999999999999999_1')).toBeNull();
+    // Yearly cents are int8: an hourly salary's yearly amount is past int4 and still valid.
+    expect(cursorWhere('salary', 's4368000000000_1')).not.toBeNull();
     expect(cursorWhere('salary', 's500000_42')).not.toBeNull();
   });
 });

@@ -559,6 +559,9 @@ model Job {
   /// Keyword search: title, company name, tags and description, lower-cased. Kept by database
   /// triggers (migration 20261113090000_perf_indexes) on every write; code never writes it.
   searchText         String    @default("") @map("search_text") @db.Text
+  /// `/jobs?sort=salary`: the yearly amount in cents (max, else min, times the periods a year).
+  /// Kept by a database trigger (migration 20261116120000_salary_sort); code never writes it.
+  salarySortCents    BigInt?   @map("salary_sort_cents")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -584,8 +587,8 @@ model Job {
   @@index([companyId, id(sort: Desc)])
   @@index([status, expiresAt])
   @@index([tierId])
-  /// `/jobs?sort=salary` (the SQL index is `salary_max_cents DESC NULLS LAST`, matching the order).
-  @@index([status, salaryMaxCents(sort: Desc), id(sort: Desc)])
+  /// `/jobs?sort=salary` (the SQL index is `salary_sort_cents DESC NULLS LAST`, matching the order).
+  @@index([status, salarySortCents(sort: Desc), id(sort: Desc)])
   /// The moderation queue (pending_review, flagged first, then oldest id).
   @@index([status, flagged(sort: Desc), id])
   /// Keyword and location search (ILIKE '%term%'): trigram GIN (pg_trgm). Also in SQL only:

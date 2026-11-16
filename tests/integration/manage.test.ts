@@ -107,6 +107,17 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect((await owner.post('/site-api/manage/emails/search', {to: 'nobody@example.test', status: '', before: ''})).json.emails).toEqual([]);
   });
 
+  it("an admin edit keeps the currency the salary was entered in, after the board's currency changed", async () => {
+    const {job, category} = await seedJob('admin');
+    await db.job.update({where: {id: job.id}, data: {salaryMinCents: 5_000_000, salaryMaxCents: 6_000_000, salaryCurrency: 'EUR', salaryPeriod: 'YEAR'}});
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, currency: 'USD'}, update: {currency: 'USD'}});
+    const detail = await admin.get(`/site-api/manage/jobs/${job.id}`);
+    expect(detail.json).toMatchObject({salaryCurrency: 'EUR'});
+    const saved = await admin.request('PUT', `/site-api/manage/jobs/${job.id}`, {values: {...values('Changed', category.id), salaryMin: '50000', salaryMax: '60000'}});
+    expect(saved.status).toBe(200);
+    expect((await db.job.findUniqueOrThrow({where: {id: job.id}, select: {salaryCurrency: true, title: true}}))).toEqual({salaryCurrency: 'EUR', title: 'Changed'});
+  });
+
   it("an admin cannot edit an employer's job (403 employer_job_locked), but edits admin jobs", async () => {
     const paid = await seedJob('paid');
     const locked = await admin.request('PUT', `/site-api/manage/jobs/${paid.job.id}`, {values: values('Changed', paid.category.id)});

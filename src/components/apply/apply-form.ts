@@ -50,6 +50,10 @@ async function uploadResume(file: File): Promise<{token: string} | SubmitResult>
 
 function bindClicks(section: HTMLElement, slug: string) {
   section.querySelectorAll<HTMLAnchorElement>('[data-apply-click]').forEach(link => {
+    // The job page's own script binds these links too (url / email jobs have no apply section):
+    // whichever runs first takes the link, so a click is counted once.
+    if (link.dataset.clickBound) return;
+    link.dataset.clickBound = '1';
     link.addEventListener('click', () => {
       // Counted on the way out; never blocks the link.
       void siteFetch(`/site-api/applications/jobs/${encodeURIComponent(slug)}/click`, {method: 'POST', keepalive: true}).catch(() => undefined);

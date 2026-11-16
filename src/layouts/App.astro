@@ -47,6 +47,13 @@ Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
     <script>
       import {refreshSession} from '../platform/browser';
 
+      // Same as the website layout: back from the payment provider INSIDE the payment window
+      // (an employer checkout returns to /dashboard/…?checkout=…): tell the page that opened
+      // it, then close. Its code loads only on such a return.
+      if (new URLSearchParams(window.location.search).has('checkout')) {
+        void import('../lib/checkout-session').then(({notifyPaymentOpener}) => notifyPaymentOpener());
+      }
+
       // The theme picked in the dashboard's top bar (src/portal/routes.tsx `useTheme`), before the app draws.
       try {
         const theme = localStorage.getItem('site:theme');

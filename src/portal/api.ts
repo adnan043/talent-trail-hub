@@ -16,7 +16,9 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly fields: Record<string, string> = {}
+    readonly fields: Record<string, string> = {},
+    /** The whole error body (e.g. the `jobId` a failed post still saved). */
+    readonly body: Record<string, unknown> = {}
   ) {
     super(message);
   }
@@ -28,6 +30,6 @@ export async function read<T>(response: Promise<Response>): Promise<T> {
   const body = (await res.json().catch(() => null)) as
     | (T & {message?: string; fields?: Record<string, string>})
     | null;
-  if (!res.ok) throw new ApiError(body?.message ?? `Request failed (${res.status})`, res.status, body?.fields);
+  if (!res.ok) throw new ApiError(body?.message ?? `Request failed (${res.status})`, res.status, body?.fields, (body ?? {}) as Record<string, unknown>);
   return body as T;
 }

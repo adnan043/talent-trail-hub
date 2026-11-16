@@ -102,6 +102,7 @@ export const manageTierRoutes = new Hono()
       prices: prices.prices,
       pricesError: prices.error,
       maxActive: LIMITS.tiersActiveMax,
+      maxTiers: MAX_TIERS,
       daysMax: LIMITS.tierDaysMax,
     };
     return c.json(body);
@@ -135,6 +136,10 @@ async function save(c: TierContext, id: number | null, input: TierInput) {
   const db = c.var.db;
   const existing = id ? await db.listingTier.findUnique({where: {id}, select: tierSelect}) : null;
   if (id && !existing) return c.json(problem('not_found', 'No such tier.'), 404);
+  // The list shows MAX_TIERS: a tier past it could never be seen or edited.
+  if (!existing && (await db.listingTier.count()) >= MAX_TIERS) {
+    return c.json(problem('too_many_tiers', `A board keeps at most ${MAX_TIERS} tiers. Edit an inactive one instead.`), 409);
+  }
 
   const copy: {priceCents: number; currency: string} = {
     priceCents: existing?.priceCents ?? 0,

@@ -93,7 +93,8 @@ export const employerJobRoutes = new Hono<Env>()
     // publishes without review). A live job leaves the board for review now; one that is down
     // is reviewed when it is renewed (src/server/board/employer-settle.ts). Its dates stay.
     const target = await submissionTarget(db, company.id, settings);
-    const base = jobData(checked.columns, checked.html, settings.currency);
+    // A salary keeps the currency it was entered in (the form showed it); only a job without one takes the board's.
+    const base = jobData(checked.columns, checked.html, job.salaryCurrency ?? settings.currency);
     // ONE transaction, the job row LOCKED and its status read again under the lock: an approval,
     // a renewal or a payment that lands while this request runs is either fully before this write
     // (seen here) or waits for it (and sees `needs_review`). So unapproved text never goes live.
