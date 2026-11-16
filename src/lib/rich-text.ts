@@ -75,7 +75,9 @@ export function htmlToText(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&#x27;/g, "'")
     .replace(/&amp;/g, '&')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\s*\n\s*/g, '\n')
+    // Linear on purpose: `\s*\n\s*` rescans a long run of other spaces (no-break, …) at every
+    // position. All non-newline whitespace becomes one space, then each break absorbs its spaces.
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ ?\n[\n ]*/g, '\n')
     .trim();
 }

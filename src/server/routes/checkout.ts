@@ -18,6 +18,7 @@ import {
   type PaymentEventInfo,
 } from '../../platform/payments';
 import {paymentHooks, recordMembership} from '../payments-hooks';
+import {errorLabel} from '../error-label';
 
 /**
  * Payments, the site's side (docs/agent/payments.md).
@@ -234,7 +235,7 @@ export const checkoutRoutes = new Hono()
         if (membership) await paymentHooks.onMembershipChanged?.(membership, {...event, type: 'membership.started'});
       } catch (error) {
         // The payment stands; the event (live) records it again later.
-        console.error(`[payments] confirm ${checkout.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500));
+        console.error(`[payments] confirm ${checkout.id}: ${errorLabel(error)}`);
       }
     }
     c.header('Cache-Control', 'private, no-store');

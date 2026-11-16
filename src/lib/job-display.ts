@@ -53,7 +53,8 @@ export function countryCodesMatching(text: string): string[] {
   const needle = text.trim().toLowerCase();
   if (!needle) return [];
   const codes = new Set<string>();
-  if (ALIASES[needle]) codes.add(ALIASES[needle]);
+  // Own keys only: `constructor`, `__proto__`… would otherwise return Object's built-ins.
+  if (Object.hasOwn(ALIASES, needle)) codes.add(ALIASES[needle]!);
   if (/^[a-z]{2}$/.test(needle) && allCountries().some(([code]) => code === needle.toUpperCase())) codes.add(needle.toUpperCase());
   if (needle.length >= 3) for (const [code, name] of allCountries()) if (name.includes(needle)) codes.add(code);
   return [...codes].slice(0, 20);

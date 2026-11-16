@@ -79,7 +79,14 @@ export function PostJob() {
       const next = {...draft, jobId: answer.jobId};
       setDraft(next);
       saveDraft(next);
-      void queryClient.invalidateQueries({queryKey: ['employer']});
+      // The job is saved in every case; an order exists once it is done or off to pay; a first post
+      // also created the company (the company screen, and the options that carry it).
+      void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
+      if (answer.status !== 'choose') void queryClient.invalidateQueries({queryKey: ['employer', 'orders']});
+      if (!options.data?.company) {
+        void queryClient.invalidateQueries({queryKey: ['employer', 'company']});
+        void queryClient.invalidateQueries({queryKey: ['employer', 'options']});
+      }
       if (answer.status === 'choose') {
         setGateways(answer.gateways);
         return;

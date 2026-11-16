@@ -118,7 +118,8 @@ export const manageTierRoutes = new Hono()
       }
     }
     await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: enabled}, update: {freePostingEnabled: enabled}, select: {id: true}});
-    forgetBoardSettings();
+    // After the write, outside any transaction: every instance's cached settings go (brand.ts).
+    await forgetBoardSettings();
     await audit(db, {...(await actorOf(c)), action: 'free_posting_changed', target: ['board', 1], meta: {enabled}});
     return c.json({freePostingEnabled: enabled});
   })

@@ -1,5 +1,5 @@
 import {Prisma, type PrismaClient} from '../../generated/prisma/client';
-import type {JobStatus} from '../../lib/board';
+import {type JobStatus, isDbId} from '../../lib/board';
 import {checkJobValues, type JobColumns, jobColumns, type JobValues, jobValuesOf} from '../../lib/job-input';
 import {renderMarkdown} from '../../lib/markdown';
 import type {EmployerJobActions, EmployerJobDetail, EmployerJobRow} from '../../lib/types-employer';
@@ -143,7 +143,7 @@ const detailSelect = {
 
 /** One own job (any listed status), or null: the caller answers 404. */
 export async function findOwnJob(db: PrismaClient, companyId: number, id: number) {
-  if (!Number.isSafeInteger(id) || id < 1) return null;
+  if (!isDbId(id)) return null;
   const job = await db.job.findFirst({where: {id, companyId, status: {in: LISTED}}, select: detailSelect});
   return job;
 }

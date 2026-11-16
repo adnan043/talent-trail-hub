@@ -141,6 +141,12 @@ export function changedFields(row: CompanyRow, next: ReturnType<typeof profileCo
  * step after a job of the company changes. One bounded count over the company's own jobs.
  */
 export async function refreshActiveJobCount(db: PrismaClient, companyId: number, now = new Date()): Promise<void> {
-  const active = await db.job.count({where: {companyId, status: 'published', expiresAt: {gt: now}}});
-  await db.company.update({where: {id: companyId}, data: {activeJobCount: active}, select: {id: true}});
+  // ONE statement (the same definition as the expiry task's recount, tasks.ts): indexed by
+  // (company_id, status). `updated_at` moves as Prisma's @updatedAt did.
+  await db.$executeRaw`
+    UPDATE "companies" c SET "active_job_count" = (
+      SELECT count(*)::int FROM "jobs" j
+      WHERE j."company_id" = c."id" AND j."status" = 'published' AND j."expires_at" > ${now}
+    ), "updated_at" = now()
+    WHERE c."id" = ${companyId}`;
 }

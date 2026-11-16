@@ -3,6 +3,7 @@ import {LIMITS} from '../../lib/board';
 import {SiteKeyMissing} from '../../platform/api';
 import {config} from '../../platform/config';
 import {completeUpload, createUpload, deleteFile, fileUrl, publicFileUrl} from '../../platform/files';
+import {errorLabel} from '../error-label';
 
 /**
  * A company logo (F17): PNG, JPEG or WebP up to 1 MB, a PUBLIC file (docs/agent/files.md). The
@@ -32,20 +33,29 @@ const tokenFor = (companyId: number, fileId: string) => keyed(`${companyId}:${fi
 /** Logo uploads per user per hour (`board_attempts`, keyed hash of the user id; swept daily). */
 export const LOGO_UPLOADS_PER_HOUR = 30;
 
-/** Counts this attempt; false when the user already made `LOGO_UPLOADS_PER_HOUR` in the last hour. */
-export async function logoAttemptAllowed(db: PrismaClient, userId: number): Promise<boolean> {
+/** Posts plus renewals per user per hour: each makes a job or order row and a checkout, and may email reviewers. */
+export const POSTS_PER_HOUR = 20;
+
+/**
+ * Counts this attempt of `kind` by this user; false when they already made `limit` in the last
+ * hour (`board_attempts`, keyed hash of the user id; swept daily).
+ */
+export async function userAttemptAllowed(db: PrismaClient, kind: 'logo' | 'post', userId: number, limit: number): Promise<boolean> {
   const ipHash = await keyed(`user:${userId}`);
   const since = new Date(Date.now() - 3_600_000);
   // Record FIRST, then look: parallel bursts all see each other. Bounded read on the
   // (kind, ip_hash, created_at) index: at most one row past the limit.
-  await db.boardAttempt.create({data: {kind: 'logo', ipHash}, select: {id: true}});
+  await db.boardAttempt.create({data: {kind, ipHash}, select: {id: true}});
   const recent = await db.boardAttempt.findMany({
-    where: {kind: 'logo', ipHash, createdAt: {gt: since}},
+    where: {kind, ipHash, createdAt: {gt: since}},
     select: {id: true},
-    take: LOGO_UPLOADS_PER_HOUR + 1,
+    take: limit + 1,
   });
-  return recent.length <= LOGO_UPLOADS_PER_HOUR;
+  return recent.length <= limit;
 }
+
+/** Counts this attempt; false when the user already made `LOGO_UPLOADS_PER_HOUR` in the last hour. */
+export const logoAttemptAllowed = (db: PrismaClient, userId: number) => userAttemptAllowed(db, 'logo', userId, LOGO_UPLOADS_PER_HOUR);
 
 /** Constant-time compare of two hex strings. */
 function same(a: string, b: string): boolean {
@@ -139,7 +149,7 @@ export async function dropLogoFile(requestUrl: string, fileId: string | null): P
   try {
     await deleteFile(requestUrl, fileId);
   } catch (err) {
-    console.warn(`company logo ${fileId} not deleted: ${(err as Error).message}`);
+    console.warn(`company logo ${fileId} not deleted: ${errorLabel(err)}`);
   }
 }
 

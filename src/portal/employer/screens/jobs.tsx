@@ -36,7 +36,9 @@ export function EmployerJobs() {
       }
       else if (status === 'open') toast.info('Your payment is still being confirmed. This list updates once it is.');
       else toast.danger('The payment did not go through. Nothing was charged.');
-      void queryClient.invalidateQueries({queryKey: ['employer']});
+      // The paid job's status and its order (receipts); the company and options did not change.
+      void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
+      void queryClient.invalidateQueries({queryKey: ['employer', 'orders']});
       void navigate({to: '/employer/jobs', search: {}, replace: true});
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -46,7 +48,7 @@ export function EmployerJobs() {
     mutationFn: (id: number) => read(api.employer.jobs[':id'].close.$post({param: {id: String(id)}})),
     onSuccess: () => {
       toast.success('Job closed.');
-      void queryClient.invalidateQueries({queryKey: ['employer']});
+      void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
     },
   });
 
@@ -196,9 +198,11 @@ function RenewDialog({job, onClose}: {job: EmployerJobRow; onClose: () => void})
       read<ListingAnswer>(api.employer.jobs[':id'].renew.$post({param: {id: String(job.id)}, json: {tierId: chosen, gateway: gateway || undefined}})),
     onSuccess: async answer => {
       if (answer.status === 'choose') return setGateways(answer.gateways);
+      // Done or off to pay: the server recorded an order either way (billing shows it).
+      void queryClient.invalidateQueries({queryKey: ['employer', 'orders']});
       if (answer.status === 'done') {
         toast.success('Job renewed.');
-        void queryClient.invalidateQueries({queryKey: ['employer']});
+        void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
         return onClose();
       }
       try {

@@ -2,7 +2,7 @@ import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
-import {forgetHiringRanking} from '../../src/server/routes/companies';
+import {refreshActiveJobCount} from '../../src/server/board/employer';
 import {Browser, configureEnv, DATABASE_URL, db, resetDatabase} from './support/harness';
 
 /**
@@ -20,7 +20,7 @@ async function company(name: string, over: {isBlocked?: boolean} = {}) {
 
 async function job(companyId: number, slug: string, over: Record<string, unknown> = {}) {
   const now = Date.now();
-  return db.job.create({
+  const row = await db.job.create({
     data: {
       companyId,
       categoryId,
@@ -37,6 +37,9 @@ async function job(companyId: number, slug: string, over: Record<string, unknown
     },
     select: {id: true, updatedAt: true},
   });
+  // The app keeps the directory's counter on every job write; a row made here does the same.
+  await refreshActiveJobCount(db, companyId);
+  return row;
 }
 
 describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () => {
@@ -49,7 +52,6 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
   beforeEach(async () => {
     await resetDatabase();
     forgetBoardSettings();
-    forgetHiringRanking();
     categoryId = (await db.category.upsert({where: {slug: 'design'}, create: {name: 'Design', slug: 'design'}, update: {}, select: {id: true}})).id;
     browser = new Browser(app, '203.0.113.50');
   });
@@ -80,6 +82,19 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect((sitemap.json.jobs as {slug: string}[]).map(j => j.slug)).toEqual(['live-job']);
   });
 
+  it('odd but valid-looking filters and cursors answer normally, never a 500', async () => {
+    const acme = await company('Acme');
+    await job(acme.id, 'live-job');
+    // Names of Object's built-ins as a location: no country, not a crash.
+    for (const location of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      const res = await browser.get(`/site-api/jobs?location=${location}`);
+      expect(res.status, location).toBe(200);
+    }
+    // A cursor id past the database's integer: ignored (the first page), not a 500.
+    const companies = await browser.get('/site-api/companies?after=1.9999999999');
+    expect(companies.status).toBe(200);
+  });
+
   it('never serves an expired or closed job whose edit awaits review', async () => {
     const acme = await company('Acme');
     await job(acme.id, 'closed-edited', {status: 'closed', needsReview: true});
@@ -108,6 +123,18 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     const featured = await browser.get('/site-api/jobs?q=&category=&type=&workplace=&location=&minSalary=&posted=&sort=&featured=1&before=');
     expect(featured.json.pinned).toBe(0);
     expect((featured.json.jobs as unknown[]).length).toBe(7);
+  });
+
+  it('a company gets a public page only once one of its jobs has been live', async () => {
+    const fresh = await company('Spam Co');
+    await job(fresh.id, 'spam-draft', {status: 'pending_payment', publishedAt: null, expiresAt: null});
+    await job(fresh.id, 'spam-rejected', {status: 'rejected', publishedAt: null, expiresAt: null});
+    expect((await browser.get('/site-api/companies/spam-co')).status).toBe(404);
+    const past = await company('Past Co');
+    await job(past.id, 'past-job', {status: 'expired', expiresAt: new Date(Date.now() - DAY)});
+    expect((await browser.get('/site-api/companies/past-co')).status).toBe(200);
+    await job(fresh.id, 'spam-live');
+    expect((await browser.get('/site-api/companies/spam-co')).status).toBe(200);
   });
 
   it('orders the companies directory and "Hiring now" by open jobs', async () => {

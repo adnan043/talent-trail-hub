@@ -1,14 +1,14 @@
 import type {Context} from 'hono';
 
 import type {Prisma, PrismaClient} from '../../generated/prisma/client';
-import {type ApplicationStatus, RESUME_RETENTION_DAYS} from '../../lib/board';
+import {type ApplicationStatus, RESUME_RETENTION_DAYS, isDbId} from '../../lib/board';
 import {type ApplicantRow, RESUME_EXPIRED_TEXT} from '../../lib/types-apply';
 import {can} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
 import {PERMISSIONS} from '../permissions';
 import {sendBoardEmail} from './email';
 import {cachedBoardSettings} from './brand';
-import {isSingleCompany} from './settings';
+import {type BoardSettings, isSingleCompany} from './settings';
 
 /**
  * F16 applicants, shared by the employer area (own company) and the admin (`site:applicant:read`,
@@ -20,11 +20,15 @@ export type ApplicantScope = {kind: 'all'} | {kind: 'company'; companyId: number
 type ViewerContext = Context<{Variables: {viewer: Viewer; db: PrismaClient}}>;
 
 /**
- * `all` for holders of `site:applicant:read` (both board modes); otherwise the viewer's own
+ * `all` for holders of `site:applicant:read` (`site:applicant:manage` for a write; both board
+ * modes); otherwise the viewer's own
  * company, but only on a marketplace board (single-company mode: the employer area is 404).
  */
-export async function applicantScope(c: ViewerContext): Promise<ApplicantScope> {
-  if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, PERMISSIONS.APPLICANT_READ_ALL)) return {kind: 'all'};
+export async function applicantScope(c: ViewerContext, access: 'read' | 'write' = 'read'): Promise<ApplicantScope> {
+  // Reading every company's applicants and CHANGING them are two permissions: a staff member who
+  // may only look never sets a status (which emails the candidate) or overwrites notes.
+  const all = access === 'write' ? PERMISSIONS.APPLICANT_MANAGE_ALL : PERMISSIONS.APPLICANT_READ_ALL;
+  if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, all)) return {kind: 'all'};
   const db = c.var.db;
   const [settings, company] = await Promise.all([
     cachedBoardSettings(db),
@@ -137,43 +141,56 @@ export const STATUS_TEMPLATES = {
 export function idOf(value: string | undefined): number | null {
   if (!value || !/^\d{1,10}$/.test(value)) return null;
   const n = Number(value);
-  return Number.isSafeInteger(n) && n > 0 ? n : null;
+  return isDbId(n) ? n : null;
 }
 
-/** The candidate's confirmation and the employer's "new applicant" email (never throw). */
+/**
+ * The candidate's confirmation and the employer's "new applicant" email (each send never throws).
+ * Runs AFTER the apply answer (`after()`, src/server/board/after.ts). `settings`: the board
+ * settings the route already holds, so no send reads them again.
+ */
 export async function notifyNewApplication(
   c: Context,
   db: PrismaClient,
-  {job, candidate, boardName, singleCompany}: {
+  {job, candidate, boardName, singleCompany, settings}: {
     singleCompany: boolean;
     job: {id: number; title: string; slug: string; company: {name: string; ownerUserId: number | null}};
     candidate: {name: string; email: string};
     boardName: string;
+    settings?: Pick<BoardSettings, 'name' | 'boardMode' | 'ownerCompanyId'>;
   }
 ) {
   const origin = new URL(c.req.url).origin;
-  await sendBoardEmail(db, c.req.url, {
-    template: 'application-confirmation',
-    to: candidate.email,
-    vars: {boardName, applicantName: candidate.name, jobTitle: job.title, companyName: job.company.name, jobUrl: `${origin}/jobs/${job.slug}/`},
-  });
+  const requestUrl = c.req.url;
   // The employer; on a single-company board, or for a company without an owner account, the staff.
-  const owner =
-    !singleCompany && job.company.ownerUserId
-      ? await db.user.findFirst({where: {id: job.company.ownerUserId, status: 'active'}, select: {email: true}})
-      : null;
-  const recipients = owner ? [owner.email] : await applicantStaffEmails(db);
-  const applicantsUrl = owner ? `${origin}/dashboard/employer/jobs/${job.id}/applicants` : `${origin}/dashboard/manage/applicants?job=${job.id}`;
-  // At once, not one after another: the apply answer waits for these (each send never throws).
-  await Promise.allSettled(
-    recipients.map(to =>
-      sendBoardEmail(db, c.req.url, {
-        template: 'new-applicant',
-        to,
-        vars: {boardName, jobTitle: job.title, applicantName: candidate.name, applicantsUrl},
-      })
-    )
-  );
+  const recipients = async () => {
+    const owner =
+      !singleCompany && job.company.ownerUserId
+        ? await db.user.findFirst({where: {id: job.company.ownerUserId, status: 'active'}, select: {email: true}})
+        : null;
+    return {owner: owner !== null, to: owner ? [owner.email] : await applicantStaffEmails(db)};
+  };
+  // All at once: the confirmation, and the employer lookup followed by their emails.
+  await Promise.allSettled([
+    sendBoardEmail(
+      db,
+      requestUrl,
+      {
+        template: 'application-confirmation',
+        to: candidate.email,
+        vars: {boardName, applicantName: candidate.name, jobTitle: job.title, companyName: job.company.name, jobUrl: `${origin}/jobs/${job.slug}/`},
+      },
+      settings
+    ),
+    recipients().then(({owner, to}) => {
+      const applicantsUrl = owner ? `${origin}/dashboard/employer/jobs/${job.id}/applicants` : `${origin}/dashboard/manage/applicants?job=${job.id}`;
+      return Promise.allSettled(
+        to.map(address =>
+          sendBoardEmail(db, requestUrl, {template: 'new-applicant', to: address, vars: {boardName, jobTitle: job.title, applicantName: candidate.name, applicantsUrl}}, settings)
+        )
+      );
+    }),
+  ]);
 }
 
 /** Codenames that grant `site:applicant:read` (itself or a wildcard over it). */

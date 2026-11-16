@@ -39,7 +39,16 @@ function inline(text: string): string {
 
 const BULLET = /^\s*[-*+]\s+(.*)$/;
 const NUMBER = /^\s*\d{1,3}[.)]\s+(.*)$/;
-const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+// Linear on purpose: `\s*#*\s*$` after a lazy group backtracks cubically on a long run of spaces
+// (a CPU-burning job description). The closing `#`s are cut by `headingText`, without a regex.
+const HEADING = /^(#{1,6})\s+(.*)$/;
+
+/** A heading's text without its optional closing `#`s and the spaces around them. */
+function headingText(text: string): string {
+  let end = text.trimEnd().length;
+  while (end > 0 && text[end - 1] === '#') end--;
+  return text.slice(0, end).trimEnd();
+}
 
 /** Markdown → HTML (NOT sanitized yet: use `renderMarkdown`). */
 export function markdownToHtml(markdown: string): string {
@@ -69,7 +78,7 @@ export function markdownToHtml(markdown: string): string {
       flushParagraph();
       flushList();
       const tag = heading[1]!.length >= 4 ? 'h4' : 'h3';
-      out.push(`<${tag}>${inline(heading[2]!)}</${tag}>`);
+      out.push(`<${tag}>${inline(headingText(heading[2]!))}</${tag}>`);
     } else if (bullet || number) {
       flushParagraph();
       const tag = bullet ? 'ul' : 'ol';

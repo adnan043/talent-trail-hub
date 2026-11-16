@@ -24,7 +24,8 @@ export function EditEmployerJob() {
       read<{job: EmployerJobDetail; reReview: boolean}>(api.employer.jobs[':id'].$put({param: {id}, json: {job: values}})),
     onSuccess: answer => {
       toast.success(answer.reReview ? 'Saved. Your job is back in review and returns once approved.' : 'Job saved.');
-      void queryClient.invalidateQueries({queryKey: ['employer']});
+      // The list and this job (both under ['employer', 'jobs']); company, options and orders did not change.
+      void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
       void navigate({to: '/employer/jobs'});
     },
   });

@@ -1,5 +1,7 @@
 import {Hono} from 'hono';
 
+import {clearPublicListsAfterWrite} from '../board/public-cache';
+
 import {manageEmailRoutes} from '../board/manage-emails';
 import {manageJobRoutes} from '../board/manage-jobs';
 import {manageModerationRoutes} from '../board/manage-moderation';
@@ -21,6 +23,7 @@ import {manageTierRoutes} from '../board/manage-tiers';
  *   *    /settings/{branding,board,moderation}  site:board:settings  F30, F39, F31
  */
 export const manageRoutes = new Hono()
+  .use(clearPublicListsAfterWrite)
   .route('/overview', manageOverviewRoutes)
   .route('/moderation', manageModerationRoutes)
   .route('/jobs', manageJobRoutes)

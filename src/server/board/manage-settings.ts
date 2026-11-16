@@ -35,10 +35,13 @@ const logoLocal = validator('json', (value, c) => {
   return {contentType, data};
 });
 
-/** Saves, then drops this isolate's cached copy (public pages read it through brand.ts, 15 s). */
+/**
+ * Saves, then clears the Site Cache's copy (`board:settings` and the public reads built from it,
+ * brand.ts) for every Worker instance: the next public read shows the change.
+ */
 const saveSettings = async (db: PrismaClient, data: Record<string, unknown>) => {
   const saved = await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, ...data}, update: data, select: {id: true}});
-  forgetBoardSettings();
+  await forgetBoardSettings();
   return saved;
 };
 

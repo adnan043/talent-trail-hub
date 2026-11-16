@@ -115,9 +115,10 @@ const cellClass = <Row,>(column: Column<Row>) =>
 export function LoadMore({
   query,
 }: {
-  query: {hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown};
+  query: {hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown; isPlaceholderData?: boolean};
 }) {
-  if (!query.hasNextPage) return null;
+  // While a new filter loads, the rows shown are the last filter's (`keepPreviousData`): no "more" of those.
+  if (!query.hasNextPage || query.isPlaceholderData) return null;
   return (
     <div className="load-more">
       <Button variant="secondary" pending={query.isFetchingNextPage} pendingLabel="Loading…" onClick={() => void query.fetchNextPage()}>

@@ -1,5 +1,5 @@
 import type {PrismaClient} from '../../generated/prisma/client';
-import {LIMITS} from '../../lib/board';
+import {LIMITS, isDbId} from '../../lib/board';
 import type {EmployerOrderRow, ListingAnswer, TierOption} from '../../lib/types-employer';
 import type {Viewer} from '../../lib/types';
 import {SiteKeyMissing} from '../../platform/api';
@@ -83,7 +83,7 @@ type Problem = {status: 404 | 422 | 502 | 503; code: string; message: string};
 export async function startListing(
   db: PrismaClient,
   requestUrl: string,
-  input: {companyId: number; viewer: Viewer; jobId: number; kind: 'new' | 'renew'; tier: ChosenTier; gateway?: string; cancelPath: string}
+  input: {companyId: number; viewer: Viewer; jobId: number; kind: 'new' | 'renew'; tier: ChosenTier; gateway?: string; cancelPath: string; defer?: (work: () => Promise<unknown>) => void}
 ): Promise<ListingAnswer | {problem: Problem}> {
   const {tier, jobId} = input;
   const orderData = {
@@ -102,7 +102,7 @@ export async function startListing(
   };
   if (tier.free) {
     const order = await db.listingOrder.create({data: orderData, select: {id: true}});
-    const settled = await settleListingOrder(db, requestUrl, {id: order.id}, {});
+    const settled = await settleListingOrder(db, requestUrl, {id: order.id}, {}, {defer: input.defer});
     const job = await db.job.findUnique({where: {id: jobId}, select: {status: true}});
     return {status: 'done', jobId, orderId: settled?.orderId ?? order.id, jobStatus: (job?.status ?? 'pending_review') as never};
   }
@@ -110,7 +110,7 @@ export async function startListing(
   // at once to test the rest of the flow. `import.meta.env.DEV` is false in every build.
   if (import.meta.env.DEV && !config.siteKey) {
     const order = await db.listingOrder.create({data: orderData, select: {id: true}});
-    const settled = await settleListingOrder(db, requestUrl, {id: order.id}, {});
+    const settled = await settleListingOrder(db, requestUrl, {id: order.id}, {}, {defer: input.defer});
     const job = await db.job.findUnique({where: {id: jobId}, select: {status: true}});
     return {status: 'done', jobId, orderId: settled?.orderId ?? order.id, jobStatus: (job?.status ?? 'pending_review') as never};
   }
@@ -217,6 +217,6 @@ export async function listOwnOrders(db: PrismaClient, companyId: number, before:
 }
 
 export async function findOwnOrder(db: PrismaClient, companyId: number, id: number) {
-  if (!Number.isSafeInteger(id) || id < 1) return null;
+  if (!isDbId(id)) return null;
   return db.listingOrder.findFirst({where: {id, companyId, status: {in: ['paid', 'refunded']}}, select: {...orderSelect, userId: true}});
 }

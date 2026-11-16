@@ -1,10 +1,10 @@
-import {useInfiniteQuery, useMutation, useQuery} from '@tanstack/react-query';
+import {keepPreviousData, useInfiniteQuery, useMutation, useQuery} from '@tanstack/react-query';
 import {useNavigate, useParams, useSearch} from '@tanstack/react-router';
 import {type ReactNode, useState} from 'react';
 
 import {APPLICATION_STATUSES} from '../../lib/board';
 import {APPLICATION_STATUS_LABELS, type ApplicantRow} from '../../lib/types-apply';
-import {ago} from '../shared';
+import {ago, useMe} from '../shared';
 import {
   Button,
   Card,
@@ -50,13 +50,16 @@ function ApplicantsTable({
   withJob,
   filtered,
   emptyAction,
+  canEdit = true,
 }: {
   rows: ApplicantRow[] | undefined;
-  query: {isPending: boolean; error: Error | null; hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown};
+  query: {isPending: boolean; error: Error | null; hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown; isPlaceholderData?: boolean};
   withJob?: boolean;
   filtered: boolean;
   /** The empty state's one action: "Show all" when filtered, else what brings applicants. */
   emptyAction?: ReactNode;
+  /** False: look only (no status changes, no notes), as the server refuses them too. */
+  canEdit?: boolean;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const status = useApplicantStatus();
@@ -66,11 +69,15 @@ function ApplicantsTable({
   const open = rows?.find(row => row.id === openId) ?? null;
 
   const menu = (row: ApplicantRow): MenuItem[] => [
-    ...APPLICATION_STATUSES.filter(s => s !== row.status).map(s => ({
-      label: `Mark ${APPLICATION_STATUS_LABELS[s].toLowerCase()}`,
-      onSelect: () => status.mutate({id: row.id, status: s, previous: row.status}),
-    })),
-    'separator' as const,
+    ...(canEdit
+      ? [
+          ...APPLICATION_STATUSES.filter(s => s !== row.status).map(s => ({
+            label: `Mark ${APPLICATION_STATUS_LABELS[s].toLowerCase()}`,
+            onSelect: () => status.mutate({id: row.id, status: s, previous: row.status}),
+          })),
+          'separator' as const,
+        ]
+      : []),
     {
       label: 'Download resume',
       icon: 'file' as const,
@@ -135,7 +142,7 @@ function ApplicantsTable({
         />
       </Card>
       <LoadMore query={query} />
-      <ApplicantDrawer applicant={open} onClose={() => setOpenId(null)} />
+      <ApplicantDrawer applicant={open} onClose={() => setOpenId(null)} canEdit={canEdit} />
     </>
   );
 }
@@ -174,7 +181,8 @@ export function JobApplicants() {
   const {id = ''} = useParams({strict: false}) as {id?: string};
   const [{status}, setFilters] = useUrlFilters();
   const setStatus = (next: StatusFilter) => setFilters({status: next, job: ''});
-  const list = useInfiniteQuery(jobApplicantsQuery(id, status));
+  // A status change keeps the last rows on screen while it loads; another job never shows this one's.
+  const list = useInfiniteQuery({...jobApplicantsQuery(id, status), placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === id ? previous : undefined)});
   const csv = useCsv();
   const job = list.data?.pages[0]?.job;
   const rows = list.data?.pages.flatMap(page => page.items);
@@ -224,8 +232,11 @@ export function JobApplicants() {
 export function AllApplicants() {
   const [filter, setFilters] = useUrlFilters();
   const setFilter = (change: (f: typeof filter) => typeof filter) => setFilters(change(filter));
-  const list = useInfiniteQuery(allApplicantsQuery(filter));
+  // The last list stays on screen while a new filter loads (no flash of the empty skeleton).
+  const list = useInfiniteQuery({...allApplicantsQuery(filter), placeholderData: keepPreviousData});
   const jobs = useQuery(applicantJobsQuery);
+  // Seeing every applicant (site:applicant:read) is not changing them (site:applicant:manage).
+  const canEdit = Boolean(useMe().data?.abilities.manageApplicants);
   const csv = useCsv();
   const rows = list.data?.pages.flatMap(page => page.items);
   const filtered = filter.status !== '' || filter.job !== '';
@@ -257,6 +268,7 @@ export function AllApplicants() {
         rows={rows}
         query={list}
         withJob
+        canEdit={canEdit}
         filtered={filtered}
         emptyAction={
           filtered ? (

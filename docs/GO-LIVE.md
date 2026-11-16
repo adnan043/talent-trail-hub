@@ -61,7 +61,8 @@ secret and Site Key.
 3. **Payments** (the site's Payments tab). Nothing to connect at first: the live site takes
    TEST payments and shows a test badge until you connect a live gateway. Leave it in sandbox
    for your first checks (section 6); connect the live gateway only after they pass. The site
-   then switches to real payments by itself.
+   then switches to real payments by itself. Until then a test card publishes REAL listings
+   on the live board: don't announce the board before the live gateway is connected.
 4. **Secrets for board emails** (site secrets, added by you; the code only reads them):
    | Secret | Value |
    | --- | --- |

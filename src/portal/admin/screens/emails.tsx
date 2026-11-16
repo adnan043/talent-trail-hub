@@ -1,4 +1,4 @@
-import {useInfiniteQuery} from '@tanstack/react-query';
+import {keepPreviousData, useInfiniteQuery} from '@tanstack/react-query';
 import {type FormEvent, useState} from 'react';
 
 import type {EmailLogRow, EmailLogStatus} from '../../../lib/types-manage';
@@ -18,7 +18,8 @@ const FILTERS: {value: '' | EmailLogStatus; label: string}[] = [
 export function Emails() {
   const [to, setTo] = useState('');
   const [filter, setFilter] = useState<{status: '' | EmailLogStatus; to: string}>({status: '', to: ''});
-  const emails = useInfiniteQuery(emailLogQuery(filter));
+  // The last list stays on screen while a new filter loads (no flash of the empty skeleton).
+  const emails = useInfiniteQuery({...emailLogQuery(filter), placeholderData: keepPreviousData});
   const rows = emails.data?.pages.flatMap(page => page.emails);
 
   const columns: Column<EmailLogRow>[] = [

@@ -179,8 +179,9 @@
 }
 
 .app-brand-logo {
+  /* A fixed box before the image loads (no layout shift); the logo is fitted inside it. */
   display: block;
-  max-width: 100%;
+  width: 100%;
   height: 36px;
   object-fit: contain;
   object-position: left center;

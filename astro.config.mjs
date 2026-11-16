@@ -24,6 +24,14 @@ export default defineConfig({
   // preloads its own screens (TanStack Router). Skipped on slow connections
   // and with Data Saver. The script is a small deferred module from 'self'.
   prefetch: {prefetchAll: false, defaultStrategy: 'hover'},
+  vite: {
+    build: {
+      // Fonts stay files, never `data:` URIs inlined into the CSS: the CSP allows fonts from
+      // 'self' only, so an inlined small subset (latin-ext, vietnamese) was blocked with a console
+      // error on every page. Other small assets keep Vite's default.
+      assetsInlineLimit: file => (file.endsWith('.woff2') || file.endsWith('.woff') ? false : undefined),
+    },
+  },
   adapter: cloudflare({
     // Images in PRERENDERED pages (blog covers from src/assets) are optimised at
     // BUILD time with sharp (AVIF/WebP, several widths); on the Worker they are

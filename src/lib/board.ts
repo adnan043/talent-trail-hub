@@ -97,3 +97,9 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   expired: 'Expired',
   closed: 'Closed',
 };
+
+/** The largest Postgres `integer`: ids, cents and counters above it make a query throw. */
+export const DB_INT_MAX = 2_147_483_647;
+
+/** A value usable as an `Int` primary key: a whole number from 1 to `DB_INT_MAX`. */
+export const isDbId = (n: number): boolean => Number.isSafeInteger(n) && n > 0 && n <= DB_INT_MAX;

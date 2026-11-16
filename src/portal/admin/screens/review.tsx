@@ -26,7 +26,7 @@ import {
   useToast,
 } from '../../ui';
 import {day, JOB_STATUS_TONES, jobStatusLabel, money} from '../format';
-import {reviewQuery} from '../queries';
+import {invalidateAdminJobs, reviewQuery} from '../queries';
 
 /**
  * `/manage/moderation/$id` (site:job:moderate): the job as it will appear, the employer's
@@ -42,7 +42,8 @@ export function Review() {
   const [rejecting, setRejecting] = useState(false);
 
   const done = (result: ModerationResult) => {
-    void queryClient.invalidateQueries({queryKey: ['manage']});
+    // Approved or rejected: the queue, the jobs list and the dashboard's numbers (a refund among them).
+    void invalidateAdminJobs(queryClient, {status: true});
     toast.success(result.message);
     if (result.refundNote) toast.info(result.refundNote);
     void navigate({to: '/manage/moderation'});

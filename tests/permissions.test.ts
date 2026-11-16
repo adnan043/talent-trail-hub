@@ -23,6 +23,7 @@ describe('the permission catalogue', () => {
     expect(CORE.ROLE_UPDATE).toBe('site:role:update');
     expect(CORE.AUDIT_READ).toBe('site:audit:read');
     expect(PERMISSIONS.JOB_MANAGE).toBe('site:job:manage');
+    expect(PERMISSIONS.APPLICANT_MANAGE_ALL).toBe('site:applicant:manage');
     expect(Object.keys(NO_ABILITIES).sort()).toEqual(
       [
         'editRoles',
@@ -33,6 +34,7 @@ describe('the permission catalogue', () => {
         'updateUsers',
         'moderateJobs',
         'readApplicants',
+        'manageApplicants',
         'managePrivacy',
         'manageBoard',
         'readBoardReports',
@@ -54,6 +56,7 @@ describe('the permission catalogue', () => {
       manageJobs: true,
       moderateJobs: false,
       readApplicants: false,
+      manageApplicants: false,
       managePrivacy: false,
       manageBoard: false,
       readBoardReports: false,

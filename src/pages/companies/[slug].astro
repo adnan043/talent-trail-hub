@@ -48,7 +48,7 @@ const description = company
         <a class="bp-back" href={board?.singleCompany ? '/' : '/companies/'}><svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>{board?.singleCompany ? 'Home' : 'All companies'}</a>
         <header class="bp-panel bp-pad">
           <div class="cp-head-row">
-            <CompanyLogo name={company.name} logoUrl={company.logoUrl} size="lg" />
+            <CompanyLogo name={company.name} logoUrl={company.logoUrl} size="lg" eager />
             <div>
               <h1>{company.name}</h1>
               {company.location && (

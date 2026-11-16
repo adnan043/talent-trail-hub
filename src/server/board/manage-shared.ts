@@ -4,10 +4,12 @@ import type {PrismaClient} from '../../generated/prisma/client';
 import {EMPLOYER_SOURCES, type JobStatus} from '../../lib/board';
 import type {AdminJobActions} from '../../lib/types-manage';
 import {SiteKeyMissing} from '../../platform/api';
+import {randomBytes, toBase64Url} from '../../platform/auth/encoding';
 import {deleteFile} from '../../platform/files';
 import {problem} from '../../platform/guards';
 import type {Viewer} from '../../platform/types';
 import {ipHashOf} from './ip';
+import {errorLabel} from '../error-label';
 
 /** Small pieces every admin route shares (workstream D). */
 
@@ -53,10 +55,15 @@ export const originOf = (requestUrl: string) => new URL(requestUrl).origin;
  */
 export async function refreshActiveJobCount(db: PrismaClient, companyId: number, now = new Date()): Promise<void> {
   try {
-    const live = await db.job.count({where: {companyId, status: 'published', expiresAt: {gt: now}}});
-    await db.company.update({where: {id: companyId}, data: {activeJobCount: live}, select: {id: true}});
+    // ONE statement, the same as the employer side's (employer.ts) and the expiry task's (tasks.ts).
+    await db.$executeRaw`
+      UPDATE "companies" c SET "active_job_count" = (
+        SELECT count(*)::int FROM "jobs" j
+        WHERE j."company_id" = c."id" AND j."status" = 'published' AND j."expires_at" > ${now}
+      ), "updated_at" = now()
+      WHERE c."id" = ${companyId}`;
   } catch (err) {
-    console.warn(`active job count for company ${companyId}: ${(err as Error).message}`);
+    console.warn(`active job count for company ${companyId}: ${errorLabel(err)}`);
   }
 }
 
@@ -103,18 +110,53 @@ export function actionsFor(status: JobStatus, source: string): AdminJobActions {
 
 
 const FILE_CHUNK = 10;
+/** The date a handed-over upload row gets: long past the purge's one-day wait. */
+const LONG_AGO = new Date(0);
 
 /**
- * Deletes stored files ~10 at a time in parallel; a file already gone counts as deleted. Past
- * `deadline` the rest are left (counted, logged by the caller): never more than the time budget.
- * Answers how many could not be deleted.
+ * Call in the SAME transaction that deletes these applications, before it does: their resume files
+ * are handed to the nightly purge (`runPurge`, src/server/board/tasks.ts), which deletes the file of
+ * every upload row with no application older than a day, and retries the next night when storage
+ * fails. Each upload row is detached (no application, no file name, no IP) and dated long ago; a
+ * file with no row gets one. So a file this request cannot delete (storage down, the time budget
+ * spent) is never left behind, although the application pointing at it is gone.
  */
-export async function deleteStoredFiles(requestUrl: string, fileIds: string[], deadline = Infinity): Promise<number> {
-  let left = 0;
-  for (let i = 0; i < fileIds.length; i += FILE_CHUNK) {
-    if (Date.now() > deadline) return left + fileIds.length - i;
-    const results = await Promise.allSettled(fileIds.slice(i, i + FILE_CHUNK).map(id => tryPlatform(() => deleteFile(requestUrl, id))));
-    for (const r of results) if (r.status === 'rejected' || (!r.value.ok && r.value.status !== 404)) left++;
+export async function handFilesToPurge(t: PrismaClient, applicationIds: number[], fileIds: string[]): Promise<void> {
+  if (!applicationIds.length) return;
+  await t.resumeUpload.updateMany({
+    where: {applicationId: {in: applicationIds}},
+    data: {applicationId: null, name: 'deleted', ipHash: null, createdAt: LONG_AGO},
+  });
+  if (!fileIds.length) return;
+  await t.resumeUpload.createMany({
+    data: fileIds.map(fileId => ({
+      token: toBase64Url(randomBytes(32)),
+      fileId,
+      name: 'deleted',
+      contentType: 'application/octet-stream',
+      size: 0,
+      ready: true,
+      createdAt: LONG_AGO,
+    })),
+    skipDuplicates: true,
+  });
+}
+
+/**
+ * Deletes files handed over by `handFilesToPurge` ~10 at a time in parallel (a file already gone
+ * counts as deleted), then their upload rows. Past `deadline` the rest are left for the nightly
+ * purge, as are the ones storage refused. Answers how many are left.
+ */
+export async function deleteStoredFiles(db: PrismaClient, requestUrl: string, fileIds: string[], deadline = Infinity): Promise<number> {
+  const deleted: string[] = [];
+  let i = 0;
+  for (; i < fileIds.length && Date.now() <= deadline; i += FILE_CHUNK) {
+    const chunk = fileIds.slice(i, i + FILE_CHUNK);
+    const results = await Promise.allSettled(chunk.map(id => tryPlatform(() => deleteFile(requestUrl, id))));
+    results.forEach((r, k) => {
+      if (r.status === 'fulfilled' && (r.value.ok || r.value.status === 404)) deleted.push(chunk[k]!);
+    });
   }
-  return left;
+  if (deleted.length) await db.resumeUpload.deleteMany({where: {fileId: {in: deleted}, applicationId: null}});
+  return fileIds.length - deleted.length;
 }

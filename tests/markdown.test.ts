@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 
 import {htmlToMarkdown, renderMarkdown} from '../src/lib/markdown';
+import {htmlToText} from '../src/lib/rich-text';
 
 /** The board's simple Markdown: shaped here, made safe by sanitizeRichText (security boundary). */
 describe('renderMarkdown', () => {
@@ -24,6 +25,25 @@ describe('renderMarkdown', () => {
     const html = renderMarkdown('<script>alert(1)</script> <img src=x onerror=alert(1)> [x](javascript:alert(1))');
     expect(html).not.toMatch(/<script|<img|href="javascript/i);
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it('cuts closing hashes from headings', () => {
+    expect(renderMarkdown('## Role ##')).toBe('<h3>Role</h3>');
+    expect(renderMarkdown('#### Small')).toBe('<h4>Small</h4>');
+  });
+
+  it('stays fast on a long run of spaces in a heading (no ReDoS)', () => {
+    const start = Date.now();
+    renderMarkdown('# a' + ' '.repeat(10_000) + 'b');
+    renderMarkdown('# a' + '\t'.repeat(10_000) + 'b' + '#'.repeat(5_000) + ' x');
+    expect(Date.now() - start).toBeLessThan(200);
+  });
+
+  it('htmlToText keeps one break between blocks and stays fast on long space runs', () => {
+    expect(htmlToText('<p>One  \u00a0two</p>\n \n<p> three</p><ul><li>a</li><li>b</li></ul>')).toBe('One two\nthree\na\nb');
+    const start = Date.now();
+    htmlToText('a' + '\u00a0'.repeat(50_000) + 'b');
+    expect(Date.now() - start).toBeLessThan(100);
   });
 
   it('round-trips through htmlToMarkdown', () => {
