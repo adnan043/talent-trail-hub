@@ -1,6 +1,5 @@
 import type {PrismaClient} from '../../generated/prisma/client';
-import {cachedBoardSettings} from './brand';
-import type {BoardSettings} from './settings';
+import {type BoardSettings, getBoardSettings} from './settings';
 
 /**
  * A job's way onto the board, shared by every area: the employer's paid / free post
@@ -13,15 +12,15 @@ const DAY_MS = 86_400_000;
 /**
  * Where a submitted employer job goes: straight live (`auto` mode only; no company skips review), or
  * into the review queue. `first_post` is reserved (Release 2) and treated as `all`.
- * `settings`: the settings the caller already holds; without them, the cached copy (brand.ts:
- * cleared on every settings save), never a query.
+ * `settings`: the settings the caller already holds; without them, read from the database (never
+ * the Site Cache: it decides whether a job skips review).
  */
 export async function submissionTarget(
   db: PrismaClient,
   _companyId: number,
   settings?: Pick<BoardSettings, 'moderationMode'>
 ): Promise<'published' | 'pending_review'> {
-  const mode = (settings ?? (await cachedBoardSettings(db))).moderationMode;
+  const mode = (settings ?? (await getBoardSettings(db))).moderationMode;
   return mode === 'auto' ? 'published' : 'pending_review';
 }
 

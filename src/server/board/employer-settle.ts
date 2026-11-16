@@ -1,10 +1,10 @@
 import type {PrismaClient} from '../../generated/prisma/client';
 import {audit} from '../../platform/auth';
-import {cachedBoardSettings} from './brand';
 import {refreshActiveJobCount} from './employer';
 import {notifySettled} from './employer-notify';
 import {publishJob, submissionTarget} from './lifecycle';
 import {forgetPublicLists} from './public-cache';
+import {getBoardSettings} from './settings';
 
 /**
  * Settling a listing order (F12, F15 renew, F25 free posting): the ONE place a paid order moves
@@ -62,10 +62,10 @@ export async function settleListingOrder(
   options: {defer?: (work: () => Promise<unknown>) => void} = {}
 ) {
   const now = new Date();
-  // The moderation mode (only read when a job moves): from the Site Cache, started before the
-  // transaction so no query for it runs while the order and job are locked.
-  const settings = cachedBoardSettings(db);
-  settings.catch(() => undefined); // awaited below only when needed; a failure surfaces there
+  // The moderation mode: from the database, never the Site Cache (it decides whether a paid job
+  // skips review). Read BEFORE the transaction: no other query may run on this request's
+  // connection while it is open, and none runs while the order and job are locked.
+  const settings = await getBoardSettings(db);
   const outcome = await db.$transaction(async tx => {
     const t = tx as unknown as PrismaClient;
     // Claimed and read in ONE statement (UPDATE … RETURNING): only a PENDING order moves, once.
@@ -116,7 +116,7 @@ export async function settleListingOrder(
       } else if (down) {
         // Edited since its approval, or CLOSED (by the employer or the board's admin: the two are
         // not told apart, so a closed job is always re-checked): as a new post would be.
-        const target = job.needsReview || job.status === 'closed' ? await submissionTarget(t, order.companyId, await settings) : 'published';
+        const target = job.needsReview || job.status === 'closed' ? await submissionTarget(t, order.companyId, settings) : 'published';
         await t.job.update({
           where: {id: job.id},
           data: {...period, status: target, publishedAt: now, rejectionReason: null, needsReview: target !== 'published'},
@@ -132,7 +132,7 @@ export async function settleListingOrder(
         data: {durationDays: order.durationDays, listingFeatured: order.includesFeatured, tierId: order.tierId, source: order.amountCents > 0 ? 'paid' : 'free'},
         select: {id: true},
       });
-      const target = await submissionTarget(t, order.companyId, await settings);
+      const target = await submissionTarget(t, order.companyId, settings);
       if (target === 'published') {
         await publishJob(t, job.id, {from: ['pending_payment', 'draft'], now, needsReview: false});
       } else {

@@ -80,6 +80,19 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect((sitemap.json.jobs as {slug: string}[]).map(j => j.slug)).toEqual(['live-job']);
   });
 
+  it('odd but valid-looking filters and cursors answer normally, never a 500', async () => {
+    const acme = await company('Acme');
+    await job(acme.id, 'live-job');
+    // Names of Object's built-ins as a location: no country, not a crash.
+    for (const location of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      const res = await browser.get(`/site-api/jobs?location=${location}`);
+      expect(res.status, location).toBe(200);
+    }
+    // A cursor id past the database's integer: ignored (the first page), not a 500.
+    const companies = await browser.get('/site-api/companies?after=1.9999999999');
+    expect(companies.status).toBe(200);
+  });
+
   it('never serves an expired or closed job whose edit awaits review', async () => {
     const acme = await company('Acme');
     await job(acme.id, 'closed-edited', {status: 'closed', needsReview: true});

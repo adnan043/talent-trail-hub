@@ -218,6 +218,8 @@ export const manageJobRoutes = new Hono()
     // Applications first, in bounded batches (rows, then that batch's resume files), within a time
     // budget; the job goes once none is left. A very long history answers 409: press delete again.
     const deadline = Date.now() + DELETE_BUDGET_MS;
+    // Off the board first, so no new application arrives while the old ones are deleted.
+    await db.job.updateMany({where: {id, status: 'published'}, data: {status: 'closed'}});
     let applications = 0;
     let filesLeft = 0;
     for (;;) {
@@ -237,7 +239,17 @@ export const manageJobRoutes = new Hono()
         return c.json(problem('delete_in_progress', `${applications} applications deleted so far. Delete the job again to finish.`), 409);
       }
     }
-    await db.job.delete({where: {id}, select: {id: true}});
+    // The job row LOCKED, then any application saved since the last batch (it passed the board's
+    // check just before the close) hands its file to the purge before the cascade removes it; an
+    // application being saved now waits for the lock and then fails (its job is gone).
+    await db.$transaction(async tx => {
+      const t = tx as unknown as PrismaClient;
+      await t.$queryRaw`SELECT 1 FROM "jobs" WHERE "id" = ${id} FOR UPDATE`;
+      const late = await t.application.findMany({where: {jobId: id}, select: {id: true, resumeFileId: true}, take: DELETE_BATCH});
+      await handFilesToPurge(t, late.map(a => a.id), late.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : [])));
+      applications += late.length;
+      await t.job.delete({where: {id}, select: {id: true}});
+    });
     await audit(db, {...(await actorOf(c)), action: 'job_deleted', target: ['job', id], meta: {applications}});
     await refreshActiveJobCount(db, job.companyId);
     if (filesLeft) console.warn(`job ${id} deleted: ${filesLeft} resume files left for the nightly purge`);

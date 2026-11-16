@@ -1,6 +1,6 @@
 import {afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi} from 'vitest';
 
-import {CANDIDATE_DAILY, sendBoardEmail} from '../../src/server/board/email';
+import {CANDIDATE_DAILY, inboxOf, sendBoardEmail} from '../../src/server/board/email';
 import {createWithUniqueSlug} from '../../src/server/board/slug';
 import {env} from './support/cloudflare-workers';
 import {configureEnv, DATABASE_URL, db, resetDatabase} from './support/harness';
@@ -70,6 +70,19 @@ describe.skipIf(!DATABASE_URL)('board emails + slugs (integration, real Postgres
     expect(rows.filter(r => r.to === 'victim@example.com' && r.status === 'sent')).toHaveLength(CANDIDATE_DAILY);
     expect(rows.at(-2)).toMatchObject({to: 'victim@example.com', status: 'skipped', error: expect.stringContaining('today')});
     expect(rows.at(-1)).toMatchObject({to: 'someone-else@example.com', status: 'sent'});
+  });
+
+  it('address variants of one inbox share its daily budget', async () => {
+    expect(inboxOf('V.ic.Tim+jobs@GoogleMail.com')).toBe('victim@gmail.com');
+    expect(inboxOf('victim+1@gmail.com.')).toBe('victim@gmail.com');
+    expect(inboxOf('first.last+x@example.com')).toBe('first.last@example.com');
+    env.RESEND_API_KEY = 're_test_key';
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({id: 'em'}), {status: 200}));
+    for (let i = 0; i < CANDIDATE_DAILY + 5; i++) {
+      const to = i % 2 ? `vic.tim+${i}@gmail.com` : `v.ictim${'+x'.repeat(i % 3)}@googlemail.com`;
+      await sendBoardEmail(db, REQ, {template: 'application-confirmation', to, vars: {jobTitle: 'Dev', companyName: 'Acme'}});
+    }
+    expect(spy).toHaveBeenCalledTimes(CANDIDATE_DAILY);
   });
 
   it('logs failed (never throws) when Resend refuses or is unreachable', async () => {

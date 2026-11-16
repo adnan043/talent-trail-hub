@@ -6,6 +6,7 @@ import type {PrismaClient} from '../../generated/prisma/client';
 import {DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
 import {RESUME_UPLOAD_TYPES} from '../../lib/types-apply';
 import {SiteKeyMissing} from '../../platform/api';
+import {normalizeEmail} from '../../platform/auth';
 import {randomBytes, toBase64Url} from '../../platform/auth/encoding';
 import {completeUpload, createUpload, type FileResult} from '../../platform/files';
 import {can, problem, withDb, withViewer} from '../../platform/guards';
@@ -34,7 +35,6 @@ const UPLOAD_LIMIT = 20;
 const CLICK_LIMIT = 120;
 const SLUG_RE = /^[a-z0-9-]{1,120}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^[+\d][\d\s().-]{4,39}$/;
 
 type Db = PrismaClient;
@@ -102,7 +102,10 @@ const applyBody = validator('json', (value, c) => {
   const v = (value ?? {}) as Record<string, unknown>;
   if (typeof v.website === 'string' && v.website.trim()) return {honeypot: true as const};
   const name = optional(v.name, LIMITS.applicantName);
-  const email = optional(v.email, 254).toLowerCase();
+  const typed = optional(v.email, 254);
+  // The platform's own check (as sign-up and the privacy tool use): every stored address is one
+  // the privacy tool can look up, and `x@y.com.` is no second copy of `x@y.com`.
+  const email = typed ? normalizeEmail(typed) : '';
   const phone = optional(v.phone, 40);
   const profileUrl = optional(v.profileUrl, 300);
   const coverNote = optional(v.coverNote, LIMITS.coverNote);
@@ -110,8 +113,8 @@ const applyBody = validator('json', (value, c) => {
   const fields: Record<string, string> = {};
   if (!name) fields.name = 'Enter your name.';
   else if (name.length > LIMITS.applicantName) fields.name = `Use at most ${LIMITS.applicantName} characters.`;
-  if (!email) fields.email = 'Enter your email address.';
-  else if (email.length > 254 || !EMAIL_RE.test(email)) fields.email = 'Enter a valid email address, like name@example.com.';
+  if (!typed) fields.email = 'Enter your email address.';
+  else if (!email) fields.email = 'Enter a valid email address, like name@example.com.';
   if (phone && !PHONE_RE.test(phone)) fields.phone = 'Enter a phone number with digits only, like +1 555 123 4567.';
   if (profileUrl) {
     let ok = false;
@@ -163,11 +166,13 @@ export const applicationRoutes = new Hono()
     const db = c.var.db;
     const upload = await db.resumeUpload.findUnique({
       where: {token: await tokenHash(c.req.valid('json').token)},
-      select: {id: true, fileId: true, name: true, contentType: true, applicationId: true, createdAt: true},
+      select: {id: true, fileId: true, name: true, contentType: true, applicationId: true, createdAt: true, ready: true},
     });
     if (!upload || upload.applicationId !== null || upload.createdAt.getTime() < Date.now() - HOUR_MS) {
       return fieldError(c, 'resume', 'Upload your resume again.');
     }
+    // Already confirmed: the same answer, without calling storage again (a repeated call costs nothing).
+    if (upload.ready) return c.json({ok: true, fileName: upload.name});
     const done = await storage(() => completeUpload(c.req.url, upload.fileId));
     if (!done.ok) return c.json({...problem(done.code, done.message), fields: {resume: done.message}}, storageStatus(done.status));
     // The stored bytes must really be a PDF / DOCX; otherwise the file and its row go.

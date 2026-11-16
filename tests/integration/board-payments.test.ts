@@ -7,7 +7,7 @@ import {getDb} from '../../src/platform/db';
 import {handlePaymentDelivery} from '../../src/platform/payments';
 import {inRequestScope} from '../../src/platform/request-scope';
 import {app} from '../../src/server/app';
-import {forgetBoardSettings} from '../../src/server/board/brand';
+import {cachedBoardSettings, forgetBoardSettings} from '../../src/server/board/brand';
 import {flagForRefund} from '../../src/server/board/employer-settle';
 import {paymentHooks} from '../../src/server/payments-hooks';
 import {env} from './support/cloudflare-workers';
@@ -300,5 +300,24 @@ describe.skipIf(!DATABASE_URL)('board payments: the paid listing path (integrati
     expect(job.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 29 * DAY);
     expect(await logs('job-submitted')).toBe(1);
     expect(await db.listingOrder.count({where: {kind: 'renew', status: 'paid'}})).toBe(1);
+  });
+
+  it('(9) free posting and the review mode come from the database, never a stale cached copy', async () => {
+    // The Site Cache still holds "free posting on, publish without review" (a save whose clear
+    // lost a race, or failed): the admin has since turned both off in the database.
+    await db.boardSettings.update({where: {id: 1}, data: {freePostingEnabled: true, moderationMode: 'auto'}});
+    forgetBoardSettings();
+    await inRequestScope(async () => {
+      expect(await cachedBoardSettings(getDb()!)).toMatchObject({freePostingEnabled: true, moderationMode: 'auto'});
+      await getDb()?.$disconnect();
+    });
+    await db.boardSettings.update({where: {id: 1}, data: {freePostingEnabled: false, moderationMode: 'all'}});
+
+    // The post is charged (a checkout, not a free listing that goes live)…
+    const {jobId, checkoutId} = await postPaid();
+    expect((await jobOf(jobId)).status).toBe('pending_payment');
+    // …and once paid it goes into review, not live.
+    expect((await deliver('checkout.paid', pay(checkoutId))).status).toBe(200);
+    expect((await jobOf(jobId)).status).toBe('pending_review');
   });
 });

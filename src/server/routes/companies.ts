@@ -3,6 +3,7 @@ import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
 import type {CompaniesPage, CompanyProfileResponse, PublicCompanySummary} from '../../lib/types-public';
+import {isDbId} from '../../lib/board';
 import {problem, withDb} from '../../platform/guards';
 import {cachedBoardSettings} from '../board/brand';
 import {publicJobWhere} from '../board/public';
@@ -91,7 +92,8 @@ export const companyRoutes = new Hono()
   })
   .get(
     '/',
-    validator('query', v => ({after: typeof v.after === 'string' && CURSOR.test(v.after) ? v.after : ''})),
+    // The id part must fit the database's integer (a bigger one is no cursor, not a 500).
+    validator('query', v => ({after: typeof v.after === 'string' && CURSOR.test(v.after) && isDbId(Number(v.after.split('.')[1])) ? v.after : ''})),
     withDb,
     async c => {
       const db = c.var.db;

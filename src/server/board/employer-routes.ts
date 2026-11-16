@@ -84,7 +84,8 @@ export const employerJobRoutes = new Hono<Env>()
     if (!isEditable(status)) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
     const checked = await validateJob(db, c.req.valid('json').job);
     if ('fields' in checked) return c.json({...problem('invalid_input', Object.values(checked.fields)[0]!), fields: checked.fields}, 422);
-    const settings = await cachedBoardSettings(db);
+    // From the database, never the Site Cache: it decides whether the edit skips review.
+    const settings = await getBoardSettings(db);
     // The slug never changes, so links keep working. EVERY content edit needs a review before
     // the job is (again) live: `needs_review` (cleared by an approval, or here when the board
     // publishes without review). A live job leaves the board for review now; one that is down

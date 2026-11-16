@@ -17,6 +17,8 @@ let storedBytes = '%PDF-1.7\n';
 const deleted: string[] = [];
 /** True: storage refuses every delete (an outage). */
 let failDeletes = false;
+/** Calls to storage's "complete" (a confirmed upload is never confirmed again). */
+let completeCalls = 0;
 const harnessFetch = globalThis.fetch;
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -26,7 +28,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const id = `file_${String(++fileSeq).padStart(26, '0')}`;
     return json(201, {data: {file: {id}, upload: {method: 'PUT', url: `/__platform/files/uploads/${id}`, headers: {}, expiresAt: ''}}});
   }
-  if (path?.endsWith('/complete')) return json(200, {data: {file: {id: path.split('/')[1], status: 'ready'}}});
+  if (path?.endsWith('/complete') && ++completeCalls) return json(200, {data: {file: {id: path.split('/')[1], status: 'ready'}}});
   if (path?.endsWith('/delete')) {
     if (failDeletes) return json(503, {error: {code: 'E_UNAVAILABLE', message: 'down'}});
     deleted.push(path.split('/')[1]!);
@@ -290,5 +292,18 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect((done.json.fields as Record<string, string>).resume).toMatch(/not a real PDF/);
     expect(deleted).toHaveLength(1);
     expect(await db.resumeUpload.count()).toBe(0);
+  });
+
+  it('confirming an upload again answers the same without calling storage again', async () => {
+    storedBytes = '%PDF-1.7\n';
+    const guest = new Browser(app, '198.51.100.11');
+    const grant = await guest.post('/site-api/applications/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 1000});
+    const before = completeCalls;
+    for (let i = 0; i < 3; i++) {
+      const done = await guest.post('/site-api/applications/resume/complete', {token: grant.json.token});
+      expect(done.status).toBe(200);
+      expect(done.json).toMatchObject({ok: true, fileName: 'cv.pdf'});
+    }
+    expect(completeCalls - before).toBe(1);
   });
 });
