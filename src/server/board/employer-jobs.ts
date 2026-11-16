@@ -50,13 +50,24 @@ export function jobData(columns: JobColumns, html: string, currency: string) {
   return {...rest, applicantCountries: applicantCountries ?? Prisma.DbNull, descriptionHtml: html, salaryCurrency: hasSalary ? currency : null};
 }
 
-/** Replaces a job's tags (shared `tags` rows, stored lower-cased, ≤ 5). Bounded: a few rows. */
+/**
+ * Replaces a job's tags (shared `tags` rows, stored lower-cased, ≤ 5). Bounded: a few rows.
+ * Two statements: clear the job's links, then ONE that adds the missing tags and links them all.
+ * The upsert (`DO UPDATE`, not `DO NOTHING`) returns the id of a tag that already existed, also
+ * one another request added a moment ago, so no tag is ever dropped.
+ */
 export async function setJobTags(db: PrismaClient, jobId: number, names: string[]): Promise<void> {
   await db.jobTag.deleteMany({where: {jobId}});
-  if (!names.length) return;
-  await db.tag.createMany({data: names.map(name => ({name})), skipDuplicates: true});
-  const tags = await db.tag.findMany({where: {name: {in: names}}, select: {id: true}, take: 10});
-  await db.jobTag.createMany({data: tags.map(tag => ({jobId, tagId: tag.id})), skipDuplicates: true});
+  const unique = [...new Set(names)].slice(0, 10);
+  if (!unique.length) return;
+  await db.$executeRaw`
+    WITH t AS (
+      INSERT INTO "tags" ("name", "updated_at") SELECT unnest(${unique}::text[]), now()
+      ON CONFLICT ("name") DO UPDATE SET "name" = EXCLUDED."name"
+      RETURNING "id"
+    )
+    INSERT INTO "job_tags" ("job_id", "tag_id", "updated_at") SELECT ${jobId}, "id", now() FROM t
+    ON CONFLICT DO NOTHING`;
 }
 
 /** A new job for the company with a unique slug (title + company name). */

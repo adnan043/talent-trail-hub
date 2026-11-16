@@ -25,14 +25,30 @@ export const BOARD_SETTINGS_KEY = 'board:settings';
  * The value has no dates (JSON-safe as it is).
  */
 export function cachedBoardSettings(db: PrismaClient): Promise<BoardSettings> {
-  return cache.getOrSet(BOARD_SETTINGS_KEY, 7 * DAY, () => getBoardSettings(db));
+  // One page view asks for the settings 3-4 times (`/site`, `/me`, `/board/settings`, the data
+  // route), all with the request's own client (`getDb()` makes one per request): one cache call
+  // serves them all. Bounded to a few seconds and dropped on every settings write, so a client
+  // that lives longer (a background run, tests) still sees changes.
+  const memo = settingsMemo.get(db);
+  if (memo && memo.generation === settingsGeneration && Date.now() - memo.at < MEMO_MS) return memo.value;
+  const value = cache.getOrSet(BOARD_SETTINGS_KEY, 7 * DAY, () => getBoardSettings(db));
+  settingsMemo.set(db, {value, at: Date.now(), generation: settingsGeneration});
+  value.catch(() => {
+    if (settingsMemo.get(db)?.value === value) settingsMemo.delete(db);
+  });
+  return value;
 }
+
+const MEMO_MS = 5_000;
+const settingsMemo = new WeakMap<PrismaClient, {value: Promise<BoardSettings>; at: number; generation: number}>();
+let settingsGeneration = 0;
 
 /**
  * Clears the cached settings and the public reads built from them, for every Worker instance. Call
  * (and await) it right after ANY write to `board_settings` succeeds, outside the transaction.
  */
 export async function forgetBoardSettings(): Promise<void> {
+  settingsGeneration++;
   // The public lists are built with the settings (single-company scope, currency): they go too.
   await Promise.all([cache.del(BOARD_SETTINGS_KEY), forgetPublicLists()]);
 }

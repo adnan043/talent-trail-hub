@@ -10,7 +10,7 @@ import {problem, withDb} from '../../platform/guards';
 import {getDb} from '../../platform/db';
 import {brandCss, cachedBoardSettings, isHexColor} from '../board/brand';
 import {publicJobWhere} from '../board/public';
-import {CATEGORY_COUNTS_PREFIX, HOME_PREFIX} from '../board/public-cache';
+import {CATEGORY_COUNTS_PREFIX, HOME_PREFIX, TIERS_KEY} from '../board/public-cache';
 import {featuredPinsAndCount, moreFeatured, NEWEST} from '../board/public-search';
 import {companySelect, jobSummarySelect, logoCacheControl, safeUrl, toCompany, toJobSummary} from '../board/public-shapes';
 import {type BoardSettings, isSingleCompany} from '../board/settings';
@@ -27,6 +27,8 @@ import {companySummaries, hiringRanking} from './companies';
  */
 
 const HOME_LATEST = 10;
+/** The pricing tiers change only by an admin write, which clears them (public-cache.ts). */
+const TIERS_TTL = 24 * 60 * 60;
 const HOME_COMPANIES = 6;
 const MINUTE = 60;
 /** Counts change by themselves (jobs expire) and nothing clears them on every change: 10 minutes old is fine. */
@@ -175,19 +177,23 @@ export const boardRoutes = new Hono()
     const db = c.var.db;
     const settings = await cachedBoardSettings(db);
     if (isSingleCompany(settings)) return c.json(problem('not_found', 'This board does not sell listings.'), 404);
-    const rows = await db.listingTier.findMany({
-      where: {isActive: true},
-      orderBy: [{sortOrder: 'asc'}, {id: 'asc'}],
-      take: 3,
-      select: {
-        id: true,
-        name: true,
-        priceCents: true,
-        currency: true,
-        durationDays: true,
-        includesFeatured: true,
-      },
-    });
+    // The same for every visitor and saved only by the admin's tier routes (they clear it):
+    // /pricing/ renders on every request, so this saves a billed query per view.
+    const rows = await cache.getOrSet(TIERS_KEY, TIERS_TTL, () =>
+      db.listingTier.findMany({
+        where: {isActive: true},
+        orderBy: [{sortOrder: 'asc'}, {id: 'asc'}],
+        take: 3,
+        select: {
+          id: true,
+          name: true,
+          priceCents: true,
+          currency: true,
+          durationDays: true,
+          includesFeatured: true,
+        },
+      })
+    );
     const tiers: PublicTier[] = rows.map(t => ({
       ...t,
       priceCents: settings.freePostingEnabled ? 0 : t.priceCents,

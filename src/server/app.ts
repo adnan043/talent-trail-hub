@@ -15,7 +15,8 @@ import {companyRoutes} from './routes/companies';
 import {employerRoutes} from './routes/employer';
 import {jobRoutes} from './routes/jobs';
 import {manageRoutes} from './routes/manage';
-import {getBoardSettings, isSingleCompany} from './board/settings';
+import {cachedBoardSettings} from './board/brand';
+import {isSingleCompany} from './board/settings';
 import {getDb} from '../platform/db';
 import {siteRoutes} from './routes/site';
 
@@ -80,7 +81,7 @@ export const app = new Hono()
       getAccess(c.req.raw),
       // Bounded: a slow database never holds up every portal load (the flag falls back to marketplace).
       db
-        ? Promise.race([getBoardSettings(db).catch(() => null), new Promise<null>(resolve => setTimeout(resolve, 1500, null))])
+        ? Promise.race([cachedBoardSettings(db).catch(() => null), new Promise<null>(resolve => setTimeout(resolve, 1500, null))])
         : null,
     ]);
     c.header('Cache-Control', 'private, no-store');
