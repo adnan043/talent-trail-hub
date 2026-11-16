@@ -13,6 +13,8 @@ import {featuredWhere} from './public';
 import {manageJobEditRoutes} from './manage-job-edit';
 import {actionsFor, actorOf, asObject, DAY_MS, effectiveStatus, deleteStoredFiles, handFilesToPurge, idParam, invalid, isFeaturedNow, notFound, refreshActiveJobCount} from './manage-shared';
 import {runExpiry} from './tasks';
+import {after} from './after';
+import {notifyReviewers} from './review';
 
 /**
  * F21 admin jobs: the filtered list (keyset by id, newest first), feature / unfeature, extend,
@@ -91,7 +93,7 @@ export const manageJobRoutes = new Hono()
         viewCount: true,
         applicationCount: true,
         createdAt: true,
-        company: {select: {name: true}},
+        company: {select: {name: true, isBlocked: true}},
         category: {select: {name: true}},
       },
     });
@@ -105,6 +107,8 @@ export const manageJobRoutes = new Hono()
         status,
         source: j.source as JobSource,
         company: j.company.name,
+        companyId: j.companyId,
+        companyBlocked: j.company.isBlocked,
         category: j.category.name,
         featured,
         featuredUntil: featured ? (j.featuredUntil?.toISOString() ?? null) : null,
@@ -179,11 +183,26 @@ export const manageJobRoutes = new Hono()
     if (!actionsFor(status, job.source).extend) {
       return c.json(problem('not_extendable', 'Only live, expired or closed jobs can be extended.'), 409);
     }
-    if (job.needsReview) return c.json(NEEDS_REVIEW, 409);
     // A job that never went live (closed while in review) has never been approved: only
     // moderation may put it on the board for the first time.
     if (!job.publishedAt) {
       return c.json(problem('never_published', 'This job was never approved, so it cannot be listed again from here. It has to go through review.'), 409);
+    }
+    if (job.needsReview) {
+      if (status === 'published') return c.json(NEEDS_REVIEW, 409);
+      // Down with changes never reviewed (an employer edit, or closed while in review): listed
+      // again through moderation, never straight onto the board. Approving keeps this end date.
+      const reviewUntil = new Date(now.getTime() + days * DAY_MS);
+      const {count} = await db.job.updateMany({
+        where: {id, status: job.status, expiresAt: job.expiresAt, needsReview: true},
+        data: {status: 'pending_review', expiresAt: reviewUntil, expiryReminderSentAt: null, rejectionReason: null},
+      });
+      if (!count) return c.json(problem('changed', 'This job changed in the meantime. Reload and try again.'), 409);
+      await audit(db, {...(await actorOf(c)), action: 'job_extended', target: ['job', id], meta: {days, expiresAt: reviewUntil.toISOString(), review: true}});
+      await refreshActiveJobCount(db, job.companyId, now);
+      const requestUrl = c.req.url;
+      after(c, `review email for job ${id}`, () => notifyReviewers(db, requestUrl, id));
+      return c.json({expiresAt: reviewUntil.toISOString(), review: true});
     }
     // Live: more days on top. Expired or closed: listed again from now.
     const live = status === 'published' && job.expiresAt;
@@ -196,7 +215,7 @@ export const manageJobRoutes = new Hono()
     if (!count) return c.json(problem('changed', 'This job changed in the meantime. Reload and try again.'), 409);
     await audit(db, {...(await actorOf(c)), action: 'job_extended', target: ['job', id], meta: {days, expiresAt: expiresAt.toISOString()}});
     await refreshActiveJobCount(db, job.companyId, now);
-    return c.json({expiresAt: expiresAt.toISOString()});
+    return c.json({expiresAt: expiresAt.toISOString(), review: false});
   })
 
   .post('/:id/close', ...guard, async c => {

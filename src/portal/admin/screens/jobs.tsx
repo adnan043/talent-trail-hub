@@ -1,11 +1,12 @@
 import {keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {Link, useNavigate, useSearch} from '@tanstack/react-router';
-import {type FormEvent, useState} from 'react';
+import {type FormEvent, useEffect, useState} from 'react';
 
 import {JOB_SOURCES, JOB_STATUSES} from '../../../lib/board';
 import type {AdminJobFilters, AdminJobRow, TaskRun} from '../../../lib/types-manage';
 import {MANAGE_LIMITS} from '../../../lib/types-manage';
 import {api, ApiError, read} from '../../api';
+import {useMe} from '../../shared';
 import {
   Badge,
   Button,
@@ -45,6 +46,10 @@ export function Jobs() {
   const setFilters = (next: AdminJobFilters) =>
     void navigate({to: '/manage/jobs', search: Object.fromEntries(Object.entries(next).filter(([, v]) => v !== '')), replace: true});
   const [q, setQ] = useState(filters.q);
+  // The box follows the URL (back / forward, "Show all jobs", a link with ?q=).
+  useEffect(() => setQ(filters.q), [filters.q]);
+  // Blocking a company is moderation (site:job:moderate), not job management.
+  const canModerate = Boolean(useMe().data?.abilities?.moderateJobs);
   const categories = useQuery(jobFormOptionsQuery).data?.categories ?? [];
   const [asking, setAsking] = useState<{job: AdminJobRow; kind: 'feature' | 'extend'} | null>(null);
   // The last list stays on screen while a new filter loads (no flash of the empty skeleton).
@@ -54,8 +59,11 @@ export function Jobs() {
   const refresh = (status: boolean) => invalidateAdminJobs(queryClient, {status});
 
   const act = useMutation({
-    mutationFn: async ({job, action}: {job: AdminJobRow; action: 'unfeature' | 'close' | 'delete'}) => {
+    mutationFn: async ({job, action}: {job: AdminJobRow; action: 'unfeature' | 'close' | 'delete' | 'block' | 'unblock'}) => {
       const param = {id: String(job.id)};
+      if (action === 'block' || action === 'unblock') {
+        return read(api.manage.companies[':id'].block.$post({param: {id: String(job.companyId)}, json: {blocked: action === 'block'}}));
+      }
       if (action === 'unfeature') return read(api.manage.jobs[':id'].feature.$post({param, json: {featured: false, days: null}}));
       if (action === 'close') return read(api.manage.jobs[':id'].close.$post({param}));
       return read(api.manage.jobs[':id'].$delete({param}));
@@ -76,11 +84,19 @@ export function Jobs() {
   });
   const busyId = act.isPending ? (act.variables?.job.id ?? null) : null;
 
-  const ask = async (job: AdminJobRow, action: 'unfeature' | 'close' | 'delete') => {
+  const ask = async (job: AdminJobRow, action: 'unfeature' | 'close' | 'delete' | 'block' | 'unblock') => {
     const words = {
       unfeature: {title: `Stop featuring “${job.title}”?`, body: 'It stays live, without the featured pin.', confirmLabel: 'Stop featuring', tone: 'primary' as const, done: 'No longer featured.'},
-      close: {title: `Close “${job.title}”?`, body: 'It leaves the board at once; its page stays, marked closed. You can extend it later to list it again. To remove abusive content, delete the job or block the company instead.', confirmLabel: 'Close job', tone: 'danger' as const, done: 'Job closed.'},
+      close: {
+        title: `Close “${job.title}”?`,
+        body: `It leaves the board at once; its page stays, marked closed. You can list it again later (a job with changes nobody approved goes through review first). To remove abusive content, delete the job${canModerate ? ' or block the company' : ''} instead.`,
+        confirmLabel: 'Close job',
+        tone: 'danger' as const,
+        done: 'Job closed.',
+      },
       delete: {title: `Delete “${job.title}”?`, body: 'The job, its applications and their resumes are deleted for good. Orders keep their record.', confirmLabel: 'Delete job', tone: 'danger' as const, done: 'Job deleted.'},
+      block: {title: `Block ${job.company}?`, body: 'All its jobs and its company page leave the board at once, and its employer can no longer post or change jobs. Nothing is deleted: you can unblock it later.', confirmLabel: 'Block company', tone: 'danger' as const, done: `${job.company} is blocked.`},
+      unblock: {title: `Unblock ${job.company}?`, body: 'Its live jobs and company page are back on the board, and its employer can post again.', confirmLabel: 'Unblock company', tone: 'primary' as const, done: `${job.company} is unblocked.`},
     }[action];
     if (await confirm({...words, pendingLabel: 'Working…', action: () => act.mutateAsync({job, action})})) toast.success(words.done);
   };
@@ -109,6 +125,7 @@ export function Jobs() {
           <StatusBadge tone={JOB_STATUS_TONES[job.status]}>{jobStatusLabel(job.status)}</StatusBadge>
           {job.featured && <Badge tone="brand">Featured</Badge>}
           {job.needsReview && <Badge tone="warning">Changes in review</Badge>}
+          {job.companyBlocked && <Badge tone="danger">Company blocked</Badge>}
         </span>
       ),
     },
@@ -122,10 +139,15 @@ export function Jobs() {
       cell: job => {
         const items: MenuItem[] = [];
         if (job.actions.edit) items.push({label: 'Edit', icon: 'pencil', onSelect: () => void navigate({to: '/manage/jobs/$id', params: {id: String(job.id)}})});
-        if (job.actions.feature && !job.needsReview)
-          items.push(job.featured ? {label: 'Stop featuring', icon: 'x', onSelect: () => void ask(job, 'unfeature')} : {label: 'Feature', icon: 'zap', onSelect: () => setAsking({job, kind: 'feature'})});
-        if (job.actions.extend && !job.needsReview) items.push({label: job.status === 'published' ? 'Extend' : 'List again', icon: 'clock', onSelect: () => setAsking({job, kind: 'extend'})});
+        // Stopping is always allowed; featuring waits until its changes are approved.
+        if (job.actions.feature && job.featured) items.push({label: 'Stop featuring', icon: 'x', onSelect: () => void ask(job, 'unfeature')});
+        else if (job.actions.feature && !job.needsReview) items.push({label: 'Feature', icon: 'zap', onSelect: () => setAsking({job, kind: 'feature'})});
+        // A live job with changes in review waits for moderation; a job that is down goes back through it.
+        if (job.actions.extend && !(job.needsReview && job.status === 'published')) items.push({label: job.status === 'published' ? 'Extend' : 'List again', icon: 'clock', onSelect: () => setAsking({job, kind: 'extend'})});
         if (job.actions.close) items.push({label: 'Close', icon: 'ban', danger: true, onSelect: () => void ask(job, 'close')});
+        if (canModerate) {
+          items.push(job.companyBlocked ? {label: 'Unblock company', icon: 'ban', onSelect: () => void ask(job, 'unblock')} : {label: 'Block company', icon: 'ban', danger: true, onSelect: () => void ask(job, 'block')});
+        }
         items.push('separator', {label: 'Delete', icon: 'trash', danger: true, onSelect: () => void ask(job, 'delete')});
         return <Menu label={`Actions for ${job.title}`} items={items} disabled={busyId !== null} />;
       },
@@ -161,7 +183,7 @@ export function Jobs() {
         </form>
         <div className="toolbar-group">
           <Select aria-label="Status" value={filters.status} onChange={e => set('status', e.target.value as AdminJobFilters['status'])} options={[{value: '', label: 'Any status'}, ...JOB_STATUSES.map(s => ({value: s, label: jobStatusLabel(s)}))]} />
-          <Select aria-label="Category" value={filters.category} onChange={e => set('category', e.target.value)} options={[{value: '', label: 'Any category'}, ...categories.map(c => ({value: String(c.id), label: c.name}))]} />
+          <Select aria-label="Category" value={filters.category} onChange={e => set('category', e.target.value)} options={[{value: '', label: 'Any category'}, ...categories.map(c => ({value: String(c.id), label: c.active ? c.name : `${c.name} (hidden)`}))]} />
           <Select aria-label="Source" value={filters.source} onChange={e => set('source', e.target.value as AdminJobFilters['source'])} options={[{value: '', label: 'Any source'}, ...JOB_SOURCES.map(s => ({value: s, label: SOURCE_LABELS[s]}))]} />
           <Select aria-label="Featured" value={filters.featured} onChange={e => set('featured', e.target.value as AdminJobFilters['featured'])} options={[{value: '', label: 'Featured or not'}, {value: 'yes', label: 'Featured'}, {value: 'no', label: 'Not featured'}]} />
         </div>
@@ -201,9 +223,10 @@ function DaysDialog({job, kind, onClose, onDone}: {job: AdminJobRow; kind: 'feat
   const save = useMutation({
     mutationFn: (n: number) =>
       kind === 'feature'
-        ? read(api.manage.jobs[':id'].feature.$post({param: {id: String(job.id)}, json: {featured: true, days: n}}))
-        : read(api.manage.jobs[':id'].extend.$post({param: {id: String(job.id)}, json: {days: n}})),
-    onSuccess: () => onDone(kind === 'feature' ? `“${job.title}” is featured.` : `“${job.title}” is extended.`),
+        ? read<{review?: boolean}>(api.manage.jobs[':id'].feature.$post({param: {id: String(job.id)}, json: {featured: true, days: n}}))
+        : read<{review?: boolean}>(api.manage.jobs[':id'].extend.$post({param: {id: String(job.id)}, json: {days: n}})),
+    onSuccess: (result: {review?: boolean}) =>
+      onDone(kind === 'feature' ? `“${job.title}” is featured.` : result.review ? `“${job.title}” is waiting for review.` : `“${job.title}” is extended.`),
     onError: err => err instanceof ApiError && form.setServerErrors(err.fields),
   });
   const submit = form.submit(v => save.mutate(Number(v.days)));
@@ -214,7 +237,15 @@ function DaysDialog({job, kind, onClose, onDone}: {job: AdminJobRow; kind: 'feat
       dismissible={!save.isPending}
       size="sm"
       title={kind === 'feature' ? `Feature “${job.title}”` : job.status === 'published' ? `Extend “${job.title}”` : `List “${job.title}” again`}
-      description={kind === 'feature' ? 'Pinned at the top of the board for this many days.' : job.status === 'published' ? 'Added to its current end date.' : 'Live again from today for this many days.'}
+      description={
+        kind === 'feature'
+          ? 'Pinned at the top of the board for this many days.'
+          : job.status === 'published'
+            ? 'Added to its current end date.'
+            : job.needsReview
+              ? 'It has changes nobody approved yet: it goes to the review queue, and is live for this many days from today once approved.'
+              : 'Live again from today for this many days.'
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>

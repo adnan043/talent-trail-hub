@@ -1,4 +1,4 @@
-import {Hono} from 'hono';
+import {Hono, type MiddlewareHandler} from 'hono';
 import {validator} from 'hono/validator';
 
 import type {Bounded, ManageActivity, ManageOverview} from '../../lib/types-manage';
@@ -15,7 +15,17 @@ import {cache} from '../../platform/cache';
  * couple of minutes old, and nothing per viewer is in them (the route checks the permission first).
  */
 const TOP_JOBS = 5;
-const REPORT_TTL = 120; // seconds: time-based, nothing clears it
+const REPORT_TTL = 120; // seconds; every admin write clears them (`forgetReportsAfterWrite`)
+const REPORT_PREFIX = 'report:';
+
+/**
+ * After a successful admin write (approve, reject, close, delete, extend, settings…), the cached
+ * reports go, so the dashboard shows the change at once. Employer and visitor writes still age out.
+ */
+export const forgetReportsAfterWrite: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD' && c.res.status < 400) await cache.delPrefix(REPORT_PREFIX).catch(() => undefined);
+};
 
 const RANGES = {'7d': 7, '30d': 30, '90d': 90, '12m': 12} as const;
 type Range = keyof typeof RANGES;
@@ -40,7 +50,7 @@ export const manageOverviewRoutes = new Hono()
   async c => {
     const db = c.var.db;
     const settings = await cachedBoardSettings(db);
-    const body = await cache.getOrSet(`report:overview:${settings.currency}`, REPORT_TTL, async (): Promise<ManageOverview> => {
+    const body = await cache.getOrSet(`${REPORT_PREFIX}overview:${settings.currency}`, REPORT_TTL, async (): Promise<ManageOverview> => {
       const now = new Date();
       const since = new Date(now.getTime() - 30 * DAY_MS);
       type Totals = {revenue_all: bigint | null; revenue_30d: bigint | null; paid_orders: number; pending: number; active: number; applications: number; companies: number};
@@ -80,7 +90,7 @@ export const manageOverviewRoutes = new Hono()
     const db = c.var.db;
     const {range} = c.req.valid('query');
     const settings = await cachedBoardSettings(db);
-    const body = await cache.getOrSet(`report:activity:${range}:${settings.currency}`, REPORT_TTL, async (): Promise<ManageActivity> => {
+    const body = await cache.getOrSet(`${REPORT_PREFIX}activity:${range}:${settings.currency}`, REPORT_TTL, async (): Promise<ManageActivity> => {
       const monthly = range === '12m';
       const unit = monthly ? 'month' : 'day';
       const now = new Date();

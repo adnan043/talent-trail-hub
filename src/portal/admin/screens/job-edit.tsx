@@ -102,7 +102,7 @@ export function NewAdminJob() {
       </Card>
       <JobForm
         initial={EMPTY_JOB_VALUES}
-        categories={options.data.categories}
+        categories={options.data.categories.filter(c => c.active)}
         currency={options.data.currency}
         onSubmit={submit}
         pending={create.isPending}
@@ -156,7 +156,8 @@ export function EditAdminJob() {
         <JobForm
           key={data.id}
           initial={{...EMPTY_JOB_VALUES, ...data.values} as JobValues}
-          categories={options.data.categories}
+          // Active categories, and the job's own one although it was hidden since (kept unchanged).
+          categories={options.data.categories.filter(c => c.active || String(c.id) === String(data.values.categoryId))}
           currency={data.salaryCurrency ?? options.data.currency}
           onSubmit={values => save.mutate(values)}
           pending={save.isPending}

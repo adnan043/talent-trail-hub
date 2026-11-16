@@ -4,7 +4,7 @@ import {contrast, luminance, mix, toRgb} from '../../lib/colour';
 import {sidebarTokens} from '../../lib/sidebar-colours';
 import {cache} from '../../platform/cache';
 import {forgetPublicLists} from './public-cache';
-import {type BoardSettings, getBoardSettings} from './settings';
+import {type BoardSettings, getBoardSettings, isSingleCompany} from './settings';
 
 export {contrast};
 
@@ -155,4 +155,24 @@ export function brandCss(settings: Pick<BoardSettings, 'primaryColor' | 'fontPre
     ...(singleCompany ? ['[data-marketplace-only] {\n  display: none !important;\n}'] : []),
     '',
   ].join('\n\n');
+}
+
+/**
+ * The dashboard's link to the brand stylesheet, versioned by its content (`?v=<hash>`): a saved
+ * brand is a new URL, so the next page load never shows a cached old copy (the stylesheet itself
+ * is cached 60 s, then served stale for 10 min). Falls back to the plain URL without a database.
+ */
+export async function brandCssHref(db: PrismaClient | null): Promise<string> {
+  const href = '/site-api/board/brand.css';
+  if (!db) return href;
+  try {
+    const settings = await cachedBoardSettings(db);
+    const css = brandCss(settings, isSingleCompany(settings));
+    // FNV-1a, 32 bits: a short cache key, not a secret.
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < css.length; i++) hash = Math.imul(hash ^ css.charCodeAt(i), 0x01000193);
+    return `${href}?v=${(hash >>> 0).toString(36)}`;
+  } catch {
+    return href;
+  }
 }

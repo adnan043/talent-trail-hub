@@ -184,7 +184,7 @@ Only PARTIAL / MISSING rows. Area, where the fix belongs, one-line fix.
 7. ~~**Reject reason minimum** (D): `manage-moderation.ts` `rejectBody` + `screens/review.tsx` rule: 3–500 characters.~~ FIXED
 8. ~~**Companies directory order** (A): `server/routes/companies.ts`: order by `activeJobCount desc, id` (keyset on both); home "Hiring now" from the same order (`server/routes/board.ts`).~~ FIXED (A)
 9. ~~**Home latest workplace switch** (A): `pages/index.astro`: Any/Remote/On-site/Hybrid links to the latest list (`?workplace=`), read in `/board/home`.~~ FIXED (A)
-10. ~~**/jobs mobile + location** (A): `pages/jobs/index.astro`: debounce (400 ms) submit on location input; mobile sheet button "Show N jobs" (N from the result); "See all N featured jobs" (N from `featuredMore`, a capped count).~~ FIXED (A)
+10. ~~**/jobs mobile + location** (A): `pages/jobs/index.astro`: debounce (400 ms) submit on location input (later removed: the swap stole focus mid-typing; location submits on Enter / Search like the keyword); mobile sheet button "Show N jobs" (N from the result); "See all N featured jobs" (N from `featuredMore`, a capped count).~~ FIXED (A)
 11. DONE **Wizard step in URL + focus** (C): `portal/employer/routes.tsx` `validateSearch: {step}`, `post-job.tsx` navigates per step and focuses the step container.
 12. DONE **Duplicate asks first** (C): `portal/employer/screens/jobs.tsx` `duplicate`: `useConfirm` when `loadDraft()` holds an unfinished draft.
 15. DONE **Single-company email links** (E): `server/board/email.ts` `sendBoardEmail`: on a single-company board rewrite `/dashboard/employer/*` links to `/` (or skip employer templates).

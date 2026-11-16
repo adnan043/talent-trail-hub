@@ -24,18 +24,27 @@ export const effectiveStatus = (job: {status: string; expiresAt: Date | null}, n
 /** `publishedAt`: a job that was never live (closed while in review) cannot be renewed (the route says 409). */
 export const jobActions = (status: JobStatus, publishedAt: Date | null): EmployerJobActions => ({
   edit: EDITABLE.includes(status),
-  close: status === 'published' || status === 'pending_review',
+  // An unpaid job (its checkout never finished) can be closed: its open orders are failed.
+  close: status === 'published' || status === 'pending_review' || status === 'pending_payment',
   renew: RENEWABLE.includes(status) && publishedAt !== null,
   duplicate: true,
 });
 
 export const isEditable = (status: JobStatus) => EDITABLE.includes(status);
 
-/** Checks the values (the same rules as the form) and that the category exists and is active. */
-export async function validateJob(db: PrismaClient, values: JobValues): Promise<{fields: Record<string, string>} | {columns: JobColumns; html: string}> {
+/**
+ * Checks the values (the same rules as the form) and that the category exists and is active.
+ * `keepCategoryId`: the job's current category, accepted unchanged although it was hidden since.
+ */
+export async function validateJob(
+  db: PrismaClient,
+  values: JobValues,
+  keepCategoryId?: number
+): Promise<{fields: Record<string, string>} | {columns: JobColumns; html: string}> {
   const fields = {...checkJobValues(values)} as Record<string, string>;
   if (!fields.categoryId) {
-    const category = await db.category.findFirst({where: {id: Number(values.categoryId), isActive: true}, select: {id: true}});
+    const categoryId = Number(values.categoryId);
+    const category = await db.category.findFirst({where: {id: categoryId, ...(categoryId === keepCategoryId ? {} : {isActive: true})}, select: {id: true}});
     if (!category) fields.categoryId = 'Choose a category.';
   }
   if (Object.keys(fields).length) return {fields};

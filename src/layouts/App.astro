@@ -19,9 +19,11 @@ interface Props {
   viewer: Viewer;
   /** The app's name; the tab shows "<title> · <site>". */
   title: string;
+  /** The brand stylesheet, versioned by its content (`brandCssHref`): a saved brand shows on the next load. */
+  brandHref?: string;
 }
 
-const {site, viewer, title} = Astro.props;
+const {site, viewer, title, brandHref = '/site-api/board/brand.css'} = Astro.props;
 const name = site?.name ?? 'My site';
 // The theme-before-paint script's hash joins this page's CSP (src/lib/theme-boot.ts).
 Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
@@ -38,7 +40,7 @@ Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
     <!-- The saved theme before first paint: a fixed string, hashed into the CSP. -->
     <script is:inline set:html={THEME_BOOT} />
     <!-- The board's brand (F30): accent colour and font, as a stylesheet (CSP: no inline styles). -->
-    <link rel="stylesheet" href="/site-api/board/brand.css" />
+    <link rel="stylesheet" href={brandHref} />
     {site?.favIcon ? <link rel="icon" href={site.favIcon} /> : <link rel="icon" href="/favicon.svg" type="image/svg+xml" />}
   </head>
   <body class="app-body" data-viewer={viewer.state}>

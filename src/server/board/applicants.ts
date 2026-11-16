@@ -225,7 +225,8 @@ const STAFF_EMAIL_MAX = 20;
 /** Active users whose roles grant `site:applicant:read`, oldest first, at most 20. */
 async function applicantStaffEmails(db: PrismaClient): Promise<string[]> {
   const users = await db.user.findMany({
-    where: {status: 'active', roles: {some: {role: {permissions: {some: {permission: {codename: {in: APPLICANT_READ_GRANTS}}}}}}}},
+    // Not the site owner's placeholder address (`…@owner.invalid`): it never gets mail.
+    where: {status: 'active', NOT: {email: {endsWith: '.invalid'}}, roles: {some: {role: {permissions: {some: {permission: {codename: {in: APPLICANT_READ_GRANTS}}}}}}}},
     select: {email: true},
     orderBy: {id: 'asc'},
     take: STAFF_EMAIL_MAX,

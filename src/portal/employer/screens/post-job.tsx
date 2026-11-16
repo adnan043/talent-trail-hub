@@ -69,10 +69,11 @@ export function PostJob() {
   }, []);
 
   const post = useMutation({
-    mutationFn: (input: {gateway?: string}) =>
+    // `tierId`: the one the wizard shows (a single-tier board's only tier), never a stale saved one.
+    mutationFn: (input: {gateway?: string; tierId: number | null}) =>
       read<ListingAnswer>(
         api.employer.post.$post({
-          json: {job: draft.job, company: draft.company, tierId: draft.tierId, jobId: draft.jobId, gateway: input.gateway || undefined},
+          json: {job: draft.job, company: draft.company, tierId: input.tierId, jobId: draft.jobId, gateway: input.gateway || undefined},
         })
       ),
     onSuccess: async answer => {
@@ -105,6 +106,15 @@ export function PostJob() {
       }
     },
     onError: err => {
+      // Its job was paid for since (a slow payment event): the draft is done with.
+      if (err instanceof ApiError && err.body.error === 'already_paid') {
+        clearDraft();
+        toast.success('This job was already paid for. It is in My jobs.');
+        void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
+        void queryClient.invalidateQueries({queryKey: ['employer', 'orders']});
+        void navigate({to: '/employer/jobs'});
+        return;
+      }
       // The job was saved before the checkout failed: a retry reuses it, never a second one.
       if (err instanceof ApiError && typeof err.body.jobId === 'number' && err.body.jobId !== draft.jobId) {
         const next = {...draft, jobId: err.body.jobId};
@@ -205,7 +215,7 @@ export function PostJob() {
                   pending={post.isPending}
                   pendingLabel={free ? 'Posting…' : 'Opening checkout…'}
                   disabled={Boolean(gateways && !gateway) || company?.isBlocked}
-                  onClick={() => post.mutate({gateway: gateways ? gateway : undefined})}>
+                  onClick={() => post.mutate({gateway: gateways ? gateway : undefined, tierId})}>
                   {free ? 'Post job' : 'Pay and post'}
                 </Button>
               </div>

@@ -117,6 +117,7 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
   });
 
   it('applies once per email: a second application answers like the first (no oracle), stored and emailed once', async () => {
+    const {updatedAt: updatedBefore} = await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {updatedAt: true}});
     const guest = new Browser(app, '198.51.100.1');
     const first = await apply(guest, jobA.slug, 'Casey@Example.test');
     expect(first.status).toBe(201);
@@ -125,8 +126,10 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(again.status).toBe(first.status);
     expect(again.json).toEqual(first.json);
     expect(await db.emailLog.count({where: {templateKey: 'application-confirmation'}})).toBe(1);
-    const job = await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {applicationCount: true}});
+    const job = await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {applicationCount: true, updatedAt: true}});
     expect(job.applicationCount).toBe(1);
+    // The counter leaves `updated_at` (the sitemap's lastmod) alone.
+    expect(job.updatedAt).toEqual(updatedBefore);
     const row = await db.application.findFirstOrThrow({select: {email: true, resumeFileId: true, consentText: true}});
     expect(row.email).toBe('casey@example.test');
     expect(row.resumeFileId).toMatch(/^file_/);

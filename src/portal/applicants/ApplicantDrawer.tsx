@@ -29,6 +29,8 @@ export function useApplicantStatus() {
       toast.danger(`The status was not saved: ${error.message}`);
     },
     onSuccess: ({applicant}) => patchCachedApplicant(queryClient, applicant.id, () => applicant),
+    // A list filtered by status (and its counts) must drop or gain the row: refetch every list.
+    onSettled: () => void queryClient.invalidateQueries({queryKey: ['applicants']}),
   });
 }
 

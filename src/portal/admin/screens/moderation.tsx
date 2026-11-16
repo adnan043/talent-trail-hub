@@ -89,7 +89,7 @@ export function Moderation() {
           error={queue.error}
           empty={
             <EmptyState icon="check-circle" title="All caught up">
-              Jobs show here when employers submit or edit them. An edited live job stays up while you decide.
+              Jobs show here when employers submit or edit them. An edited live job leaves the board until you decide.
             </EmptyState>
           }
         />

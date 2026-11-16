@@ -38,13 +38,21 @@ export interface ManageActivity {
 export interface ModerationItem {
   id: number;
   title: string;
-  company: {id: number; name: string; isTrusted: boolean};
+  company: {id: number; name: string; isTrusted: boolean; isBlocked: boolean};
   source: JobSource;
   flagged: boolean;
   submittedAt: string;
   /** An edit of a live job: approving keeps this expiry. */
   liveUntil: string | null;
   payment: {amountCents: number; currency: string} | null;
+}
+
+/** A company's standing after `POST /manage/companies/:id/{block,trust}`. */
+export interface AdminCompanyState {
+  id: number;
+  name: string;
+  isBlocked: boolean;
+  isTrusted: boolean;
 }
 
 export interface ModerationQueue {
@@ -108,6 +116,9 @@ export interface AdminJobRow {
   status: JobStatus;
   source: JobSource;
   company: string;
+  companyId: number;
+  /** Blocked: off every public page; its employer cannot post or change jobs. */
+  companyBlocked: boolean;
   category: string;
   featured: boolean;
   featuredUntil: string | null;
@@ -298,6 +309,7 @@ export interface AdminJobCreate {
 export const EMPLOYER_JOB_NOTE = 'This job was posted by an employer: only they can change its content.';
 
 export interface AdminJobFormOptions {
-  categories: {id: number; name: string}[];
+  /** Every category; `active: false` is hidden from the board (only a job already in it keeps it). */
+  categories: {id: number; name: string; active: boolean}[];
   currency: string;
 }

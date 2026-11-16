@@ -31,12 +31,25 @@ function keywordWhere(q: string): Prisma.JobWhereInput[] {
   return terms.map(term => ({searchText: insensitive(term)}));
 }
 
+/**
+ * "Berlin, Germany" or "Portland, OR, United States": every comma-separated part must match the
+ * city, the region or the country. A part under 3 letters ("OR", "CA", "DE") is a country code or
+ * an exact city / region, never a substring (so "DE" does not find Dresden or Delaware).
+ */
 function locationWhere(location: string): Prisma.JobWhereInput {
-  if (/^remote$/i.test(location)) return {workplaceType: 'remote'};
-  const codes = countryCodesMatching(location);
-  return {
-    OR: [{locationCity: insensitive(location)}, {locationRegion: insensitive(location)}, ...(codes.length ? [{locationCountry: {in: codes}}] : [])],
-  };
+  if (/^\s*remote\s*$/i.test(location)) return {workplaceType: 'remote'};
+  const parts = [...new Set(location.split(',').map(p => p.trim()).filter(Boolean))].slice(0, MAX_TERMS);
+  return {AND: parts.map(locationPartWhere)};
+}
+
+function locationPartWhere(part: string): Prisma.JobWhereInput {
+  const codes = countryCodesMatching(part);
+  const country = codes.length ? [{locationCountry: {in: codes}}] : [];
+  if (part.length < 3) {
+    const exact = {equals: part, mode: 'insensitive' as const};
+    return {OR: [{locationCity: exact}, {locationRegion: exact}, ...country]};
+  }
+  return {OR: [{locationCity: insensitive(part)}, {locationRegion: insensitive(part)}, ...country]};
 }
 
 /** Paying at least `yearly` whole units of `currency` a year; other currencies are left out. */

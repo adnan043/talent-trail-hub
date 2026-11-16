@@ -85,13 +85,15 @@ export const manageJobEditRoutes = new Hono()
     return c.json(body);
   })
 
-  // What the job form needs: active categories (with ids) and the board's currency.
+  // What the job form needs: the categories (with ids; hidden ones too, flagged `active: false`, for
+  // the list's filter and a job still in one) and the board's currency.
   .get('/form-options', ...guard, async c => {
     const db = c.var.db;
-    const [categories, settings] = await Promise.all([
-      db.category.findMany({where: {isActive: true}, orderBy: [{sortOrder: 'asc'}, {id: 'asc'}], select: {id: true, name: true}, take: 100}),
+    const [rows, settings] = await Promise.all([
+      db.category.findMany({orderBy: [{isActive: 'desc'}, {sortOrder: 'asc'}, {id: 'asc'}], select: {id: true, name: true, isActive: true}, take: 200}),
       getBoardSettings(db),
     ]);
+    const categories = rows.map(r => ({id: r.id, name: r.name, active: r.isActive}));
     const body: AdminJobFormOptions = {categories, currency: settings.currency};
     return c.json(body);
   })
@@ -177,10 +179,11 @@ export const manageJobEditRoutes = new Hono()
     const id = idParam(c.req.param('id'));
     if (!id) return notFound(c);
     const db = c.var.db;
-    const job = await db.job.findUnique({where: {id}, select: {id: true, slug: true, source: true, salaryCurrency: true}});
+    const job = await db.job.findUnique({where: {id}, select: {id: true, slug: true, source: true, salaryCurrency: true, categoryId: true}});
     if (!job) return notFound(c);
     if (isEmployerJob(job.source)) return c.json(problem('employer_job_locked', EMPLOYER_JOB_NOTE), 403);
-    const checked = await validateJob(db, c.req.valid('json').values);
+    // Its current category is kept although it was hidden since; a change must pick an active one.
+    const checked = await validateJob(db, c.req.valid('json').values, job.categoryId);
     if ('fields' in checked) return invalid(c, checked.fields);
     const settings = await getBoardSettings(db);
     // Admin edits apply as they are (no re-review); the slug never changes. A salary keeps the

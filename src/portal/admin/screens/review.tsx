@@ -4,7 +4,7 @@ import {useState} from 'react';
 
 import {EMPLOYMENT_LABELS, type EmploymentType, LIMITS, SALARY_PERIOD_LABELS, type SalaryPeriod, WORKPLACE_LABELS, type WorkplaceType} from '../../../lib/board';
 import {sanitizeRichText} from '../../../lib/rich-text';
-import type {ModerationResult} from '../../../lib/types-manage';
+import type {AdminCompanyState, ModerationResult} from '../../../lib/types-manage';
 import {api, ApiError, read} from '../../api';
 import {when} from '../../shared';
 import {
@@ -12,6 +12,7 @@ import {
   Button,
   buttonClass,
   Card,
+  Checkbox,
   DefinitionList,
   EmptyState,
   ErrorNote,
@@ -22,6 +23,7 @@ import {
   PageHeader,
   rules,
   StatusBadge,
+  useConfirm,
   useForm,
   useToast,
 } from '../../ui';
@@ -39,7 +41,10 @@ export function Review() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
   const [rejecting, setRejecting] = useState(false);
+  // Approve and trust the company: its next jobs go live without review (the board's moderation mode).
+  const [trust, setTrust] = useState(false);
 
   const done = (result: ModerationResult) => {
     // Approved or rejected: the queue, the jobs list and the dashboard's numbers (a refund among them).
@@ -50,12 +55,38 @@ export function Review() {
   };
   const approve = useMutation({
     // `seen`: what this page showed; an employer edit since then answers 409 and the page reloads it.
-    mutationFn: (seen: string) => read<ModerationResult>(api.manage.moderation[':id'].approve.$post({param: {id}, json: {trust: false, seen}})),
+    mutationFn: (seen: string) => read<ModerationResult>(api.manage.moderation[':id'].approve.$post({param: {id}, json: {trust, seen}})),
     onSuccess: done,
     onError: err => {
       if (err instanceof ApiError && err.status === 409) void review.refetch();
     },
   });
+
+  // Block / unblock or stop trusting the company: its standing changes at once, the job stays here.
+  const company = useMutation({
+    mutationFn: ({action, on}: {action: 'block' | 'trust'; on: boolean}) => {
+      const param = {id: String(review.data!.item.company.id)};
+      return read<AdminCompanyState>(
+        action === 'block'
+          ? api.manage.companies[':id'].block.$post({param, json: {blocked: on}})
+          : api.manage.companies[':id'].trust.$post({param, json: {trusted: on}})
+      );
+    },
+    onSuccess: () => {
+      void review.refetch();
+      void invalidateAdminJobs(queryClient, {status: true});
+    },
+  });
+  const changeCompany = async (action: 'block' | 'trust', on: boolean) => {
+    const name = review.data?.item.company.name ?? 'this company';
+    const words =
+      action === 'block'
+        ? on
+          ? {title: `Block ${name}?`, body: 'Its jobs and company page leave the board at once, and its employer can no longer post or change jobs. This job stays in the queue: reject it to tell the employer.', confirmLabel: 'Block company', tone: 'danger' as const, done: `${name} is blocked.`}
+          : {title: `Unblock ${name}?`, body: 'Its live jobs and company page are back on the board, and its employer can post again.', confirmLabel: 'Unblock', tone: 'primary' as const, done: `${name} is unblocked.`}
+        : {title: `Stop trusting ${name}?`, body: 'Its next jobs wait for review again.', confirmLabel: 'Stop trusting', tone: 'primary' as const, done: `${name} is no longer trusted.`};
+    if (await confirm({...words, pendingLabel: 'Saving…', action: () => company.mutateAsync({action, on})})) toast.success(words.done);
+  };
 
   if (review.isPending) return <div className="app-page"><LoadingBlock rows={6} /></div>;
   if (review.error) {
@@ -77,7 +108,7 @@ export function Review() {
   }
   const {item, job, history} = review.data;
   const salary = job.salary;
-  const busy = approve.isPending;
+  const busy = approve.isPending || company.isPending;
 
   return (
     <div className="app-page screen-review">
@@ -89,8 +120,8 @@ export function Review() {
             <Button variant="danger" onClick={() => setRejecting(true)} disabled={busy}>
               Reject
             </Button>
-            <Button icon="check" pending={busy} pendingLabel="Approving…" onClick={() => approve.mutate(item.submittedAt)}>
-              Approve
+            <Button icon="check" pending={approve.isPending} pendingLabel="Approving…" disabled={company.isPending} onClick={() => approve.mutate(item.submittedAt)}>
+              {trust && !item.company.isTrusted ? 'Approve and trust' : 'Approve'}
             </Button>
           </>
         }
@@ -108,7 +139,7 @@ export function Review() {
       )}
       {item.liveUntil && (
         <Notice tone="info" title="An edit of a live job">
-          The job stays live while you decide. Approving keeps its end date ({day(item.liveUntil)}).
+          The employer changed a live job, so it is off the board until you decide. Approving puts it back with its end date ({day(item.liveUntil)}).
         </Notice>
       )}
       <div className="grid-main-side">
@@ -170,6 +201,32 @@ export function Review() {
                 ))}
               </ul>
             )}
+          </Card>
+          <Card title="Company" description={item.company.name}>
+            <div className="form-stack">
+              {(item.company.isTrusted || item.company.isBlocked) && (
+                <span className="badges">
+                  {item.company.isTrusted && <Badge tone="success">Trusted</Badge>}
+                  {item.company.isBlocked && <Badge tone="danger">Blocked</Badge>}
+                </span>
+              )}
+              {item.company.isTrusted ? (
+                <Button variant="secondary" size="sm" onClick={() => void changeCompany('trust', false)} disabled={busy}>
+                  Stop trusting
+                </Button>
+              ) : (
+                <Checkbox
+                  label="Trust this company when I approve"
+                  description="Its next jobs go live without review."
+                  checked={trust}
+                  onChange={setTrust}
+                  disabled={busy || item.company.isBlocked}
+                />
+              )}
+              <Button variant={item.company.isBlocked ? 'secondary' : 'danger'} size="sm" icon="ban" onClick={() => void changeCompany('block', !item.company.isBlocked)} disabled={busy}>
+                {item.company.isBlocked ? 'Unblock company' : 'Block company'}
+              </Button>
+            </div>
           </Card>
         </div>
       </div>
