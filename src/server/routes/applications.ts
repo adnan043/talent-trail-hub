@@ -105,7 +105,7 @@ const applyBody = validator('json', (value, c) => {
   const typed = optional(v.email, 254);
   // The platform's own check (as sign-up and the privacy tool use): every stored address is one
   // the privacy tool can look up, and `x@y.com.` is no second copy of `x@y.com`.
-  const email = typed ? normalizeEmail(typed) : '';
+  const email = (typed && normalizeEmail(typed)) || '';
   const phone = optional(v.phone, 40);
   const profileUrl = optional(v.profileUrl, 300);
   const coverNote = optional(v.coverNote, LIMITS.coverNote);
