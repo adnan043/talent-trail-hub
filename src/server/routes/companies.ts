@@ -79,8 +79,9 @@ export async function companySummaries(db: PrismaClient, ranks: Rank[]): Promise
 export const companyRoutes = new Hono()
   // A logo kept in the Site Database (sites without file storage): bytes checked on the way in.
   .get('/:slug/logo', withDb, async c => {
+    const settings = await cachedBoardSettings(c.var.db);
     const row = await c.var.db.companyLogo.findFirst({
-      where: {company: {slug: c.req.param('slug'), isBlocked: false}},
+      where: {company: {slug: c.req.param('slug'), isBlocked: false, ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {})}},
       select: {contentType: true, data: true},
     });
     if (!row) return c.json(problem('not_found', 'No logo.'), 404);
@@ -126,10 +127,16 @@ export const companyRoutes = new Hono()
       const settings = await cachedBoardSettings(db);
       const slug = c.req.valid('param').slug;
       // Both by slug, in parallel (one round trip): the jobs' rule already leaves out a blocked
-      // company and, on a single-company board, every other company.
+      // company and, on a single-company board, every other company. A company gets a public
+      // page once one of its jobs has been live (approved or paid): its text and links are never
+      // published by merely signing up and naming a company.
       const [company, jobs] = await Promise.all([
         db.company.findFirst({
-          where: {slug, isBlocked: false, ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {})},
+          where: {
+            slug,
+            isBlocked: false,
+            ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {jobs: {some: {publishedAt: {not: null}}}}),
+          },
           select: companySelect,
         }),
         db.job.findMany({

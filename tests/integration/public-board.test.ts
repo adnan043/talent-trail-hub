@@ -110,6 +110,18 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect((featured.json.jobs as unknown[]).length).toBe(7);
   });
 
+  it('a company gets a public page only once one of its jobs has been live', async () => {
+    const fresh = await company('Spam Co');
+    await job(fresh.id, 'spam-draft', {status: 'pending_payment', publishedAt: null, expiresAt: null});
+    await job(fresh.id, 'spam-rejected', {status: 'rejected', publishedAt: null, expiresAt: null});
+    expect((await browser.get('/site-api/companies/spam-co')).status).toBe(404);
+    const past = await company('Past Co');
+    await job(past.id, 'past-job', {status: 'expired', expiresAt: new Date(Date.now() - DAY)});
+    expect((await browser.get('/site-api/companies/past-co')).status).toBe(200);
+    await job(fresh.id, 'spam-live');
+    expect((await browser.get('/site-api/companies/spam-co')).status).toBe(200);
+  });
+
   it('orders the companies directory and "Hiring now" by open jobs', async () => {
     const small = await company('Small Co');
     const big = await company('Big Co');
