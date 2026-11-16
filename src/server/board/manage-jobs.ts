@@ -152,7 +152,12 @@ export const manageJobRoutes = new Hono()
       const start = isFeaturedNow(job, now) && job.featuredUntil ? job.featuredUntil : now;
       featuredUntil = new Date(start.getTime() + (days as number) * DAY_MS);
     }
-    await db.job.update({where: {id}, data: {isFeatured: featured, featuredUntil}, select: {id: true}});
+    // Conditional, as extend: an edit sent to review (or a close) after the read wins.
+    const {count} = await db.job.updateMany({
+      where: featured ? {id, status: 'published', needsReview: false, featuredUntil: job.featuredUntil} : {id},
+      data: {isFeatured: featured, featuredUntil},
+    });
+    if (!count) return c.json(problem('changed', 'This job changed in the meantime. Reload and try again.'), 409);
     await audit(db, {
       ...(await actorOf(c)),
       action: featured ? 'job_featured' : 'job_unfeatured',
@@ -184,7 +189,8 @@ export const manageJobRoutes = new Hono()
     const live = status === 'published' && job.expiresAt;
     const expiresAt = new Date((live ? job.expiresAt!.getTime() : now.getTime()) + days * DAY_MS);
     const {count} = await db.job.updateMany({
-      where: {id, status: job.status, expiresAt: job.expiresAt},
+      // `needsReview: false` again here: an employer edit saved after the read must not go live unreviewed.
+      where: {id, status: job.status, expiresAt: job.expiresAt, needsReview: false},
       data: {status: 'published', expiresAt, expiryReminderSentAt: null, ...(live ? {} : {publishedAt: now})},
     });
     if (!count) return c.json(problem('changed', 'This job changed in the meantime. Reload and try again.'), 409);

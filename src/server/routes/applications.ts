@@ -113,6 +113,8 @@ const applyBody = validator('json', (value, c) => {
   const fields: Record<string, string> = {};
   if (!name) fields.name = 'Enter your name.';
   else if (name.length > LIMITS.applicantName) fields.name = `Use at most ${LIMITS.applicantName} characters.`;
+  // One line: the name goes into the employer's email and the CSV export as typed.
+  else if (/[\u0000-\u001f\u007f\u2028\u2029]/.test(name)) fields.name = 'Enter your name on one line.';
   if (!typed) fields.email = 'Enter your email address.';
   else if (!email) fields.email = 'Enter a valid email address, like name@example.com.';
   if (phone && !PHONE_RE.test(phone)) fields.phone = 'Enter a phone number with digits only, like +1 555 123 4567.';

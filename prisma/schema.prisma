@@ -768,7 +768,7 @@ model EmailLog {
 /// Rows older than a day are swept by the purge job.
 model BoardAttempt {
   id        BigInt   @id @default(autoincrement())
-  /// `apply`, `upload`, `view`, `click`, `logo`, `post`, `inbox` (candidate emails per inbox, keyed hash).
+  /// `apply`, `upload`, `view`, `click`, `logo`, `post`, `inbox` (candidate emails per inbox, keyed hash), `notify` (new-applicant emails per job).
   kind      String   @db.VarChar(12)
   ipHash    String   @map("ip_hash") @db.Char(64)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)

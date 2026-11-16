@@ -21,7 +21,7 @@ const RANGES = {'7d': 7, '30d': 30, '90d': 90, '12m': 12} as const;
 type Range = keyof typeof RANGES;
 
 const rangeQuery = validator('query', v => ({
-  range: (typeof v.range === 'string' && v.range in RANGES ? v.range : '30d') as Range,
+  range: (typeof v.range === 'string' && Object.hasOwn(RANGES, v.range) ? v.range : '30d') as Range,
 }));
 
 /** Start of the UTC day (or month) the instant falls in, as the bucket's key. */

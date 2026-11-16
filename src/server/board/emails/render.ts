@@ -22,9 +22,12 @@ const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-/** `{{name}}` → its value (control characters removed); unknown names become ''. */
+/** Line breaks and tabs inside a value: one space, so a typed value never starts a line of its own. */
+const BREAKS = /[\t\n\r\u2028\u2029]+/g;
+
+/** `{{name}}` → its value (on one line, control characters removed); unknown names become ''. */
 function fill(text: string, vars: Vars, transform: (v: string) => string = v => v): string {
-  return text.replace(PLACEHOLDER, (_, name: string) => transform((vars[name] ?? '').replace(CONTROL, '')));
+  return text.replace(PLACEHOLDER, (_, name: string) => transform((vars[name] ?? '').replace(BREAKS, ' ').replace(CONTROL, '')));
 }
 
 /** Makes `…Url` values that are site paths absolute on `origin`. */

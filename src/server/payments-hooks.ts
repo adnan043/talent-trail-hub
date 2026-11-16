@@ -119,11 +119,18 @@ export async function settleListingCheckout(checkout: Checkout): Promise<void> {
       `[payments] listing order ${order.id}: charged ${checkout.amountCents} ${checkout.currency}, the tier showed ${order.amountCents} ${order.currency}`
     );
   }
-  await settleListingOrder(db, siteAddress(), {checkoutId: checkout.id}, {
+  const settled = await settleListingOrder(db, siteAddress(), {checkoutId: checkout.id}, {
     amountCents: checkout.amountCents,
     currency: checkout.currency,
     paidAt: dateOf(checkout.paidAt),
   });
+  if (settled) return;
+  // Not claimed: another settle won (paid, nothing to do), or the order was superseded between the
+  // read above and the claim (a resubmit in another tab). The money was taken: flag it.
+  const now = await db.listingOrder.findUnique({where: {id: order.id}, select: {status: true}});
+  if (now?.status === 'failed' && checkout.amountCents > 0) {
+    await flagForRefund(db, order.id, 'a superseded or failed checkout was paid');
+  }
 }
 
 export const paymentHooks = definePaymentHooks({

@@ -69,3 +69,15 @@ describe('apply target rules (client = server)', () => {
     expect(await check('url', 'javascript:alert(1)')).toBeDefined();
   });
 });
+
+describe('salary limits (client = server)', () => {
+  it('a salary past what the cents column holds is a field error, never a database error', async () => {
+    const {checkJobValues, EMPTY_JOB_VALUES, SALARY_MAX} = await import('../src/lib/job-input');
+    const check = (salaryMin: string, salaryMax: string) => checkJobValues({...EMPTY_JOB_VALUES, salaryMin, salaryMax});
+    expect(check(String(SALARY_MAX), '').salaryMin).toBeUndefined();
+    expect(check('21474837', '').salaryMin).toMatch(/at most/);
+    expect(check('', '999999999').salaryMax).toMatch(/at most/);
+    // Every accepted value fits a 32-bit integer in cents.
+    expect(SALARY_MAX * 100).toBeLessThanOrEqual(2_147_483_647);
+  });
+});
