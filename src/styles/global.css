@@ -566,6 +566,7 @@ hr {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   min-width: 0;
   font-size: var(--text-meta);
@@ -612,6 +613,23 @@ hr {
   align-items: center;
   gap: 12px;
   margin-left: auto;
+}
+
+/* Wide screens: the nav sits in the page's center (equal side columns that never shrink below
+   their content); narrower, it centers in the space between the wordmark and the actions. */
+@media (min-width: 1024px) {
+  .site-header-inner {
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  }
+
+  .site-header-inner .brand {
+    justify-self: start;
+  }
+
+  .site-header-actions {
+    justify-self: end;
+  }
 }
 
 .site-header .sign-in-link {
