@@ -24,17 +24,29 @@ import {forgetPublicLists} from './public-cache';
 
 const DAY_MS = 86_400_000;
 
+const REFUND_FLAG = 'listing_order.refund_needed';
+
+/** Whether this order was flagged for a refund: it was paid but never moved its job. */
+async function isFlagged(t: PrismaClient, orderId: number): Promise<boolean> {
+  const row = await t.auditEvent.findFirst({where: {targetType: 'listing_order', targetId: String(orderId), action: REFUND_FLAG}, select: {id: true}});
+  return row !== null;
+}
+
+/**
+ * Inside a transaction: flags the order once. The advisory lock on the order makes the look and
+ * the write one step, so a webhook and a confirm at the same moment still add ONE row (a second
+ * row reads as a second refund to make).
+ */
+async function flagInTransaction(t: PrismaClient, orderId: number, reason: string): Promise<void> {
+  await t.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${REFUND_FLAG}:${orderId}`}))`;
+  if (await isFlagged(t, orderId)) return;
+  console.error(`[payments] listing order ${orderId}: ${reason}; refund it in the platform dashboard`);
+  await audit(t, {actorUserId: null, action: REFUND_FLAG, target: ['listing_order', orderId], meta: {reason}});
+}
+
 /** A paid order that cannot do what was bought: logged and in the activity log for the admin to refund. */
 export async function flagForRefund(db: PrismaClient, orderId: number, reason: string): Promise<void> {
-  // Once per order: a retried event or a reloaded thanks page must not add a second row (a
-  // second row reads as a second refund to make).
-  const flagged = await db.auditEvent.findFirst({
-    where: {targetType: 'listing_order', targetId: String(orderId), action: 'listing_order.refund_needed'},
-    select: {id: true},
-  });
-  if (flagged) return;
-  console.error(`[payments] listing order ${orderId}: ${reason}; refund it in the platform dashboard`);
-  await audit(db, {actorUserId: null, action: 'listing_order.refund_needed', target: ['listing_order', orderId], meta: {reason}});
+  await db.$transaction(tx => flagInTransaction(tx as unknown as PrismaClient, orderId, reason));
 }
 
 /**
@@ -74,7 +86,10 @@ export async function settleListingOrder(
     const job = order.jobId
       ? await t.job.findUnique({where: {id: order.jobId}, select: {id: true, status: true, publishedAt: true, expiresAt: true, needsReview: true, isFeatured: true, featuredUntil: true}})
       : null;
-    if (!job) return {order, job: null, moved: false, refund: 'its job no longer exists'};
+    if (!job) {
+      if (order.amountCents > 0) await flagInTransaction(t, order.id, 'its job no longer exists');
+      return {order, job: null, moved: false, refund: 'its job no longer exists'};
+    }
     let moved = false;
     let refund: string | null = null;
     if (order.kind === 'renew') {
@@ -130,12 +145,13 @@ export async function settleListingOrder(
     }
     await refreshActiveJobCount(t, order.companyId, now);
     const after = await t.job.findUnique({where: {id: job.id}, select: {id: true, title: true, slug: true, status: true, expiresAt: true}});
+    // In the same transaction as the claim: a crash after the commit can never lose the flag.
+    if (refund && order.amountCents > 0) await flagInTransaction(t, order.id, refund);
     return {order, job: after, moved, refund};
   });
   if (!outcome) return null;
   // After the commit: the job may have gone live, been featured, or got new dates.
   if (outcome.job) await forgetPublicLists();
-  if (outcome.refund && outcome.order.amountCents > 0) await flagForRefund(db, outcome.order.id, outcome.refund);
   // The receipt, the "live" / "in review" email and the reviewers' alert.
   if (options.defer) options.defer(() => notifySettled(db, requestUrl, outcome));
   else await notifySettled(db, requestUrl, outcome);
@@ -154,8 +170,10 @@ export async function refundListingOrder(db: PrismaClient, checkoutId: string, r
     await t.listingOrder.updateMany({where: {checkoutId, status: {in: ['pending', 'failed']}}, data: {status: 'refunded', refundedAt}});
     const {count} = await t.listingOrder.updateMany({where: {checkoutId, status: 'paid'}, data: {status: 'refunded', refundedAt}});
     if (!count) return;
-    const order = await t.listingOrder.findUniqueOrThrow({where: {checkoutId}, select: {jobId: true, companyId: true}});
-    if (!order.jobId) return;
+    const order = await t.listingOrder.findUniqueOrThrow({where: {checkoutId}, select: {id: true, jobId: true, companyId: true}});
+    // A flagged order never moved its job (a duplicate post, a renewal of a rejected job…): the
+    // listing another order paid for stays up when this one is refunded, as the flag asked.
+    if (!order.jobId || (await isFlagged(t, order.id))) return;
     await t.job.updateMany({where: {id: order.jobId, status: 'pending_review'}, data: {status: 'rejected', rejectionReason: 'Payment refunded'}});
     await t.job.updateMany({where: {id: order.jobId, status: 'published'}, data: {status: 'closed'}});
     await refreshActiveJobCount(t, order.companyId);

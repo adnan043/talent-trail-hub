@@ -8,6 +8,7 @@ import {handlePaymentDelivery} from '../../src/platform/payments';
 import {inRequestScope} from '../../src/platform/request-scope';
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
+import {flagForRefund} from '../../src/server/board/employer-settle';
 import {paymentHooks} from '../../src/server/payments-hooks';
 import {env} from './support/cloudflare-workers';
 import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn, userId} from './support/harness';
@@ -228,6 +229,29 @@ describe.skipIf(!DATABASE_URL)('board payments: the paid listing path (integrati
     expect((await deliver('checkout.paid', pay(checkoutId))).status).toBe(200);
     expect(await db.listingOrder.findUniqueOrThrow({where: {id: orderId}, select: {status: true}})).toEqual({status: 'refunded'});
     expect((await jobOf(jobId)).status).toBe('pending_payment');
+  });
+
+  it('(6c) a duplicate paid order is flagged once, and refunding it keeps the listing the other order paid for', async () => {
+    await moderation('auto');
+    const first = await postPaid();
+    const paid = pay(first.checkoutId);
+    await deliver('checkout.paid', paid);
+    expect((await jobOf(first.jobId)).status).toBe('published');
+    // A second order for the same job (two tabs, a double submit), paid too.
+    const original = await db.listingOrder.findUniqueOrThrow({where: {id: first.orderId}});
+    const {id: _id, createdAt: _c, updatedAt: _u, paidAt: _p, ...copy} = original;
+    const dup = await db.listingOrder.create({data: {...copy, checkoutId: 'pcs_duplicate000001', status: 'pending'}, select: {id: true}});
+    const dupPaid = {...paid, id: 'pcs_duplicate000001'};
+    await deliver('checkout.paid', dupPaid);
+    await deliver('checkout.paid', dupPaid);
+    await Promise.all([1, 2, 3].map(() => flagForRefund(db, dup.id, 'raced')));
+    const flags = () => db.auditEvent.count({where: {action: 'listing_order.refund_needed', targetId: String(dup.id)}});
+    expect(await flags()).toBe(1);
+
+    const refund = {checkoutId: 'pcs_duplicate000001', amountCents: 9900, currency: 'USD', full: true, refundedAt: new Date().toISOString()};
+    expect((await deliver('payment.refunded', refund)).status).toBe(200);
+    expect(await db.listingOrder.findUniqueOrThrow({where: {id: dup.id}, select: {status: true}})).toEqual({status: 'refunded'});
+    expect((await jobOf(first.jobId)).status).toBe('published');
   });
 
   it("(7) renewing a live job: a new paid checkout adds the new tier's days to the days left, reminder reset", async () => {
