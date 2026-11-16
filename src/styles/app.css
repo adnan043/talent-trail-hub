@@ -2102,6 +2102,10 @@
   gap: 2px;
   min-width: 160px;
   max-width: calc(100vw - 16px);
+  /* max-height is set from the trigger's position (overlay.tsx): a long list scrolls inside,
+     and the wheel at its ends never scrolls the page (which would close it). */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.25rem;
   background: var(--card);
   border: 1px solid var(--line);
