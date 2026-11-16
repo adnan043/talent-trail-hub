@@ -159,9 +159,12 @@ export function toCompanySummary(row: Pick<CompanyRow, 'slug' | 'name' | 'logoUr
 
 export function toJobDetail(row: DetailRow, now: Date, boardCurrency: string): PublicJobDetail {
   const method = row.applyMethod as ApplyMethod;
-  const target = method === 'url' ? safeUrl(row.applyTarget) : method === 'email' ? row.applyTarget : null;
+  const summary = toJobSummary(row, now, boardCurrency);
+  // An expired or closed job keeps its page, but no longer hands out the employer's apply address.
+  const open = summary.state === 'active';
+  const target = !open ? null : method === 'url' ? safeUrl(row.applyTarget) : method === 'email' ? row.applyTarget : null;
   return {
-    ...toJobSummary(row, now, boardCurrency),
+    ...summary,
     descriptionHtml: sanitizeRichText(row.descriptionHtml),
     category: row.category,
     company: toCompany(row.company),

@@ -217,8 +217,17 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     await db.job.update({where: {id: b.job.id}, data: {flagged: true}});
     const queue = await admin.get('/site-api/manage/moderation');
     expect((queue.json.items as {id: number}[]).map(i => i.id)).toEqual([b.job.id, a.job.id]);
-    expect((await admin.post(`/site-api/manage/moderation/${a.job.id}/reject`, {reason: 'no'})).status).toBe(422);
-    expect((await admin.post(`/site-api/manage/moderation/${a.job.id}/reject`, {reason: 'Not a real job.'})).status).toBe(200);
+    const seen = (await admin.get(`/site-api/manage/moderation/${a.job.id}`)).json as {item: {submittedAt: string}};
+    expect((await admin.post(`/site-api/manage/moderation/${a.job.id}/reject`, {reason: 'no', seen: seen.item.submittedAt})).status).toBe(422);
+    expect((await admin.post(`/site-api/manage/moderation/${a.job.id}/reject`, {reason: 'Not a real job.'})).status).toBe(422);
+    // The employer edits the job after the moderator opened it: rejecting what they never saw is refused.
+    await db.job.update({where: {id: a.job.id}, data: {title: 'Edited after review opened'}});
+    const stale = await admin.post(`/site-api/manage/moderation/${a.job.id}/reject`, {reason: 'Not a real job.', seen: seen.item.submittedAt});
+    expect(stale.status).toBe(409);
+    expect(stale.json.error).toBe('job_changed');
+    expect((await db.job.findUniqueOrThrow({where: {id: a.job.id}})).status).toBe('pending_review');
+    const fresh = (await admin.get(`/site-api/manage/moderation/${a.job.id}`)).json as {item: {submittedAt: string}};
+    expect((await admin.post(`/site-api/manage/moderation/${a.job.id}/reject`, {reason: 'Not a real job.', seen: fresh.item.submittedAt})).status).toBe(200);
   });
 
   it('single-company mode can create its owner company', async () => {

@@ -24,8 +24,9 @@ describe.skipIf(!DATABASE_URL)('board emails + slugs (integration, real Postgres
     const spy = vi.spyOn(globalThis, 'fetch');
     await sendBoardEmail(db, REQ, {template: 'job-approved', to: 'Emp@example.com', vars: {jobTitle: 'Designer'}});
     expect(spy).not.toHaveBeenCalled();
+    // Lowercased in the log, so the privacy tool finds it by the normalized address.
     expect(await logs()).toEqual([
-      {templateKey: 'job-approved', to: 'Emp@example.com', status: 'skipped', error: expect.stringContaining('RESEND_API_KEY')},
+      {templateKey: 'job-approved', to: 'emp@example.com', status: 'skipped', error: expect.stringContaining('RESEND_API_KEY')},
     ]);
   });
 

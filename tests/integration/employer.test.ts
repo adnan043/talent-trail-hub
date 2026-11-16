@@ -342,4 +342,10 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     }
     expect((await post(a)).status).toBe(404);
   });
+
+  it('a logo whose base64 cannot be decoded is a field error, never a 500', async () => {
+    for (const data of ['AAAAA', 'AB=', 'A']) {
+      expect((await a.post('/site-api/employer/company/logo/local', {contentType: 'image/png', data})).status).toBe(422);
+    }
+  });
 });
