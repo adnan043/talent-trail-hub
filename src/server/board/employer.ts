@@ -47,6 +47,9 @@ type CompanyRow = {
   isBlocked: boolean;
 };
 
+/** A blocked company keeps read access (its jobs, applicants, orders) and may close jobs or remove its logo, but changes nothing else. */
+export const BLOCKED = problem('company_blocked', 'This company cannot post or change jobs. Contact the board for help.');
+
 export const ownCompany = (db: PrismaClient, userId: number) =>
   db.company.findUnique({where: {ownerUserId: userId}, select: companySelect});
 

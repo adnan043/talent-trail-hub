@@ -4,6 +4,7 @@ import {validator} from 'hono/validator';
 import type {PrismaClient} from '../../generated/prisma/client';
 import type {CompaniesPage, CompanyProfileResponse, PublicCompanySummary} from '../../lib/types-public';
 import {isDbId} from '../../lib/board';
+import {getViewer} from '../../platform/auth';
 import {problem, withDb} from '../../platform/guards';
 import {cachedBoardSettings} from '../board/brand';
 import {publicJobWhere} from '../board/public';
@@ -76,15 +77,30 @@ export async function companySummaries(db: PrismaClient, ranks: Rank[]): Promise
 
 export const companyRoutes = new Hono()
   // A logo kept in the Site Database (sites without file storage): bytes checked on the way in.
+  // Public only for a company with a public profile (as `/:slug`): an image uploaded by a company
+  // that was never live is not served from the board's origin, except to its own owner (privately).
   .get('/:slug/logo', withDb, async c => {
+    const slug = c.req.param('slug');
+    if (!/^[a-z0-9-]{1,100}$/.test(slug)) return c.json(problem('not_found', 'No logo.'), 404);
     const settings = await cachedBoardSettings(c.var.db);
+    const single = isSingleCompany(settings);
     const row = await c.var.db.companyLogo.findFirst({
-      where: {company: {slug: c.req.param('slug'), isBlocked: false, ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {})}},
-      select: {contentType: true, data: true},
+      where: {company: {slug, isBlocked: false, ...(single ? {id: settings.ownerCompanyId!} : {})}},
+      select: {
+        contentType: true,
+        data: true,
+        company: {select: {ownerUserId: true, jobs: {where: {publishedAt: {not: null}}, select: {id: true}, take: 1}}},
+      },
     });
-    if (!row) return c.json(problem('not_found', 'No logo.'), 404);
+    const shown = row && (single || row.company.jobs.length > 0);
+    const ownerOnly = row && !shown && row.company.ownerUserId !== null && (await getViewer(c.req.raw)).id === row.company.ownerUserId;
+    if (!row || (!shown && !ownerOnly)) return c.json(problem('not_found', 'No logo.'), 404);
     return new Response(row.data, {
-      headers: {'content-type': row.contentType, 'x-content-type-options': 'nosniff', 'cache-control': logoCacheControl(c.req.query('v'))},
+      headers: {
+        'content-type': row.contentType,
+        'x-content-type-options': 'nosniff',
+        'cache-control': shown ? logoCacheControl(c.req.query('v')) : 'private, no-store',
+      },
     });
   })
   .get(

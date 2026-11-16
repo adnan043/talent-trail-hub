@@ -6,6 +6,7 @@ import {adminRoutes, authRoutes, getAccess, getViewer} from '../platform/auth';
 import {config} from '../platform/config';
 import {csrf, previewCookies, problem, sameOrigin} from '../platform/guards';
 import {syncPermissions} from '../platform/permission-sync';
+import {authEmailGuard} from './auth-email-guard';
 import {authSettings} from './auth-settings';
 import {checkoutRoutes, membershipRoutes} from './routes/checkout';
 import {abilitiesFor, CATALOGUE} from './permissions';
@@ -92,6 +93,8 @@ export const app = new Hono()
     return c.json({viewer, roles: access.roles, abilities, board});
   })
 
+  // Before the auth routes: an `email` shaped like one of the kit's internal limit keys is refused.
+  .use('/auth/*', authEmailGuard)
   .route('/auth', authRoutes(authSettings))
   .route('/admin', adminRoutes)
   .route('/site', siteRoutes)

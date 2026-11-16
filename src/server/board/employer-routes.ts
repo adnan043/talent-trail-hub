@@ -7,8 +7,9 @@ import {readJobValues} from '../../lib/job-input';
 import type {EmployerReceipt} from '../../lib/types-employer';
 import type {Viewer} from '../../lib/types';
 import {problem} from '../../platform/guards';
-import {ownCompany, refreshActiveJobCount} from './employer';
+import {BLOCKED, ownCompany, refreshActiveJobCount} from './employer';
 import {effectiveStatus, findOwnJob, isEditable, jobData, RENEWABLE, setJobTags, listOwnJobs, toJobDetail, validateJob} from './employer-jobs';
+import {RENEW_AHEAD_MAX_DAYS} from './employer-settle';
 import {chooseTier, findOwnOrder, listOwnOrders, startListing, toOrderRow} from './employer-orders';
 import {submissionTarget} from './lifecycle';
 import {notifyReviewers} from './review';
@@ -36,7 +37,6 @@ import {POSTS_PER_HOUR, userAttemptAllowed} from './employer-logo';
 type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
 
 /** How far ahead a renewal may push a listing's end date (twice the longest listing option). */
-const RENEW_AHEAD_MAX_DAYS = 2 * LIMITS.tierDaysMax;
 const NOT_FOUND = problem('not_found', 'No such job.');
 const NO_ORDER = problem('not_found', 'No such order.');
 
@@ -82,6 +82,7 @@ export const employerJobRoutes = new Hono<Env>()
     const company = await companyOf(db, c.var.viewer);
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);
+    if (company.isBlocked) return c.json(BLOCKED, 403);
     const status = effectiveStatus(job);
     if (!isEditable(status)) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
     // The settings from the database, never the Site Cache: they decide whether the edit skips review.
@@ -152,7 +153,7 @@ export const employerJobRoutes = new Hono<Env>()
     const company = await companyOf(db, c.var.viewer);
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);
-    if (company.isBlocked) return c.json(problem('company_blocked', 'This company cannot post jobs. Contact the board for help.'), 403);
+    if (company.isBlocked) return c.json(BLOCKED, 403);
     if (!RENEWABLE.includes(effectiveStatus(job))) return c.json(problem('not_renewable', 'Only live, expired or closed jobs can be renewed.'), 409);
     // A job that was never approved (closed while in review) cannot be renewed onto the board.
     if (!job.publishedAt) return c.json(problem('not_renewable', 'This job was never live, so it cannot be renewed. Post it again instead.'), 409);
