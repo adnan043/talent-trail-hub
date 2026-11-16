@@ -4,7 +4,7 @@ import {useEffect} from 'react';
 import {APPLICATION_STATUSES, type ApplicationStatus, LIMITS} from '../../lib/board';
 import {APPLICATION_STATUS_LABELS, type ApplicantRow, RESUME_EXPIRED_TEXT} from '../../lib/types-apply';
 import {when} from '../shared';
-import {Button, DefinitionList, Drawer, ErrorNote, Field, Notice, rules, SegmentedControl, type Tone, useForm, useToast} from '../ui';
+import {Button, DefinitionList, Drawer, ErrorNote, Field, Notice, rules, SegmentedControl, StatusBadge, type Tone, useForm, useToast} from '../ui';
 import {ApiError} from '../api';
 import {patchCachedApplicant, resumeLink, updateApplicant} from './queries';
 
@@ -63,7 +63,7 @@ const safeLink = (value: string | null) => {
 };
 
 /** One applicant's details: status (instant), contact, resume, cover note, private notes. */
-export function ApplicantDrawer({applicant, onClose}: {applicant: ApplicantRow | null; onClose: () => void}) {
+export function ApplicantDrawer({applicant, onClose, canEdit = true}: {applicant: ApplicantRow | null; onClose: () => void; canEdit?: boolean}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const status = useApplicantStatus();
@@ -101,24 +101,32 @@ export function ApplicantDrawer({applicant, onClose}: {applicant: ApplicantRow |
           <Button variant="secondary" onClick={onClose} disabled={saveNotes.isPending}>
             Close
           </Button>
-          <Button type="submit" pending={saveNotes.isPending} pendingLabel="Saving…">
-            Save notes
-          </Button>
+          {canEdit && (
+            <Button type="submit" pending={saveNotes.isPending} pendingLabel="Saving…">
+              Save notes
+            </Button>
+          )}
         </>
       }>
       {applicant && (
         <div className="form-stack">
           <div className="drawer-status">
             <p className="cell-title">Status</p>
-            <SegmentedControl
-              label="Status"
-              options={STATUS_OPTIONS}
-              value={applicant.status}
-              onChange={next =>
-                next !== applicant.status && status.mutate({id: applicant.id, status: next, previous: applicant.status})
-              }
-            />
-            <p className="field-hint">Shortlisted and rejected candidates get one email about it. Notes are never sent.</p>
+            {canEdit ? (
+              <>
+                <SegmentedControl
+                  label="Status"
+                  options={STATUS_OPTIONS}
+                  value={applicant.status}
+                  onChange={next =>
+                    next !== applicant.status && status.mutate({id: applicant.id, status: next, previous: applicant.status})
+                  }
+                />
+                <p className="field-hint">Shortlisted and rejected candidates get one email about it. Notes are never sent.</p>
+              </>
+            ) : (
+              <StatusBadge tone={STATUS_TONES[applicant.status]}>{APPLICATION_STATUS_LABELS[applicant.status]}</StatusBadge>
+            )}
           </div>
           <DefinitionList
             items={[
@@ -149,9 +157,16 @@ export function ApplicantDrawer({applicant, onClose}: {applicant: ApplicantRow |
           {saveNotes.error && !(saveNotes.error instanceof ApiError && saveNotes.error.fields.notes) && (
             <ErrorNote error={saveNotes.error} title="The notes were not saved" />
           )}
-          <Field id="f-notes" label="Private notes" hint="Only you and the board’s staff see these." error={form.error('notes')}>
-            <textarea {...form.field('notes')} rows={5} placeholder="Interview impressions, next steps…" />
-          </Field>
+          {canEdit ? (
+            <Field id="f-notes" label="Private notes" hint="Only you and the board’s staff see these." error={form.error('notes')}>
+              <textarea {...form.field('notes')} rows={5} placeholder="Interview impressions, next steps…" />
+            </Field>
+          ) : (
+            <div>
+              <p className="cell-title">Private notes</p>
+              <p>{applicant.notes || '—'}</p>
+            </div>
+          )}
         </div>
       )}
     </Drawer>

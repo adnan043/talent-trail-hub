@@ -167,6 +167,22 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(all.status).toBe(200);
     expect((all.json.items as {job: {company: string}}[])[0]!.job.company).toBe('A Co');
 
+    // Seeing every applicant is not changing them: without site:applicant:manage the staff
+    // member's PATCH is a 404 (nothing changes, no email); with it, a 200.
+    const adminRole = await db.role.findUniqueOrThrow({where: {slug: 'admin'}, select: {id: true}});
+    const manage = await db.permission.upsert({
+      where: {codename: 'site:applicant:manage'},
+      create: {codename: 'site:applicant:manage', title: 'Update all applicants'},
+      update: {},
+      select: {id: true},
+    });
+    await db.rolePermission.deleteMany({where: {roleId: adminRole.id, permissionId: manage.id}});
+    expect((await admin.request('PATCH', `/site-api/applications/${appId}`, {status: 'rejected', notes: 'x'})).status).toBe(404);
+    expect(await db.application.findUniqueOrThrow({where: {id: appId}, select: {status: true, employerNotes: true}})).toEqual({status: 'new', employerNotes: null});
+    expect(await db.emailLog.count({where: {templateKey: 'application-rejected'}})).toBe(0);
+    await db.rolePermission.create({data: {roleId: adminRole.id, permissionId: manage.id}});
+    expect((await admin.request('PATCH', `/site-api/applications/${appId}`, {notes: 'Seen by staff.'})).status).toBe(200);
+
     // Admin resume downloads are audited; the employer's own are not.
     expect((await ownerA.post(`/site-api/applications/${appId}/resume-link`)).status).toBe(200);
     expect((await admin.post(`/site-api/applications/${appId}/resume-link`)).status).toBe(200);

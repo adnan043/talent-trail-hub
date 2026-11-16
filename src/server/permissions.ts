@@ -47,6 +47,15 @@ export const CATALOGUE = definePermissions({
     ability: 'readApplicants',
     roles: ['admin'],
   },
+  /** Admin: change any application's status and notes (the candidate may be emailed). */
+  APPLICANT_MANAGE_ALL: {
+    codename: 'site:applicant:manage',
+    title: 'Update all applicants',
+    description: "Change the status and private notes of any job's applicants (shortlisted and rejected candidates are emailed).",
+    group: 'Applicants',
+    ability: 'manageApplicants',
+    roles: ['admin'],
+  },
   /** Admin: look up and delete a candidate's data by email (F36). */
   PRIVACY_MANAGE: {
     codename: 'site:privacy:manage',

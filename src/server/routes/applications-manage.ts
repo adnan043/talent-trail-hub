@@ -108,8 +108,8 @@ const verifiedUnlessStaff = createMiddleware<Env>(async (c, next) => {
 });
 
 /** The application `id`, only when its job is in the viewer's scope. */
-async function findInScope(c: Context<Env>, id: number | null) {
-  const where = jobWhereOf(await applicantScope(c));
+async function findInScope(c: Context<Env>, id: number | null, access: 'read' | 'write' = 'read') {
+  const where = jobWhereOf(await applicantScope(c, access));
   if (!id || !where) return null;
   return c.var.db.application.findFirst({where: {id, job: where}, select: applicationSelect});
 }
@@ -178,7 +178,7 @@ export const applicantRoutes = new Hono<Env>()
 
   .patch('/:id', patchBody, withViewer, requireAuth, verifiedUnlessStaff, withDb, async c => {
     const db = c.var.db;
-    const found = await findInScope(c, idOf(c.req.param('id')));
+    const found = await findInScope(c, idOf(c.req.param('id')), 'write');
     if (!found) return notFound(c);
     const {status, notes} = c.req.valid('json');
     // ONE write for status and notes. A repeat or a concurrent change still emails once (below).

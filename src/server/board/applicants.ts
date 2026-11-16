@@ -20,11 +20,15 @@ export type ApplicantScope = {kind: 'all'} | {kind: 'company'; companyId: number
 type ViewerContext = Context<{Variables: {viewer: Viewer; db: PrismaClient}}>;
 
 /**
- * `all` for holders of `site:applicant:read` (both board modes); otherwise the viewer's own
+ * `all` for holders of `site:applicant:read` (`site:applicant:manage` for a write; both board
+ * modes); otherwise the viewer's own
  * company, but only on a marketplace board (single-company mode: the employer area is 404).
  */
-export async function applicantScope(c: ViewerContext): Promise<ApplicantScope> {
-  if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, PERMISSIONS.APPLICANT_READ_ALL)) return {kind: 'all'};
+export async function applicantScope(c: ViewerContext, access: 'read' | 'write' = 'read'): Promise<ApplicantScope> {
+  // Reading every company's applicants and CHANGING them are two permissions: a staff member who
+  // may only look never sets a status (which emails the candidate) or overwrites notes.
+  const all = access === 'write' ? PERMISSIONS.APPLICANT_MANAGE_ALL : PERMISSIONS.APPLICANT_READ_ALL;
+  if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, all)) return {kind: 'all'};
   const db = c.var.db;
   const [settings, company] = await Promise.all([
     cachedBoardSettings(db),
