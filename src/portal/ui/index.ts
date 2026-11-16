@@ -10,6 +10,7 @@
  */
 export * from './button';
 export * from './display';
+export * from './editor';
 export * from './form';
 export * from './icon';
 export * from './nav';

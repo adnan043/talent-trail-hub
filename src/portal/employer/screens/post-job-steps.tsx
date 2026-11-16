@@ -2,7 +2,7 @@ import {useEffect} from 'react';
 
 import {formatMoney} from '../../../lib/format';
 import type {EmployerCompany, NewCompanyValues, TierOption} from '../../../lib/types-employer';
-import {Button, Card, DefinitionList, Field, Notice, RadioCards, useForm} from '../../ui';
+import {Button, Card, DefinitionList, Field, MarkdownEditor, Notice, RadioCards, useForm} from '../../ui';
 import {COMPANY_RULES} from '../draft';
 
 /** Pieces of the post-a-job wizard (src/portal/employer/screens/post-job.tsx). */
@@ -71,7 +71,7 @@ export function CompanyStep({
           </Field>
         </div>
         <Field id="f-about" label="About the company" optional error={form.error('about')} hint="Up to 2,000 characters. The same simple Markdown as the description.">
-          <textarea {...form.field('about')} rows={6} placeholder="What your company does and what it is like to work there." />
+          <MarkdownEditor {...form.field('about')} rows={6} placeholder="What your company does and what it is like to work there." />
         </Field>
         <div className="form-actions">
           <Button variant="secondary" onClick={onBack}>

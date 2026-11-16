@@ -16,6 +16,7 @@ import {
   ICON_NAMES,
   IconButton,
   LoadingBlock,
+  MarkdownEditor,
   Menu,
   Modal,
   Notice,
@@ -211,7 +212,7 @@ function ButtonsDemo({onToast, confirm}: {onToast: (message: string) => void; co
 
 function FormsDemo({onSaved}: {onSaved: () => void}) {
   const form = useForm(
-    {name: '', email: '', size: 'small', notes: ''},
+    {name: '', email: '', size: 'small', notes: '', about: ''},
     {name: [rules.required('Enter a name.'), rules.maxLength(80)], email: [rules.required('Enter an email.'), rules.email()]}
   );
   const [plan, setPlan] = useState<'starter' | 'pro'>('starter');
@@ -251,6 +252,11 @@ function FormsDemo({onSaved}: {onSaved: () => void}) {
           <div className="full">
             <Field id="f-notes" label="Notes" optional>
               <textarea {...form.field('notes')} rows={3} placeholder="Anything we should know?" />
+            </Field>
+          </div>
+          <div className="full">
+            <Field id="f-about" label="About (simple Markdown: MarkdownEditor)" optional>
+              <MarkdownEditor {...form.field('about')} rows={5} placeholder="A toolbar, ⌘/Ctrl B, I, K, and a Preview." />
             </Field>
           </div>
         </div>

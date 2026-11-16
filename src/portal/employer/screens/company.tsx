@@ -21,6 +21,7 @@ import {
   Field,
   initials,
   LoadingBlock,
+  MarkdownEditor,
   Notice,
   PageHeader,
   useConfirm,
@@ -215,7 +216,7 @@ function CompanyEditor({
             error={form.error("about")}
             hint={`Up to ${LIMITS.companyAbout.toLocaleString("en-US")} characters, in simple Markdown.`}
           >
-            <textarea
+            <MarkdownEditor
               {...form.field("about")}
               rows={8}
               placeholder="What your company does and what it is like to work there."

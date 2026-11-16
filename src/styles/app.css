@@ -3176,3 +3176,75 @@
     grid-column: 2;
   }
 }
+
+/* MarkdownEditor (ui/editor.tsx): one bordered box, the toolbar on top, the textarea or the
+   preview under it. The box takes the field's border, focus ring and error colour. */
+.md-editor {
+  border: 1px solid var(--control-line);
+  border-radius: var(--r-control);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.md-editor:hover {
+  border-color: var(--muted);
+}
+
+.md-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.md-editor[data-invalid],
+.md-editor[data-invalid]:hover {
+  border-color: var(--danger);
+}
+
+.md-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.5rem;
+  padding: 0.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--hover);
+}
+
+.md-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.md-editor-bar .segmented {
+  padding: 2px;
+  background: transparent;
+}
+
+.md-editor-bar .segment {
+  min-height: 32px;
+}
+
+.app-body .field .md-editor textarea,
+.app-body .field .md-editor textarea:hover,
+.app-body .field .md-editor textarea:focus-visible {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  resize: vertical;
+}
+
+.app-body .field .md-editor textarea[hidden] {
+  display: none;
+}
+
+.md-editor-preview {
+  min-height: 112px;
+  max-height: 32rem;
+  overflow-y: auto;
+  padding: 0.75rem 0.875rem;
+  margin: 0;
+}
