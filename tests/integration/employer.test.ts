@@ -8,7 +8,7 @@ import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
 import {POSTS_PER_HOUR, userAttemptAllowed} from '../../src/server/board/employer-logo';
 import {paymentHooks} from '../../src/server/payments-hooks';
-import {Browser, configureEnv, DATABASE_URL, db, resetDatabase, signedIn} from './support/harness';
+import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn} from './support/harness';
 
 /**
  * The employer area (workstream C) against a real Postgres: own company only, the server prices
@@ -347,5 +347,65 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     for (const data of ['AAAAA', 'AB=', 'A']) {
       expect((await a.post('/site-api/employer/company/logo/local', {contentType: 'image/png', data})).status).toBe(422);
     }
+  });
+
+  it('renewals started at the same moment never stack past the 240-day cap (checked again when settling)', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'auto'}, update: {freePostingEnabled: true, moderationMode: 'auto'}});
+    forgetBoardSettings();
+    const long = (await db.listingTier.create({data: {name: 'Long', priceKey: 'listing-long-120', priceCents: 0, durationDays: 120}, select: {id: true}})).id;
+    const jobId = (await post(a, {tierId: long})).json.jobId as number;
+    // Each request reads the same days left (about 120) and passes the route's check (120 + 120 <= 240).
+    const answers = await Promise.all(Array.from({length: 6}, () => a.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId: long})));
+    expect(answers.every(r => r.status === 200 || r.status === 409)).toBe(true);
+    const job = await db.job.findUniqueOrThrow({where: {id: jobId}, select: {expiresAt: true}});
+    expect((job.expiresAt!.getTime() - Date.now()) / 86_400_000).toBeLessThanOrEqual(240.01);
+  });
+
+  it("renewing a job the board's admin closed goes to review even in auto mode; the employer's own close does not", async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'auto'}, update: {freePostingEnabled: true, moderationMode: 'auto'}});
+    forgetBoardSettings();
+    const byBoard = (await post(a)).json.jobId as number;
+    const byEmployer = (await post(a, {job: jobValues({title: 'Frontend Engineer'})})).json.jobId as number;
+    const owner = await ownerSignedIn(app, undefined, '203.0.113.29');
+    expect((await owner.post(`/site-api/manage/jobs/${byBoard}/close`)).status).toBe(200);
+    expect((await a.post(`/site-api/employer/jobs/${byEmployer}/close`)).status).toBe(200);
+    expect((await a.post(`/site-api/employer/jobs/${byBoard}/renew`, {tierId})).json).toMatchObject({status: 'done', jobStatus: 'pending_review'});
+    expect((await a.post(`/site-api/employer/jobs/${byEmployer}/renew`, {tierId})).json).toMatchObject({status: 'done', jobStatus: 'published'});
+  });
+
+  it('a blocked company keeps reading and may close jobs, but cannot edit jobs, its profile or its logo', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'auto'}, update: {freePostingEnabled: true, moderationMode: 'auto'}});
+    forgetBoardSettings();
+    const jobId = (await post(a)).json.jobId as number;
+    await db.company.updateMany({data: {isBlocked: true}});
+    const edit = await a.request('PUT', `/site-api/employer/jobs/${jobId}`, {job: jobValues({title: 'Something else'})});
+    expect(edit.status).toBe(403);
+    expect(edit.json.error).toBe('company_blocked');
+    expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {title: true}})).title).toBe('Backend Engineer');
+    expect((await a.request('PUT', '/site-api/employer/company', {website: 'https://evil.example', location: '', about: '', socials: {}})).status).toBe(403);
+    expect((await a.post('/site-api/employer/company/logo', {name: 'logo.png', contentType: 'image/png', size: 1000})).status).toBe(403);
+    expect((await a.post('/site-api/employer/company/logo/complete', {fileId: 'file_x', token: 'x'})).status).toBe(403);
+    expect((await a.get(`/site-api/employer/jobs/${jobId}`)).status).toBe(200);
+    expect((await a.post(`/site-api/employer/jobs/${jobId}/close`)).status).toBe(200);
+  });
+
+  it('a stored logo is public only once the company has been live; before that only its owner sees it, privately', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true}, update: {freePostingEnabled: true}});
+    forgetBoardSettings();
+    // Moderation "all": the job waits in review, so the company has never been live.
+    const jobId = (await post(a)).json.jobId as number;
+    const own = await db.company.findFirstOrThrow({select: {id: true, slug: true}});
+    await db.companyLogo.create({data: {companyId: own.id, contentType: 'image/png', data: new Uint8Array([137, 80, 78, 71])}});
+    const path = `/site-api/companies/${own.slug}/logo`;
+    expect((await new Browser(app).get(path)).status).toBe(404);
+    expect((await b.get(path)).status).toBe(404);
+    const mine = await a.get(path);
+    expect(mine.status).toBe(200);
+    expect(mine.headers.get('cache-control')).toBe('private, no-store');
+    await db.job.update({where: {id: jobId}, data: {status: 'published', publishedAt: new Date(), needsReview: false}});
+    const shown = await new Browser(app).get(path);
+    expect(shown.status).toBe(200);
+    expect(shown.headers.get('cache-control')).toMatch(/^public/);
+    expect((await new Browser(app).get('/site-api/companies/BAD..slug/logo')).status).toBe(404);
   });
 });

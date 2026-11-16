@@ -12,6 +12,7 @@ import {after} from '../board/after';
 import {clearPublicListsAfterWrite} from '../board/public-cache';
 import {problem, requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
 import {
+  BLOCKED,
   changedFields,
   companySelect,
   employerArea,
@@ -120,6 +121,7 @@ export const employerRoutes = new Hono<Env>()
     const db = c.var.db;
     const row = await ownCompany(db, c.var.viewer.id!);
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
+    if (row.isBlocked) return c.json(BLOCKED, 403);
     const next = profileColumns(read.value);
     const changed = changedFields(row, next);
     if (!changed.length) return c.json({company: toEmployerCompany(row)});
@@ -131,6 +133,7 @@ export const employerRoutes = new Hono<Env>()
   .post('/company/logo', logoBody, async c => {
     const row = await ownCompany(c.var.db, c.var.viewer.id!);
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
+    if (row.isBlocked) return c.json(BLOCKED, 403);
     if (!(await logoAttemptAllowed(c.var.db, c.var.viewer.id!))) {
       return c.json(problem('rate_limited', 'Too many logo uploads. Try again in an hour.'), 429);
     }
@@ -145,6 +148,7 @@ export const employerRoutes = new Hono<Env>()
     const db = c.var.db;
     const row = await ownCompany(db, c.var.viewer.id!);
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
+    if (row.isBlocked) return c.json(BLOCKED, 403);
     if (!(await logoAttemptAllowed(db, c.var.viewer.id!))) {
       return c.json(problem('rate_limited', 'Too many logo uploads. Try again in an hour.'), 429);
     }
@@ -173,6 +177,7 @@ export const employerRoutes = new Hono<Env>()
     const db = c.var.db;
     const row = await ownCompany(db, c.var.viewer.id!);
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
+    if (row.isBlocked) return c.json(BLOCKED, 403);
     const {fileId, token} = c.req.valid('json');
     const done = await finishLogoUpload(c.req.url, row.id, fileId, token);
     if (!done.ok) return c.json(problem(done.code, done.message), done.status);
@@ -215,7 +220,7 @@ export const employerRoutes = new Hono<Env>()
     if ('field' in chosen) fields.tierId = chosen.field;
     if (Object.keys(fields).length) return c.json(invalid(fields), 422);
     if ('unavailable' in chosen) return c.json(problem(chosen.status === 409 ? 'tier_not_priced' : 'posting_unavailable', chosen.unavailable), chosen.status);
-    if (existing?.isBlocked) return c.json(problem('company_blocked', 'This company cannot post jobs. Contact the board for help.'), 403);
+    if (existing?.isBlocked) return c.json(BLOCKED, 403);
     if ('fields' in checked || !('tier' in chosen)) return c.json(invalid(fields), 422);
 
     let company = existing ? {id: existing.id, name: existing.name} : null;

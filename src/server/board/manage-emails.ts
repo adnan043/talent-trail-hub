@@ -3,18 +3,22 @@ import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
 import type {EmailLogPage, EmailLogStatus} from '../../lib/types-manage';
-import {CORE} from '../../platform/auth';
-import {can, problem, requireAuth, requirePermission, withDb, withViewer} from '../../platform/guards';
+import {getAccess, SYSTEM_ROLES} from '../../platform/auth';
+import {problem, requireAuth, requirePermission, withDb, withViewer} from '../../platform/guards';
 import {PERMISSIONS} from '../permissions';
 
 /**
  * The board's email log (`email_logs`), newest first, keyset by id; filter by status or exact
- * recipient. Recipients are other people (candidates, employers): the full address only for
- * `site:user:read` holders, masked (`m•••@domain`) for everyone else with `site:board:reports`.
- * The exact-address filter is a POST (`/search`), so an address never sits in a URL, and needs
- * `site:user:read` too.
+ * recipient. Recipients are other people (candidates, employers, moderators). The owner's rule
+ * (2026-11-01, as the users screen): the full address only for the site's OWNER, masked
+ * (`m•••@domain`) for everyone else with `site:board:reports`. The exact-address filter is a POST
+ * (`/search`), so an address never sits in a URL, and is the owner's alone too (anyone else could
+ * test which addresses got mail from the board).
  */
 const PAGE = 50;
+
+/** Whether the viewer is the site's owner: only they see full recipient addresses. */
+const isOwner = async (c: {req: {raw: Request}}) => (await getAccess(c.req.raw)).roles.includes(SYSTEM_ROLES.OWNER);
 const STATUSES: EmailLogStatus[] = ['sent', 'failed', 'skipped'];
 
 interface Filter {
@@ -62,13 +66,13 @@ async function emailPage(db: PrismaClient, filter: Filter, fullAddresses: boolea
 
 export const manageEmailRoutes = new Hono()
   .get('/', query, withViewer, requireAuth, requirePermission(PERMISSIONS.BOARD_REPORTS), withDb, async c =>
-    c.json(await emailPage(c.var.db, {...c.req.valid('query'), to: ''}, await can(c as never, CORE.USER_READ)))
+    c.json(await emailPage(c.var.db, {...c.req.valid('query'), to: ''}, await isOwner(c)))
   )
   .post('/search', searchBody, withViewer, requireAuth, requirePermission(PERMISSIONS.BOARD_REPORTS), withDb, async c => {
     const filter = c.req.valid('json');
-    const fullAddresses = await can(c as never, CORE.USER_READ);
+    const fullAddresses = await isOwner(c);
     if (filter.to && !fullAddresses) {
-      return c.json(problem('forbidden', 'Finding emails by address needs permission to see users.'), 403);
+      return c.json(problem('forbidden', 'Only the site owner can find emails by address.'), 403);
     }
     return c.json(await emailPage(c.var.db, filter, fullAddresses));
   });

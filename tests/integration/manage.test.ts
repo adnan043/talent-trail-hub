@@ -82,24 +82,29 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect((await admin.post('/site-api/manage/privacy/lookup', {email: 'someone@example.test'})).status).toBe(200);
   });
 
-  it('the email log shows full addresses only to site:user:read; others see them masked and cannot search by address', async () => {
+  it("the email log shows full addresses only to the site's owner; admins and others see them masked and cannot search by address", async () => {
     await db.emailLog.create({data: {templateKey: 'application-confirmation', to: 'casey@example.test', status: 'skipped'}});
     const role = await owner.post('/site-api/admin/roles', {slug: 'bookkeeper', name: 'Bookkeeper', permissions: ['site:board:reports']});
     expect(role.status).toBe(201);
     const keeper = await signedIn(app, 'keeper@example.test', undefined, '203.0.113.4');
     expect((await owner.request('PUT', `/site-api/admin/users/${await userId('keeper@example.test')}/roles`, {roles: ['member', 'bookkeeper']})).status).toBe(200);
 
-    const masked = await keeper.get('/site-api/manage/emails?status=&before=');
-    expect(masked.status).toBe(200);
-    expect((masked.json.emails as {to: string}[]).map(e => e.to)).toEqual(['c•••@example.test']);
-    expect((await keeper.post('/site-api/manage/emails/search', {to: 'casey@example.test', status: '', before: ''})).status).toBe(403);
+    // A reports-only role and a full admin (site:user:read) alike: masked, no search by address.
+    for (const viewer of [keeper, admin]) {
+      const masked = await viewer.get('/site-api/manage/emails?status=&before=');
+      expect(masked.status).toBe(200);
+      expect((masked.json.emails as {to: string}[]).map(e => e.to)).toEqual(['c•••@example.test']);
+      expect((await viewer.post('/site-api/manage/emails/search', {to: 'casey@example.test', status: '', before: ''})).status).toBe(403);
+      // Filtering by status only is still fine.
+      expect((await viewer.post('/site-api/manage/emails/search', {to: '', status: 'skipped', before: ''})).status).toBe(200);
+    }
 
-    const full = await admin.get('/site-api/manage/emails?status=&before=');
+    const full = await owner.get('/site-api/manage/emails?status=&before=');
     expect((full.json.emails as {to: string}[]).map(e => e.to)).toEqual(['casey@example.test']);
-    const found = await admin.post('/site-api/manage/emails/search', {to: 'Casey@Example.test', status: '', before: ''});
+    const found = await owner.post('/site-api/manage/emails/search', {to: 'Casey@Example.test', status: '', before: ''});
     expect(found.status).toBe(200);
     expect((found.json.emails as {to: string}[]).length).toBe(1);
-    expect((await admin.post('/site-api/manage/emails/search', {to: 'nobody@example.test', status: '', before: ''})).json.emails).toEqual([]);
+    expect((await owner.post('/site-api/manage/emails/search', {to: 'nobody@example.test', status: '', before: ''})).json.emails).toEqual([]);
   });
 
   it("an admin cannot edit an employer's job (403 employer_job_locked), but edits admin jobs", async () => {

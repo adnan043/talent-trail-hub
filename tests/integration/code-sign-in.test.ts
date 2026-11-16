@@ -141,4 +141,19 @@ describe.skipIf(!DATABASE_URL)('code sign-in and the admin (integration, real Po
       expect(ownerTickets.has(TICKET)).toBe(true);
     });
   });
+
+  it("an \"address\" shaped like an internal limit key (`|device`, `signup:`) is refused before it can spend someone's limits", async () => {
+    await signedIn(app, 'ann@example.test');
+    const before = await db.loginAttempt.count();
+    const stranger = new Browser(app, '198.51.100.77');
+    for (const email of ['ann@example.test|device', 'signup:ann@example.test', 'unconfirmed:ann@example.test']) {
+      const verify = await stranger.post('/site-api/auth/code/verify', {email, code: '000000'});
+      expect(verify.status, email).toBe(422);
+      expect(verify.json.fields).toMatchObject({email: expect.any(String)});
+      expect((await stranger.post('/site-api/auth/code', {email})).status, email).toBe(422);
+    }
+    expect(await db.loginAttempt.count()).toBe(before);
+    // A real address still goes through.
+    expect((await codeSignIn(new Browser(app, '198.51.100.78'), 'ann@example.test')).status).toBe(200);
+  });
 });

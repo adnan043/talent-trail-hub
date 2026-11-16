@@ -1,4 +1,5 @@
 import type {PrismaClient} from '../../generated/prisma/client';
+import {LIMITS} from '../../lib/board';
 import {audit} from '../../platform/auth';
 import {refreshActiveJobCount} from './employer';
 import {notifySettled} from './employer-notify';
@@ -16,6 +17,7 @@ import {getBoardSettings} from './settings';
  *   new     pending_payment → live or review, as `submissionTarget` says
  *   renew   live → the new days added to the days left (stays live; it was approved);
  *           expired → live again, unless it was edited since its approval (`needs_review`);
+ *           closed by the board's admin → always into review (also in `auto` mode);
  *           closed, or edited → as `submissionTarget` says, into review with its new
  *           dates when the board reviews (approval keeps them); in review → new dates, still
  *           in review; rejected or anything else → left alone, the order flagged for a refund.
@@ -23,6 +25,26 @@ import {getBoardSettings} from './settings';
  */
 
 const DAY_MS = 86_400_000;
+
+/**
+ * Renewals stack on the time left, never more than this many days ahead. The renew route checks it
+ * first (a clear answer); settling checks it AGAIN under the job's lock, so renewals started at the
+ * same moment (each saw the same days left) can't stack past it.
+ */
+export const RENEW_AHEAD_MAX_DAYS = 2 * LIMITS.tierDaysMax;
+
+/**
+ * Whether the board's admin closed this job and has not listed it again since: the admin's close
+ * and extend are audited (`job_closed`, `job_extended`), the employer's own close is not.
+ */
+async function closedByBoard(t: PrismaClient, jobId: number): Promise<boolean> {
+  const last = await t.auditEvent.findFirst({
+    where: {targetType: 'job', targetId: String(jobId), action: {in: ['job_closed', 'job_extended']}},
+    orderBy: {id: 'desc'},
+    select: {action: true},
+  });
+  return last?.action === 'job_closed';
+}
 
 const REFUND_FLAG = 'listing_order.refund_needed';
 
@@ -111,12 +133,20 @@ export async function settleListingOrder(
         expiryReminderSentAt: null,
         ...(order.includesFeatured ? {isFeatured: true, featuredUntil, listingFeatured: true} : {}),
       };
-      if (live || job.status === 'pending_review') {
+      if (running && expiresAt.getTime() > now.getTime() + RENEW_AHEAD_MAX_DAYS * DAY_MS) {
+        // Another renewal settled first: this one would book the listing too far ahead.
+        refund = `a renewal would list the job more than ${RENEW_AHEAD_MAX_DAYS} days ahead`;
+      } else if (live || job.status === 'pending_review') {
         await t.job.update({where: {id: job.id}, data: period, select: {id: true}});
       } else if (down) {
-        // Edited since its approval, or CLOSED (by the employer or the board's admin: the two are
-        // not told apart, so a closed job is always re-checked): as a new post would be.
-        const target = job.needsReview || job.status === 'closed' ? await submissionTarget(t, order.companyId, settings) : 'published';
+        // Edited since its approval, or closed: as a new post would be. Closed by the board's
+        // admin: always into review, so renewing never undoes the admin's close by itself.
+        const target =
+          job.status === 'closed' && (await closedByBoard(t, job.id))
+            ? 'pending_review'
+            : job.needsReview || job.status === 'closed'
+              ? await submissionTarget(t, order.companyId, settings)
+              : 'published';
         await t.job.update({
           where: {id: job.id},
           data: {...period, status: target, publishedAt: now, rejectionReason: null, needsReview: target !== 'published'},

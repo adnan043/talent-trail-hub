@@ -45,7 +45,7 @@ export function CompanyStep({
             <Button onClick={() => onNext(initial)}>Continue</Button>
           </div>
         }>
-        {company.isBlocked && <Notice tone="danger">This company cannot post jobs. Contact the board for help.</Notice>}
+        {company.isBlocked && <Notice tone="danger">This company cannot post or change jobs. Contact the board for help.</Notice>}
         <DefinitionList
           items={[
             {label: 'Name', value: company.name},

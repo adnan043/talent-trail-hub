@@ -314,8 +314,9 @@ function TwoFactorSection({codes, setCodes}: {codes: string[] | null; setCodes: 
       codeForm.reset();
       setSetup(null);
       setCodes(data.recoveryCodes);
-      toast.success('Two-step sign-in is on.');
-      return refresh();
+      // The server signed out every other device (src/server/two-factor-signout.ts).
+      toast.success('Two-step sign-in is on. Every other device was signed out.');
+      return Promise.all([refresh(), queryClient.invalidateQueries({queryKey: sessionsQuery.queryKey})]);
     },
     onError: err => err instanceof ApiError && codeForm.setServerErrors(err.fields),
   });
