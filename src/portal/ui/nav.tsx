@@ -96,7 +96,14 @@ export function SegmentedControl<V extends string>({
           aria-checked={option.value === value}
           tabIndex={option.value === value ? 0 : -1}
           onClick={() => onChange(option.value)}>
-          {option.label}
+          {/* The label twice in one grid cell, the hidden copy in the picked weight: each segment
+              is as wide as its bold label, so picking one never shifts the others. */}
+          <span className="segment-label">
+            <span>{option.label}</span>
+            <span className="segment-label-sizer" aria-hidden="true">
+              {option.label}
+            </span>
+          </span>
         </button>
       ))}
     </div>

@@ -1883,6 +1883,20 @@
   box-shadow: var(--shadow-sm);
 }
 
+.segment-label {
+  display: inline-grid;
+  justify-items: center;
+}
+
+.segment-label > span {
+  grid-area: 1 / 1;
+}
+
+.segment-label-sizer {
+  font-weight: 600;
+  visibility: hidden;
+}
+
 .segment:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
