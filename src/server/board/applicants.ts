@@ -6,6 +6,7 @@ import {type ApplicantRow, RESUME_EXPIRED_TEXT} from '../../lib/types-apply';
 import {can} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
 import {PERMISSIONS} from '../permissions';
+import {sha256Hex} from '../../platform/auth/encoding';
 import {sendBoardEmail} from './email';
 import {cachedBoardSettings} from './brand';
 import {type BoardSettings, isSingleCompany} from './settings';
@@ -170,7 +171,9 @@ export async function notifyNewApplication(
         : null;
     return {owner: owner !== null, to: owner ? [owner.email] : await applicantStaffEmails(db)};
   };
-  // All at once: the confirmation, and the employer lookup followed by their emails.
+  // All at once: the confirmation, and the employer lookup followed by their emails (unless this
+  // job already sent its hourly share: a flood of applications never floods the staff's inboxes).
+  const notifyEmployer = await underNotifyLimit(db, job.id);
   await Promise.allSettled([
     sendBoardEmail(
       db,
@@ -182,7 +185,7 @@ export async function notifyNewApplication(
       },
       settings
     ),
-    recipients().then(({owner, to}) => {
+    notifyEmployer && recipients().then(({owner, to}) => {
       const applicantsUrl = owner ? `${origin}/dashboard/employer/jobs/${job.id}/applicants` : `${origin}/dashboard/manage/applicants?job=${job.id}`;
       return Promise.allSettled(
         to.map(address =>
@@ -191,6 +194,25 @@ export async function notifyNewApplication(
       );
     }),
   ]);
+}
+
+/**
+ * "New applicant" emails per job per hour. Past it the applications still arrive (the applicants
+ * screen lists them), only the emails stop, so one IP pool can't use the board's sender to flood
+ * the employer (or up to 20 staff) with text the visitor typed.
+ */
+export const NOTIFY_PER_JOB_HOUR = 20;
+
+async function underNotifyLimit(db: PrismaClient, jobId: number): Promise<boolean> {
+  const ipHash = await sha256Hex(`notify-job:${jobId}`);
+  // Recorded FIRST, then counted: parallel applications all see each other.
+  await db.boardAttempt.create({data: {kind: 'notify', ipHash}, select: {id: true}});
+  const recent = await db.boardAttempt.findMany({
+    where: {kind: 'notify', ipHash, createdAt: {gt: new Date(Date.now() - 3_600_000)}},
+    select: {id: true},
+    take: NOTIFY_PER_JOB_HOUR + 1,
+  });
+  return recent.length <= NOTIFY_PER_JOB_HOUR;
 }
 
 /** Codenames that grant `site:applicant:read` (itself or a wildcard over it). */

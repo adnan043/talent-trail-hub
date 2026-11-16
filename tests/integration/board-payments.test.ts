@@ -320,4 +320,20 @@ describe.skipIf(!DATABASE_URL)('board payments: the paid listing path (integrati
     expect((await deliver('checkout.paid', pay(checkoutId))).status).toBe(200);
     expect((await jobOf(jobId)).status).toBe('pending_review');
   });
+
+  it('(10) a renewal may not push the end date more than 240 days ahead', async () => {
+    await moderation('auto');
+    const {jobId, checkoutId} = await postPaid();
+    await deliver('checkout.paid', pay(checkoutId));
+    // 200 days left + the Long tier's 60 > 240: refused, no checkout started.
+    await db.job.update({where: {id: jobId}, data: {expiresAt: new Date(Date.now() + 200 * DAY)}});
+    const startedBefore = started.length;
+    const refused = await emp.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId: long});
+    expect(refused.status).toBe(409);
+    expect(refused.json.error).toBe('renewed_enough');
+    expect(started.length).toBe(startedBefore);
+    // 150 days left + 60 = 210: allowed.
+    await db.job.update({where: {id: jobId}, data: {expiresAt: new Date(Date.now() + 150 * DAY)}});
+    expect((await emp.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId: long})).status).toBe(200);
+  });
 });

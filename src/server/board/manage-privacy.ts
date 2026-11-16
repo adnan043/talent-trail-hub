@@ -98,6 +98,13 @@ export const managePrivacyRoutes = new Hono()
       items,
       more: rows.length > ITEMS || logs.length > ITEMS,
     };
+    // A lookup shows personal data: it leaves a trace, as a delete does (the address only as a keyed hash).
+    await audit(c.var.db, {
+      ...(await actorOf(c)),
+      action: 'privacy_email_lookup',
+      target: ['email', await emailAuditHash(email)],
+      meta: {applications: body.applications, emailLogs: body.emailLogs},
+    });
     return c.json(body);
   })
 

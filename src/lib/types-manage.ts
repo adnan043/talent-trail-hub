@@ -85,7 +85,8 @@ export interface ModerationDetail {
 }
 
 export interface ModerationResult {
-  status: 'published' | 'rejected';
+  /** `expired`: an edit of a job whose paid period ran out while it waited (approved, not listed again). */
+  status: 'published' | 'expired' | 'rejected';
   message: string;
   /** Reject of a paid job: the platform has no refund API, so the admin refunds by hand. */
   refundNote: string | null;

@@ -198,12 +198,23 @@ export const manageModerationRoutes = new Hono()
     const changed = () => c.json(problem('job_changed', 'This job changed since you opened it. Review it again.'), 409);
     if (job.updatedAt.toISOString() !== seen) return changed();
     const keep = keepsDates(job, now);
+    // An edit of a job that was already live, whose period ran out while it waited: approving the
+    // text never starts a new (unpaid, maybe featured) period. It is approved as expired; the
+    // employer renews it to list it again.
+    const ranOut = !keep && job.publishedAt !== null;
     // The row is locked while it is published, so an employer edit cannot slip in between the
     // check of what the moderator saw and the publish (it waits, then sees a live job).
     const published = await db.$transaction(async tx => {
       const rows = await tx.$queryRaw<{id: number}[]>`
         SELECT "id" FROM "jobs" WHERE "id" = ${id} AND "status" = 'pending_review' AND "updated_at" = ${new Date(seen)} FOR UPDATE`;
       if (!rows.length) return false;
+      if (ranOut) {
+        const {count} = await tx.job.updateMany({
+          where: {id, status: 'pending_review'},
+          data: {status: 'expired', needsReview: false, rejectionReason: null},
+        });
+        return count === 1;
+      }
       const done = await publishJob(tx as unknown as PrismaClient, id, {from: ['pending_review'], keepDates: keep, now});
       // What the moderator saw is now approved: no changes wait for review.
       if (done) await tx.job.update({where: {id}, data: {needsReview: false}, select: {id: true}});
@@ -215,8 +226,12 @@ export const manageModerationRoutes = new Hono()
       await db.company.update({where: {id: job.company.id}, data: {isTrusted: true}, select: {id: true}});
       await audit(db, {...actor, action: 'company_trusted', target: ['company', job.company.id]});
     }
-    await audit(db, {...actor, action: 'job_approved', target: ['job', id], meta: {keptDates: keep}});
+    await audit(db, {...actor, action: 'job_approved', target: ['job', id], meta: {keptDates: keep, ...(ranOut ? {expired: true} : {})}});
     await refreshActiveJobCount(db, job.company.id, now);
+    if (ranOut) {
+      const body: ModerationResult = {status: 'expired', message: `${job.title} is approved. Its listing period had ended, so it stays expired until it is renewed.`, refundNote: null};
+      return c.json(body);
+    }
 
     const [to, settings, fresh] = await Promise.all([
       employerEmail(db, job.company.ownerUserId),

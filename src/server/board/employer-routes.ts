@@ -35,6 +35,8 @@ import {POSTS_PER_HOUR, userAttemptAllowed} from './employer-logo';
 
 type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
 
+/** How far ahead a renewal may push a listing's end date (twice the longest listing option). */
+const RENEW_AHEAD_MAX_DAYS = 2 * LIMITS.tierDaysMax;
 const NOT_FOUND = problem('not_found', 'No such job.');
 const NO_ORDER = problem('not_found', 'No such order.');
 
@@ -153,6 +155,13 @@ export const employerJobRoutes = new Hono<Env>()
     const chosen = await chooseTier(db, await getBoardSettings(db), input.tierId);
     if ('field' in chosen) return c.json({...problem('invalid_input', chosen.field), fields: {tierId: chosen.field}}, 422);
     if ('unavailable' in chosen) return c.json(problem(chosen.status === 409 ? 'tier_not_priced' : 'posting_unavailable', chosen.unavailable), chosen.status);
+    // Renewals stack on the time left: never more than RENEW_AHEAD_MAX_DAYS ahead, so free posting
+    // (or a handful of cheap renewals) can't book a listing, featured, for years.
+    const running = ['published', 'pending_review'].includes(effectiveStatus(job));
+    const left = running && job.expiresAt ? Math.max(0, job.expiresAt.getTime() - Date.now()) / 86_400_000 : 0;
+    if (left + chosen.tier.durationDays > RENEW_AHEAD_MAX_DAYS) {
+      return c.json(problem('renewed_enough', `This job is already listed for ${Math.ceil(left)} more days. Renew it closer to its end date.`), 409);
+    }
     // An earlier renewal checkout for this job is superseded (`failed`): only the newest one may
     // extend it; a late payment of an old one is flagged for a refund by the payment hook.
     await db.listingOrder.updateMany({where: {jobId: job.id, kind: 'renew', status: 'pending'}, data: {status: 'failed'}});

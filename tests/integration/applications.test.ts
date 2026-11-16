@@ -1,5 +1,6 @@
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
+import {sha256Hex} from '../../src/platform/auth/encoding';
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
 import {runPurge} from '../../src/server/board/tasks';
@@ -305,5 +306,24 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
       expect(done.json).toMatchObject({ok: true, fileName: 'cv.pdf'});
     }
     expect(completeCalls - before).toBe(1);
+  });
+
+  it('a name on more than one line is refused (it would add lines to the employer’s email)', async () => {
+    const guest = new Browser(app, '198.51.100.12');
+    const res = await apply(guest, jobA.slug, 'h@example.test', {name: 'Bob\n\nAction required: https://evil.example/login'});
+    expect(res.status).toBe(422);
+    expect(res.json.fields).toMatchObject({name: expect.any(String)});
+    expect(await db.application.count()).toBe(0);
+  });
+
+  it('a job sends at most 20 new-applicant emails an hour; the applications still arrive', async () => {
+    // 20 already sent for this job this hour (a burst from many IPs).
+    const ipHash = await sha256Hex(`notify-job:${jobA.id}`);
+    await db.boardAttempt.createMany({data: Array.from({length: 20}, () => ({kind: 'notify', ipHash}))});
+    expect((await apply(new Browser(app, '198.51.100.13'), jobA.slug, 'i@example.test')).status).toBe(201);
+    expect(await db.application.count()).toBe(1);
+    expect(await db.emailLog.count({where: {templateKey: 'new-applicant'}})).toBe(0);
+    // The candidate's own confirmation is not part of it.
+    expect(await db.emailLog.count({where: {templateKey: 'application-confirmation'}})).toBe(1);
   });
 });

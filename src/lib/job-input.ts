@@ -96,6 +96,9 @@ export function readJobValues(raw: unknown): JobValues {
 
 const COUNTRY = /^[A-Za-z]{2}$/;
 const WHOLE = /^\d{1,9}$/;
+/** The salary columns hold cents in a 32-bit integer: whole units up to this fit. */
+export const SALARY_MAX = 21_000_000;
+const tooBig = (value: string) => WHOLE.test(value) && Number(value) > SALARY_MAX;
 /** https only: the apply button links https alone. */
 const URL_RE = /^https:\/\/[^\s/?#]+\.[^\s/?#]+(?:[/?#]\S*)?$/i;
 /** A plain address: one @, a dot in the domain, no ?, &, spaces, quotes or angle brackets (no mailto tricks). */
@@ -136,7 +139,9 @@ export function checkJobValues(v: JobValues): Partial<Record<JobField, string>> 
   const min = v.salaryMin.trim();
   const max = v.salaryMax.trim();
   if (min && !WHOLE.test(min)) errors.salaryMin = 'Use a whole number without commas or symbols, like 60000.';
+  else if (tooBig(min)) errors.salaryMin = `Use at most ${SALARY_MAX.toLocaleString('en-US')}.`;
   if (max && !WHOLE.test(max)) errors.salaryMax = 'Use a whole number without commas or symbols, like 80000.';
+  else if (tooBig(max)) errors.salaryMax = `Use at most ${SALARY_MAX.toLocaleString('en-US')}.`;
   else if (min && max && WHOLE.test(min) && Number(max) < Number(min)) errors.salaryMax = 'The maximum must be at least the minimum.';
   if (!oneOf(SALARY_PERIODS, v.salaryPeriod)) errors.salaryPeriod = 'Choose how often the salary is paid.';
 

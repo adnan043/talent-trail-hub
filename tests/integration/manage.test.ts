@@ -237,4 +237,40 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect(await db.job.count({where: {id: job.id}})).toBe(0);
     expect(await db.application.count()).toBe(0);
   });
+
+  it('approving an edit of a job whose period ran out in review lists it as expired, never a new free period', async () => {
+    const {job} = await seedJob('paid', 'pending_review');
+    const ended = new Date(Date.now() - 86_400_000);
+    await db.job.update({where: {id: job.id}, data: {needsReview: true, expiresAt: ended, listingFeatured: true, isFeatured: false, featuredUntil: null}});
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string}};
+    const res = await admin.post(`/site-api/manage/moderation/${job.id}/approve`, {seen: seen.item.submittedAt});
+    expect(res.status).toBe(200);
+    expect(res.json.status).toBe('expired');
+    const after = await db.job.findUniqueOrThrow({where: {id: job.id}});
+    expect(after).toMatchObject({status: 'expired', needsReview: false, isFeatured: false});
+    expect(after.expiresAt?.getTime()).toBe(ended.getTime());
+  });
+
+  it('extend and feature never act on a job whose edit went into review after the admin read it', async () => {
+    const {job} = await seedJob('admin', 'published');
+    // The employer's edit lands between the read and the write: the write's own condition refuses it.
+    await db.job.update({where: {id: job.id}, data: {needsReview: true}});
+    expect((await admin.post(`/site-api/manage/jobs/${job.id}/extend`, {days: 7})).status).toBe(409);
+    expect((await admin.post(`/site-api/manage/jobs/${job.id}/feature`, {featured: true, days: 7})).status).toBe(409);
+    expect(await db.job.findUniqueOrThrow({where: {id: job.id}})).toMatchObject({isFeatured: false});
+  });
+
+  it('a privacy lookup leaves an audit trace (the address only as a hash)', async () => {
+    const res = await admin.post('/site-api/manage/privacy/lookup', {email: 'someone@example.test'});
+    expect(res.status).toBe(200);
+    const events = await db.auditEvent.findMany({where: {action: 'privacy_email_lookup'}});
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify({...events[0], id: String(events[0]!.id)})).not.toContain('someone@example.test');
+  });
+
+  it('a report range named like an Object built-in answers the default range, not a 500', async () => {
+    for (const range of ['toString', 'constructor', '__proto__']) {
+      expect((await admin.get(`/site-api/manage/overview/activity?range=${range}`)).status, range).toBe(200);
+    }
+  });
 });
