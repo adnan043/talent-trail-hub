@@ -85,7 +85,8 @@ Good luck!`,
   },
   'application-shortlisted': {
     subject: 'Update on your application to {{companyName}}',
-    body: `Hi {{applicantName}},
+    // No {{applicantName}}, as in the confirmation: the visitor typed it, with any address.
+    body: `Hi,
 
 Good news: {{companyName}} has shortlisted your application for **{{jobTitle}}** on {{boardName}}. They will contact you directly about next steps.
 
@@ -93,7 +94,7 @@ Good luck!`,
   },
   'application-rejected': {
     subject: 'Update on your application to {{companyName}}',
-    body: `Hi {{applicantName}},
+    body: `Hi,
 
 Thank you for applying for **{{jobTitle}}** at {{companyName}} through {{boardName}}. They have decided not to move forward with your application.
 

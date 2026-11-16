@@ -78,6 +78,25 @@ async function deliver(apiKey: string, to: string, message: {subject: string; te
  * Sends one board email and logs it. `settings`: the board settings the caller already holds (the
  * board's name, the single-company mode); without them, the cached copy (brand.ts), never a query.
  */
+/**
+ * The emails that go to an address a VISITOR typed (the apply form): anyone can type someone
+ * else's. At most `CANDIDATE_DAILY` of them reach one address a day, so the board's sender can't
+ * be used to flood a stranger's inbox (a real candidate applies to far fewer jobs a day).
+ */
+const CANDIDATE_TEMPLATES = ['application-confirmation', 'application-shortlisted', 'application-rejected'];
+export const CANDIDATE_DAILY = 20;
+
+async function overCandidateLimit(db: PrismaClient, template: string, to: string): Promise<boolean> {
+  if (!CANDIDATE_TEMPLATES.includes(template)) return false;
+  const recent = await db.emailLog.findMany({
+    where: {to, templateKey: {in: CANDIDATE_TEMPLATES}, status: 'sent', createdAt: {gt: new Date(Date.now() - 86_400_000)}},
+    select: {id: true},
+    orderBy: {id: 'desc'},
+    take: CANDIDATE_DAILY,
+  });
+  return recent.length >= CANDIDATE_DAILY;
+}
+
 export async function sendBoardEmail(
   db: PrismaClient,
   requestUrl: string,
@@ -93,7 +112,9 @@ export async function sendBoardEmail(
     else {
       const apiKey = config.ownerSecret('RESEND_API_KEY');
       if (!apiKey) outcome = {status: 'skipped', error: 'No mail service: add the RESEND_API_KEY secret.'};
-      else {
+      else if (await overCandidateLimit(db, email.template, to)) {
+        outcome = {status: 'skipped', error: `This address already got ${CANDIDATE_DAILY} candidate emails today.`};
+      } else {
         const given = email.vars ?? {};
         const board = settings ?? (await cachedBoardSettings(db));
         const boardName = given.boardName || board.name;

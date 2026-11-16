@@ -1,6 +1,6 @@
 import {afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi} from 'vitest';
 
-import {sendBoardEmail} from '../../src/server/board/email';
+import {CANDIDATE_DAILY, sendBoardEmail} from '../../src/server/board/email';
 import {createWithUniqueSlug} from '../../src/server/board/slug';
 import {env} from './support/cloudflare-workers';
 import {configureEnv, DATABASE_URL, db, resetDatabase} from './support/harness';
@@ -54,6 +54,22 @@ describe.skipIf(!DATABASE_URL)('board emails + slugs (integration, real Postgres
     expect(body.html).toContain('Talent Trail Hub'); // the board name from the settings
     expect(body.text).toContain('View the job (https://jobs.example.test/jobs/dev/)');
     expect(await logs()).toEqual([{templateKey: 'application-confirmation', to: 'cand@example.com', status: 'sent', error: null}]);
+  });
+
+  it('a stranger’s address gets at most CANDIDATE_DAILY candidate emails a day, with no typed name', async () => {
+    env.RESEND_API_KEY = 're_test_key';
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({id: 'em'}), {status: 200}));
+    const send = (template: 'application-confirmation' | 'application-rejected', to = 'victim@example.com') =>
+      sendBoardEmail(db, REQ, {template, to, vars: {applicantName: 'Buy pills', jobTitle: 'Dev', companyName: 'Acme'}});
+    for (let i = 0; i < CANDIDATE_DAILY; i++) await send(i % 2 ? 'application-rejected' : 'application-confirmation');
+    await send('application-rejected');
+    await send('application-confirmation', 'someone-else@example.com');
+    expect(spy).toHaveBeenCalledTimes(CANDIDATE_DAILY + 1);
+    for (const [, init] of spy.mock.calls) expect(String(init!.body)).not.toContain('Buy pills');
+    const rows = await logs();
+    expect(rows.filter(r => r.to === 'victim@example.com' && r.status === 'sent')).toHaveLength(CANDIDATE_DAILY);
+    expect(rows.at(-2)).toMatchObject({to: 'victim@example.com', status: 'skipped', error: expect.stringContaining('today')});
+    expect(rows.at(-1)).toMatchObject({to: 'someone-else@example.com', status: 'sent'});
   });
 
   it('logs failed (never throws) when Resend refuses or is unreachable', async () => {

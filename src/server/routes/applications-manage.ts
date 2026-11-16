@@ -201,7 +201,7 @@ export const applicantRoutes = new Hono<Env>()
         await sendBoardEmail(db, c.req.url, {
           template,
           to: found.email,
-          vars: {boardName: settings.name, applicantName: found.name, jobTitle: job.title, companyName: job.company.name},
+          vars: {boardName: settings.name, jobTitle: job.title, companyName: job.company.name},
         });
       }
     }
