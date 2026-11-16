@@ -17,6 +17,7 @@ import {companyRoutes} from './routes/companies';
 import {employerRoutes} from './routes/employer';
 import {jobRoutes} from './routes/jobs';
 import {manageRoutes} from './routes/manage';
+import {myApplicationRoutes} from './routes/my-applications';
 import {cachedBoardSettings} from './board/brand';
 import {isSingleCompany} from './board/settings';
 import {getDb} from '../platform/db';
@@ -39,6 +40,7 @@ import {siteRoutes} from './routes/site';
  *   *    /companies/... public companies                         routes/companies.ts
  *   *    /board/...     board settings, brand, categories, tiers routes/board.ts
  *   *    /applications/... apply without an account, resumes   routes/applications.ts
+ *   GET  /my-applications  the signed-in candidate's own applications  routes/my-applications.ts
  *   *    /employer/...  the employer area (own company only)    routes/employer.ts
  *   *    /manage/...    the board's admin (codenames)           routes/manage.ts
  *   *    /checkout/...  start and confirm a payment             routes/checkout.ts
@@ -105,6 +107,7 @@ export const app = new Hono()
   .route('/companies', companyRoutes)
   .route('/board', boardRoutes)
   .route('/applications', applicationRoutes)
+  .route('/my-applications', myApplicationRoutes)
   .route('/employer', employerRoutes)
   .route('/manage', manageRoutes)
   .route('/memberships', membershipRoutes)
