@@ -133,7 +133,8 @@ export async function sendBoardEmail(
   email: BoardEmail,
   settings?: Pick<BoardSettings, 'name' | 'boardMode' | 'ownerCompanyId'>
 ): Promise<void> {
-  const to = String(email.to ?? '').trim().slice(0, 254);
+  // Lowercased: the privacy tool finds log rows by the normalized address.
+  const to = String(email.to ?? '').trim().toLowerCase().slice(0, 254);
   let outcome: Outcome;
   try {
     const template = TEMPLATES[email.template];

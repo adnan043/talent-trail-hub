@@ -217,6 +217,15 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(await mails('application-rejected')).toBe(1);
   });
 
+  it('a blocked company still reads its applicants but cannot change them (no candidate emails)', async () => {
+    expect((await apply(new Browser(app, '198.51.100.7'), jobA.slug, 'e@example.test')).status).toBe(201);
+    const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
+    await db.company.update({where: {slug: 'a-co'}, data: {isBlocked: true}});
+    expect((await ownerA.request('PATCH', `/site-api/applications/${appId}`, {status: 'shortlisted'})).status).toBe(404);
+    expect((await ownerA.get(`/site-api/applications/jobs/${jobA.id}/applicants?status=&before=`)).status).toBe(200);
+    expect(await db.emailLog.count({where: {templateKey: 'application-shortlisted'}})).toBe(0);
+  });
+
   it('a resume past the retention period answers 410 everywhere, even before the purge', async () => {
     expect((await apply(new Browser(app, '198.51.100.7'), jobA.slug, 'e@example.test')).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;

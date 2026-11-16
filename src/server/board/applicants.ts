@@ -33,9 +33,12 @@ export async function applicantScope(c: ViewerContext, access: 'read' | 'write' 
   const db = c.var.db;
   const [settings, company] = await Promise.all([
     cachedBoardSettings(db),
-    db.company.findUnique({where: {ownerUserId: c.var.viewer.id!}, select: {id: true}}),
+    db.company.findUnique({where: {ownerUserId: c.var.viewer.id!}, select: {id: true, isBlocked: true}}),
   ]);
   if (isSingleCompany(settings) || !company) return {kind: 'none'};
+  // A blocked company keeps reading its applicants but changes nothing: a status change emails the
+  // candidate in the board's name.
+  if (access === 'write' && company.isBlocked) return {kind: 'none'};
   return {kind: 'company', companyId: company.id};
 }
 

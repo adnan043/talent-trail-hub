@@ -76,7 +76,7 @@ const LOCAL_LOGO_MAX_BYTES = 48 * 1024;
 const logoLocal = validator('json', (value, c) => {
   const v = (value ?? {}) as Record<string, unknown>;
   const contentType = typeof v.contentType === 'string' ? v.contentType : '';
-  const data = typeof v.data === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(v.data) && v.data.length <= 66_000 ? v.data : '';
+  const data = typeof v.data === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(v.data) && v.data.length % 4 === 0 && v.data.length <= 66_000 ? v.data : '';
   if (!(LOGO_TYPES as readonly string[]).includes(contentType) || !data) {
     return c.json(invalid({logo: 'Use a PNG, JPG or WebP image.'}), 422);
   }

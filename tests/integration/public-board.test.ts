@@ -74,6 +74,12 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect((live.json.job as {descriptionHtml: string}).descriptionHtml).not.toContain('<script');
     expect(((await browser.get('/site-api/jobs/late-expiry')).json.job as {state: string}).state).toBe('expired');
     expect(((await browser.get('/site-api/jobs/closed-job')).json.job as {state: string}).state).toBe('closed');
+    // The employer's apply address is only handed out while the job is open.
+    await db.job.updateMany({where: {slug: {in: ['live-job', 'late-expiry', 'closed-job']}}, data: {applyMethod: 'email', applyTarget: 'jobs@acme.example'}});
+    const target = async (slug: string) => ((await browser.get(`/site-api/jobs/${slug}`)).json.job as {applyTarget: string | null}).applyTarget;
+    expect(await target('live-job')).toBe('jobs@acme.example');
+    expect(await target('late-expiry')).toBeNull();
+    expect(await target('closed-job')).toBeNull();
     expect((await browser.get('/site-api/jobs/draft-job')).status).toBe(404);
     expect((await browser.get('/site-api/jobs/blocked-job')).status).toBe(404);
     expect((await browser.get('/site-api/companies/bad-co')).status).toBe(404);

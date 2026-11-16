@@ -91,7 +91,10 @@ const rejectBody = validator('json', (value, c) => {
   const reason = str(asObject(value).reason);
   if (reason.length < 3) return invalid(c, {reason: 'Say why, in a sentence the employer will read (at least 3 characters).'});
   if (reason.length > LIMITS.rejectionReason) return invalid(c, {reason: `Use at most ${LIMITS.rejectionReason} characters.`});
-  return {reason};
+  // `seen`, as for approve: a moderator never rejects an employer edit they did not see.
+  const seen = typeof asObject(value).seen === 'string' ? new Date(asObject(value).seen as string) : null;
+  if (!seen || Number.isNaN(seen.getTime())) return invalid(c, {seen: 'Reload the job and review it again.'});
+  return {reason, seen: seen.toISOString()};
 });
 
 /** `seen`: the job's `updatedAt` (the item's `submittedAt`) as the review page showed it. */
@@ -259,14 +262,17 @@ export const manageModerationRoutes = new Hono()
     const id = idParam(c.req.param('id'));
     if (!id) return notFound(c);
     const db = c.var.db;
-    const {reason} = c.req.valid('json');
+    const {reason, seen} = c.req.valid('json');
     const job = await db.job.findUnique({where: {id}, select: {...itemSelect, status: true}});
     if (!job) return notFound(c);
     const {count} = await db.job.updateMany({
-      where: {id, status: 'pending_review'},
+      where: {id, status: 'pending_review', updatedAt: new Date(seen)},
       data: {status: 'rejected', rejectionReason: reason},
     });
-    if (count === 0) return c.json(problem('not_in_review', 'This job is no longer waiting for review.'), 409);
+    if (count === 0) {
+      if (job.status !== 'pending_review') return c.json(problem('not_in_review', 'This job is no longer waiting for review.'), 409);
+      return c.json(problem('job_changed', 'This job changed since you opened it. Review it again.'), 409);
+    }
     const order = job.orders[0];
     // Never the reason itself in the audit log: it can name people.
     await audit(db, {...(await actorOf(c)), action: 'job_rejected', target: ['job', id], meta: {paid: Boolean(order)}});

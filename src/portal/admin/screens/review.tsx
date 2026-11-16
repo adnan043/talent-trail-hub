@@ -173,17 +173,50 @@ export function Review() {
           </Card>
         </div>
       </div>
-      {rejecting && <RejectDialog id={id} title={item.title} paid={item.payment !== null} onClose={() => setRejecting(false)} onDone={done} />}
+      {rejecting && <RejectDialog
+          id={id}
+          seen={item.submittedAt}
+          title={item.title}
+          paid={item.payment !== null}
+          onClose={() => setRejecting(false)}
+          onDone={done}
+          onChanged={message => {
+            setRejecting(false);
+            toast.danger(message);
+            void review.refetch();
+          }}
+        />}
     </div>
   );
 }
 
-function RejectDialog({id, title, paid, onClose, onDone}: {id: string; title: string; paid: boolean; onClose: () => void; onDone: (r: ModerationResult) => void}) {
+function RejectDialog({
+  id,
+  seen,
+  title,
+  paid,
+  onClose,
+  onDone,
+  onChanged,
+}: {
+  id: string;
+  seen: string;
+  title: string;
+  paid: boolean;
+  onClose: () => void;
+  onDone: (r: ModerationResult) => void;
+  onChanged: (message: string) => void;
+}) {
   const form = useForm({reason: ''}, {reason: [rules.required('Say why, in a sentence the employer will read.'), rules.minLength(3, 'Use at least 3 characters.'), rules.maxLength(LIMITS.rejectionReason)]});
   const reject = useMutation({
-    mutationFn: (reason: string) => read<ModerationResult>(api.manage.moderation[':id'].reject.$post({param: {id}, json: {reason}})),
+    mutationFn: (reason: string) => read<ModerationResult>(api.manage.moderation[':id'].reject.$post({param: {id}, json: {reason, seen}})),
     onSuccess: onDone,
-    onError: err => err instanceof ApiError && form.setServerErrors(err.fields),
+    onError: err => {
+      if (!(err instanceof ApiError)) return;
+      form.setServerErrors(err.fields);
+      // Changed since this page loaded: show the new version before anyone decides on it.
+      if (err.status === 409) onChanged(err.message);
+    },
   });
   return (
     <Modal
