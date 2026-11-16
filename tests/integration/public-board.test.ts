@@ -101,6 +101,29 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect(companies.status).toBe(200);
   });
 
+  it('location: every comma part matches city, region or country; short parts match exactly', async () => {
+    const acme = await company('Acme');
+    const place = (city: string | null, region: string | null, country: string | null) => ({locationCity: city, locationRegion: region, locationCountry: country});
+    await job(acme.id, 'berlin', place('Berlin', null, 'DE'));
+    await job(acme.id, 'portland-or', place('Portland', 'OR', 'US'));
+    await job(acme.id, 'portland-me', place('Portland', 'ME', 'US'));
+    await job(acme.id, 'chicago', place('Chicago', 'Illinois', 'US'));
+    await job(acme.id, 'dresden', place('Dresden', 'Saxony', 'DE'));
+    await job(acme.id, 'remote-job', {workplaceType: 'remote'});
+    const slugs = async (location: string) =>
+      ((await browser.get(`/site-api/jobs?location=${encodeURIComponent(location)}`)).json.jobs as {slug: string}[]).map(j => j.slug).sort();
+    expect(await slugs('Berlin, Germany')).toEqual(['berlin']);
+    expect(await slugs('Portland, OR')).toEqual(['portland-or']);
+    expect(await slugs('Portland, OR, United States')).toEqual(['portland-or']);
+    expect(await slugs('portland, ,')).toEqual(['portland-me', 'portland-or']);
+    expect(await slugs('Berlin, France')).toEqual([]);
+    // A 2-letter part: the country code or an exact region / city, never a substring.
+    expect(await slugs('DE')).toEqual(['berlin', 'dresden']);
+    expect(await slugs('IN')).toEqual([]);
+    expect(await slugs('or')).toEqual(['portland-or']);
+    expect(await slugs('Remote')).toEqual(['remote-job']);
+  });
+
   it('"Highest salary" compares yearly pay, using the minimum when there is no maximum', async () => {
     const acme = await company('Acme');
     const yearly = (min: number | null, max: number | null, period: string) => ({salaryMinCents: min, salaryMaxCents: max, salaryCurrency: 'USD', salaryPeriod: period});

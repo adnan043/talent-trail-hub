@@ -28,10 +28,16 @@ export function EmployerJobs() {
   useEffect(() => {
     const id = search.checkout;
     if (!id || !/^pcs_[A-Za-z0-9]{8,64}$/.test(id)) return;
-    void confirmCheckout(id).then(status => {
+    void confirmCheckout(id).then(async status => {
       if (status === 'paid') {
-        // A posted job's draft is done with (a renewal leaves an unrelated draft alone).
-        if (loadDraft().jobId !== null) clearDraft();
+        // The draft is done with only when ITS job was paid (a renewal, or another job's
+        // checkout, leaves an unrelated draft alone). Unpaid still: the server answers a repost
+        // of it with `already_paid` once the payment lands, never a second charge.
+        const draftJobId = loadDraft().jobId;
+        if (draftJobId !== null) {
+          const own = await read<{job: EmployerJobDetail}>(api.employer.jobs[':id'].$get({param: {id: String(draftJobId)}})).catch(() => null);
+          if (own && own.job.status !== 'pending_payment' && own.job.status !== 'draft') clearDraft();
+        }
         toast.success('Payment received. Thank you!');
       }
       else if (status === 'open') toast.info('Your payment is still being confirmed. This list updates once it is.');
@@ -122,13 +128,16 @@ export function EmployerJobs() {
               ? [
                   'separator' as const,
                   {
-                    label: 'Close as filled',
+                    label: j.status === 'pending_payment' ? 'Close unpaid job' : 'Close as filled',
                     icon: 'x' as const,
                     danger: true,
                     onSelect: () =>
                       void confirm({
                         title: `Close “${j.title}”?`,
-                        body: 'It leaves the board at once and takes no more applications. Its applicants stay here.',
+                        body:
+                          j.status === 'pending_payment'
+                            ? 'Its checkout was never finished. Closing it cancels that checkout; nothing is charged.'
+                            : 'It leaves the board at once and takes no more applications. Its applicants stay here.',
                         confirmLabel: 'Close job',
                         pendingLabel: 'Closing…',
                         action: () => close.mutateAsync(j.id),

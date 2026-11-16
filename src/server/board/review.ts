@@ -21,6 +21,8 @@ export async function reviewerEmails(db: PrismaClient): Promise<string[]> {
     where: {
       status: 'active',
       emailVerifiedAt: {not: null},
+      // Not the site owner's placeholder address (`…@owner.invalid`): it never gets mail.
+      NOT: {email: {endsWith: '.invalid'}},
       roles: {some: {role: {permissions: {some: {permission: {codename: {in: grantingCodenames(PERMISSIONS.JOB_MODERATE)}}}}}}},
     },
     select: {email: true},

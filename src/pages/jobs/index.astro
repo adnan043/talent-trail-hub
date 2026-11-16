@@ -295,8 +295,9 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
 </Base>
 
 <script>
-  // Filters wait for "Apply filters", the keyword for Search or Enter; the location field submits
-  // 400 ms after typing stops. After a submit, the results heading takes focus.
+  // Filters wait for "Apply filters", the keyword and the location for Search or Enter (no submit
+  // while typing: the swap would move focus to the results and drop keystrokes). After a submit,
+  // the results heading takes focus.
   const FOCUS_KEY = 'board:focus-results';
   document.addEventListener('astro:page-load', () => {
     const form = document.querySelector<HTMLFormElement>('form[data-jobs-form]');
@@ -314,21 +315,6 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
         // Storage blocked.
       }
     });
-    // Location: submit 400 ms after the last keystroke (once, and only when the value changed).
-    const location = form.querySelector<HTMLInputElement>('#jobs-location');
-    if (location) {
-      let timer: number | undefined;
-      let last = location.value;
-      location.addEventListener('input', () => {
-        window.clearTimeout(timer);
-        timer = window.setTimeout(() => {
-          if (location.value === last) return;
-          last = location.value;
-          form.requestSubmit();
-        }, 400);
-      });
-      form.addEventListener('submit', () => window.clearTimeout(timer));
-    }
     // Selects become the site's menu: the <select> stays in the form (it submits and holds the
     // value) while a button + listbox replaces it on screen.
     form.querySelectorAll<HTMLSelectElement>('.fgroup select').forEach(select => {

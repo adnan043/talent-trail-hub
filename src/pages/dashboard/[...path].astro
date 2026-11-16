@@ -12,12 +12,14 @@
  */
 import App from '../../layouts/App.astro';
 import {config} from '../../platform/config';
+import {getDb} from '../../platform/db';
 import PortalApp from '../../portal/PortalApp';
+import {brandCssHref} from '../../server/board/brand';
 import {pageContext} from '../../server/page';
 
 export const prerender = false;
 
-const {site, viewer} = await pageContext(Astro.request, Astro.response);
+const [{site, viewer}, brandHref] = await Promise.all([pageContext(Astro.request, Astro.response), brandCssHref(getDb())]);
 const back = encodeURIComponent(`${Astro.url.pathname}${Astro.url.search}`);
 // The editor Preview's gateway drops cookies, so this page never sees the
 // session there: the app starts anyway and asks `/site-api/me` itself (its
@@ -25,7 +27,7 @@ const back = encodeURIComponent(`${Astro.url.pathname}${Astro.url.search}`);
 const open = viewer.state === 'user' || config.preview;
 ---
 
-<App site={site} viewer={viewer} title="Dashboard">
+<App site={site} viewer={viewer} title="Dashboard" brandHref={brandHref}>
   {
     open ? (
       <>

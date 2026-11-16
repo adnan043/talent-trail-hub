@@ -30,7 +30,7 @@ const itemSelect = {
   updatedAt: true,
   publishedAt: true,
   expiresAt: true,
-  company: {select: {id: true, name: true, isTrusted: true, ownerUserId: true}},
+  company: {select: {id: true, name: true, isTrusted: true, isBlocked: true, ownerUserId: true}},
   orders: {
     where: {status: 'paid', amountCents: {gt: 0}},
     select: {amountCents: true, currency: true},
@@ -49,7 +49,7 @@ function toItem(row: ItemRow, now: Date): ModerationItem {
   return {
     id: row.id,
     title: row.title,
-    company: {id: row.company.id, name: row.company.name, isTrusted: row.company.isTrusted},
+    company: {id: row.company.id, name: row.company.name, isTrusted: row.company.isTrusted, isBlocked: row.company.isBlocked},
     source: row.source as JobSource,
     flagged: row.flagged,
     submittedAt: row.updatedAt.toISOString(),
@@ -156,7 +156,7 @@ export const manageModerationRoutes = new Hono()
         listingFeatured: true,
         category: {select: {name: true}},
         tags: {select: {tag: {select: {name: true}}}, take: LIMITS.tags},
-        company: {select: {id: true, name: true, isTrusted: true, ownerUserId: true, createdAt: true}},
+        company: {select: {id: true, name: true, isTrusted: true, isBlocked: true, ownerUserId: true, createdAt: true}},
       },
     });
     if (!row || row.status !== 'pending_review') return notFound(c, 'This job is not waiting for review.');
@@ -271,7 +271,8 @@ export const manageModerationRoutes = new Hono()
     if (!job) return notFound(c);
     const {count} = await db.job.updateMany({
       where: {id, status: 'pending_review', updatedAt: new Date(seen)},
-      data: {status: 'rejected', rejectionReason: reason},
+      // Nothing waits for review any more: the rejection answered it.
+      data: {status: 'rejected', rejectionReason: reason, needsReview: false},
     });
     if (count === 0) {
       if (job.status !== 'pending_review') return c.json(problem('not_in_review', 'This job is no longer waiting for review.'), 409);

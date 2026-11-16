@@ -38,7 +38,7 @@ describe.skipIf(!DATABASE_URL)('admin (integration, real Postgres)', () => {
       '',
     ]);
     expect((await admin.get('/site-api/admin/users?email=MEMBER@example.test')).status).toBe(403);
-    expect((await admin.get(`/site-api/admin/users/${ids.member}`)).json.user.email).toBe('m•••@example.test');
+    expect(((await admin.get(`/site-api/admin/users/${ids.member}`)).json.user as {email: string}).email).toBe('m•••@example.test');
   });
 
   it('the site owner sees every email and can look people up by email', async () => {

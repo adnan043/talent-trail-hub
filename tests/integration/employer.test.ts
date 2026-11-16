@@ -19,13 +19,15 @@ import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, s
 const PRICE = 'listing-standard-30';
 const started: Record<string, unknown>[] = [];
 let checkoutSeq = 0;
+/** Two ways to pay: a renewal without a chosen gateway answers `choose` (no order is created). */
+let twoGateways = false;
 const previousFetch = globalThis.fetch;
 
 function fakePayments() {
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url.includes('/api/site/v1/payments/checkout/gateways')) {
-      return Response.json({data: {gateways: [{slug: 'stripe', name: 'Card'}]}});
+      return Response.json({data: {gateways: [{slug: 'stripe', name: 'Card'}, ...(twoGateways ? [{slug: 'paypal', name: 'PayPal'}] : [])]}});
     }
     if (url.endsWith('/api/site/v1/payments/checkout') && init?.method === 'POST') {
       started.push(JSON.parse(String(init.body)) as Record<string, unknown>);
@@ -76,6 +78,7 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     await resetDatabase();
     forgetBoardSettings();
     started.length = 0;
+    twoGateways = false;
     const category = await db.category.upsert({where: {slug: 'engineering'}, create: {name: 'Engineering', slug: 'engineering'}, update: {isActive: true}, select: {id: true}});
     categoryId = category.id;
     tierId = (await db.listingTier.create({data: {name: 'Standard', priceKey: PRICE, priceCents: 9900, durationDays: 30}, select: {id: true}})).id;
@@ -436,5 +439,62 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     const put = await a.request('PUT', `/site-api/employer/jobs/${jobId}`, {job: jobValues({title: 'Senior Backend Engineer', salaryMin: '55000', salaryMax: '65000', salaryPeriod: 'YEAR'})});
     expect(put.status).toBe(200);
     expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {salaryCurrency: true}})).salaryCurrency).toBe('EUR');
+  });
+  it('posting a draft again after its job was paid answers already_paid: no second job, no second checkout', async () => {
+    const first = await post(a);
+    const jobId = first.json.jobId as number;
+    await runHook(() => paymentHooks.onCheckoutPaid!(paidCheckout((first.json.checkout as {id: string}).id), eventInfo));
+    const again = await post(a, {jobId});
+    expect(again.status).toBe(409);
+    expect(again.json).toMatchObject({error: 'already_paid', jobId});
+    expect(started).toHaveLength(1);
+    expect(await db.job.count()).toBe(1);
+  });
+
+  it('an unpaid job can be closed: its open checkout is failed, and paying it late is flagged for a refund', async () => {
+    const first = await post(a);
+    const jobId = first.json.jobId as number;
+    expect((await a.get(`/site-api/employer/jobs/${jobId}`)).json.job).toMatchObject({status: 'pending_payment', actions: {close: true}});
+    expect((await a.post(`/site-api/employer/jobs/${jobId}/close`)).status).toBe(200);
+    const checkoutId = (first.json.checkout as {id: string}).id;
+    expect((await db.listingOrder.findUniqueOrThrow({where: {checkoutId}, select: {status: true}})).status).toBe('failed');
+    await runHook(() => paymentHooks.onCheckoutPaid!(paidCheckout(checkoutId), eventInfo));
+    expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {status: true}})).status).toBe('closed');
+    expect(await db.auditEvent.count({where: {action: 'listing_order.refund_needed'}})).toBe(1);
+    // A draft still pointing at it posts a new job (it was never paid for).
+    const again = await post(a, {jobId});
+    expect(again.status).toBe(200);
+    expect(again.json.jobId).not.toBe(jobId);
+  });
+
+  it('a renewal that creates no new order (choose a way to pay) leaves the earlier renewal checkout open', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, moderationMode: 'auto'}, update: {moderationMode: 'auto'}});
+    forgetBoardSettings();
+    const first = await post(a);
+    await runHook(() => paymentHooks.onCheckoutPaid!(paidCheckout((first.json.checkout as {id: string}).id), eventInfo));
+    const jobId = first.json.jobId as number;
+    const r1 = await a.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId});
+    const c1 = (r1.json.checkout as {id: string}).id;
+    twoGateways = true;
+    const r2 = await a.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId});
+    expect(r2.json.status).toBe('choose');
+    expect((await db.listingOrder.findUniqueOrThrow({where: {checkoutId: c1}, select: {status: true}})).status).toBe('pending');
+    const r3 = await a.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId, gateway: 'paypal'});
+    expect(r3.json.status).toBe('checkout');
+    expect((await db.listingOrder.findUniqueOrThrow({where: {checkoutId: c1}, select: {status: true}})).status).toBe('failed');
+    const c3 = (r3.json.checkout as {id: string}).id;
+    expect((await db.listingOrder.findUniqueOrThrow({where: {checkoutId: c3}, select: {status: true}})).status).toBe('pending');
+  });
+
+  it('a live job past its end date (not yet swept) is not closable: it is expired and renews the expired way', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'auto'}, update: {freePostingEnabled: true, moderationMode: 'auto'}});
+    forgetBoardSettings();
+    const jobId = (await post(a)).json.jobId as number;
+    await db.job.update({where: {id: jobId}, data: {expiresAt: new Date(Date.now() - 60_000)}});
+    expect((await a.get(`/site-api/employer/jobs/${jobId}`)).json.job).toMatchObject({status: 'expired', actions: {close: false}});
+    const close = await a.post(`/site-api/employer/jobs/${jobId}/close`);
+    expect(close.status).toBe(409);
+    expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {status: true}})).status).toBe('published');
+    expect((await a.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId})).json).toMatchObject({status: 'done', jobStatus: 'published'});
   });
 });

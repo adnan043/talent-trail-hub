@@ -95,9 +95,13 @@ if (!checkout) Astro.response.status = 404;
     }
     const tries = Number(store?.getItem('thanks-tries') ?? 0);
     if (tries >= 10) return;
-    setTimeout(() => {
+    // Left by a client-side navigation: the timer goes too, so it never reloads another page.
+    const path = window.location.pathname;
+    const timer = setTimeout(() => {
+      if (window.location.pathname !== path) return;
       store?.setItem('thanks-tries', String(tries + 1));
       window.location.reload();
     }, 3000);
+    document.addEventListener('astro:before-swap', () => clearTimeout(timer), {once: true});
   });
 </script>

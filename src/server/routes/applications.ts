@@ -241,7 +241,8 @@ export const applicationRoutes = new Hono()
           },
           select: {id: true},
         });
-        await tx.job.update({where: {id: job.id}, data: {applicationCount: {increment: 1}}, select: {id: true}});
+        // Raw so the counter leaves `updated_at` (the sitemap's lastmod) alone, like the view and click counters.
+        await tx.$executeRaw`UPDATE "jobs" SET "application_count" = "application_count" + 1 WHERE "id" = ${job.id}`;
         const attached = await tx.resumeUpload.updateMany({where: {id: upload.id, applicationId: null}, data: {applicationId: created.id}});
         if (attached.count !== 1) throw new ResumeTaken();
         return created.id;

@@ -127,6 +127,9 @@ async function overCandidateLimit(db: PrismaClient, template: string, to: string
   return recent.length >= CANDIDATE_DAILY;
 }
 
+/** An address under the reserved `.invalid` top-level domain (RFC 2606) never gets mail. */
+export const isUndeliverable = (address: string) => address.trim().toLowerCase().endsWith('.invalid');
+
 export async function sendBoardEmail(
   db: PrismaClient,
   requestUrl: string,
@@ -135,6 +138,9 @@ export async function sendBoardEmail(
 ): Promise<void> {
   // Lowercased: the privacy tool finds log rows by the normalized address.
   const to = String(email.to ?? '').trim().toLowerCase().slice(0, 254);
+  // A placeholder that can never receive mail (the site owner's account is `owner-…@owner.invalid`,
+  // RFC 2606): not sent, not logged.
+  if (isUndeliverable(to)) return;
   let outcome: Outcome;
   try {
     const template = TEMPLATES[email.template];

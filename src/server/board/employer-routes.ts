@@ -136,11 +136,20 @@ export const employerJobRoutes = new Hono<Env>()
     const company = await companyOf(db, c.var.viewer);
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);
+    // A live job past its end date is expired (before the sweep ran): not closed here, so its
+    // renewal takes the normal expired path. An unpaid job (checkout never finished) can be closed.
+    const now = new Date();
     const {count} = await db.job.updateMany({
-      where: {id: job.id, companyId: company.id, status: {in: ['published', 'pending_review']}},
+      where: {
+        id: job.id,
+        companyId: company.id,
+        OR: [{status: {in: ['pending_review', 'pending_payment']}}, {status: 'published', OR: [{expiresAt: null}, {expiresAt: {gt: now}}]}],
+      },
       data: {status: 'closed'},
     });
-    if (!count) return c.json(problem('not_closable', 'Only live or in-review jobs can be closed.'), 409);
+    if (!count) return c.json(problem('not_closable', 'Only live, in-review or unpaid jobs can be closed.'), 409);
+    // Its open checkouts will not be fulfilled: a late payment of one is flagged for a refund.
+    if (job.status === 'pending_payment') await db.listingOrder.updateMany({where: {jobId: job.id, status: 'pending'}, data: {status: 'failed'}});
     await refreshActiveJobCount(db, company.id);
     await forgetPublicLists();
     return c.json({ok: true});
@@ -170,9 +179,6 @@ export const employerJobRoutes = new Hono<Env>()
     if (left + chosen.tier.durationDays > RENEW_AHEAD_MAX_DAYS) {
       return c.json(problem('renewed_enough', `This job is already listed for ${Math.ceil(left)} more days. Renew it closer to its end date.`), 409);
     }
-    // An earlier renewal checkout for this job is superseded (`failed`): only the newest one may
-    // extend it; a late payment of an old one is flagged for a refund by the payment hook.
-    await db.listingOrder.updateMany({where: {jobId: job.id, kind: 'renew', status: 'pending'}, data: {status: 'failed'}});
     const answer = await startListing(db, c.req.url, {
       companyId: company.id,
       viewer: c.var.viewer,
@@ -184,6 +190,12 @@ export const employerJobRoutes = new Hono<Env>()
       defer: work => after(c, `listing emails for job ${job.id}`, work),
     });
     if ('problem' in answer) return c.json(problem(answer.problem.code, answer.problem.message), answer.problem.status);
+    // Once a new order exists, an earlier renewal checkout for this job is superseded (`failed`):
+    // only the newest one may extend it; a late payment of an old one is flagged for a refund by
+    // the payment hook. No new order (choose a way to pay, an error): the earlier one stays open.
+    if (answer.status !== 'choose') {
+      await db.listingOrder.updateMany({where: {jobId: job.id, kind: 'renew', status: 'pending', id: {not: answer.orderId}}, data: {status: 'failed'}});
+    }
     return c.json(answer);
   })
 

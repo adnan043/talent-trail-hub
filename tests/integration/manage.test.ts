@@ -1,6 +1,8 @@
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {app} from '../../src/server/app';
+import {sendBoardEmail} from '../../src/server/board/email';
+import {reviewerEmails} from '../../src/server/board/review';
 import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn, userId} from './support/harness';
 
 /** The board's admin (`/site-api/manage/*`): codename gating, the employer edit lock, tier rules, board mode. */
@@ -215,16 +217,118 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect((await admin.post(`/site-api/manage/jobs/${live.job.id}/extend`, {days: 30})).status).toBe(200);
   });
 
-  it('a job with employer changes waiting for review cannot be relisted, extended or featured', async () => {
+  it('a job with employer changes waiting for review is never relisted unreviewed, extended or featured; stopping a feature works', async () => {
     const {job} = await seedJob('paid', 'closed');
     await db.job.update({where: {id: job.id}, data: {needsReview: true}});
+    // Down with unreviewed changes: "List again" sends it to the review queue, never onto the board.
     const relist = await admin.post(`/site-api/manage/jobs/${job.id}/extend`, {days: 30});
-    expect(relist.status).toBe(409);
-    expect(relist.json.error).toBe('needs_review');
-    await db.job.update({where: {id: job.id}, data: {status: 'published'}});
+    expect(relist.status).toBe(200);
+    expect(relist.json.review).toBe(true);
+    expect(await db.job.findUniqueOrThrow({where: {id: job.id}})).toMatchObject({status: 'pending_review', needsReview: true});
+    await db.job.update({where: {id: job.id}, data: {status: 'published', isFeatured: true, featuredUntil: new Date(Date.now() + 86_400_000)}});
+    expect((await admin.post(`/site-api/manage/jobs/${job.id}/extend`, {days: 30})).json.error).toBe('needs_review');
     expect((await admin.post(`/site-api/manage/jobs/${job.id}/feature`, {featured: true, days: 7})).json.error).toBe('needs_review');
     const list = await admin.get('/site-api/manage/jobs');
     expect((list.json.jobs as {id: number; needsReview: boolean}[]).find(j => j.id === job.id)?.needsReview).toBe(true);
+    expect((await admin.post(`/site-api/manage/jobs/${job.id}/feature`, {featured: false, days: null})).status).toBe(200);
+    expect(await db.job.findUniqueOrThrow({where: {id: job.id}})).toMatchObject({isFeatured: false});
+  });
+
+  it('an edited live job closed by the admin while in review is not stuck: listing it again goes through review, then live', async () => {
+    const {job} = await seedJob('paid', 'pending_review');
+    await db.job.update({where: {id: job.id}, data: {needsReview: true}});
+    expect((await admin.post(`/site-api/manage/jobs/${job.id}/close`)).status).toBe(200);
+    // Its unreviewed text stays off the closed job's public page.
+    expect(await db.job.findUniqueOrThrow({where: {id: job.id}})).toMatchObject({status: 'closed', needsReview: true});
+    expect((await new Browser(app).get(`/site-api/jobs/${job.slug}`)).status).toBe(404);
+    const relist = await admin.post(`/site-api/manage/jobs/${job.id}/extend`, {days: 20});
+    expect(relist.status).toBe(200);
+    expect(relist.json.review).toBe(true);
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string}};
+    expect((await admin.post(`/site-api/manage/moderation/${job.id}/approve`, {seen: seen.item.submittedAt})).status).toBe(200);
+    const after = await db.job.findUniqueOrThrow({where: {id: job.id}});
+    expect(after).toMatchObject({status: 'published', needsReview: false});
+    expect(after.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 19 * 86_400_000);
+  });
+
+  it("staff emails never go to the site owner's placeholder address (…@owner.invalid)", async () => {
+    const ownerEmail = (await db.user.findFirstOrThrow({where: {platformOwnerId: {not: null}}, select: {email: true}})).email;
+    expect(ownerEmail.endsWith('.invalid')).toBe(true);
+    const reviewers = await reviewerEmails(db);
+    expect(reviewers).toContain('admin@example.test');
+    expect(reviewers.some(e => e.endsWith('.invalid'))).toBe(false);
+    await sendBoardEmail(db, 'https://shop.example.test/x', {template: 'admin-job-review', to: ownerEmail, vars: {}});
+    expect(await db.emailLog.count({where: {to: ownerEmail}})).toBe(0);
+  });
+
+  it('rejecting a job clears its review flag', async () => {
+    const {job} = await seedJob('paid', 'pending_review');
+    await db.job.update({where: {id: job.id}, data: {needsReview: true}});
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string}};
+    expect((await admin.post(`/site-api/manage/moderation/${job.id}/reject`, {reason: 'Not a real job.', seen: seen.item.submittedAt})).status).toBe(200);
+    expect(await db.job.findUniqueOrThrow({where: {id: job.id}})).toMatchObject({status: 'rejected', needsReview: false});
+  });
+
+  it('approve and trust: the company is trusted; it can be untrusted again (site:job:moderate)', async () => {
+    const {job, company} = await seedJob('paid', 'pending_review');
+    await db.job.update({where: {id: job.id}, data: {publishedAt: null, expiresAt: null, needsReview: true}});
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string; company: {isTrusted: boolean; isBlocked: boolean}}};
+    expect(seen.item.company).toMatchObject({isTrusted: false, isBlocked: false});
+    expect((await admin.post(`/site-api/manage/moderation/${job.id}/approve`, {seen: seen.item.submittedAt, trust: true})).status).toBe(200);
+    expect((await db.company.findUniqueOrThrow({where: {id: company.id}})).isTrusted).toBe(true);
+    expect((await member.post(`/site-api/manage/companies/${company.id}/trust`, {trusted: false})).status).toBe(403);
+    expect((await admin.post(`/site-api/manage/companies/${company.id}/trust`, {trusted: 'no'})).status).toBe(422);
+    const untrusted = await admin.post(`/site-api/manage/companies/${company.id}/trust`, {trusted: false});
+    expect(untrusted.status).toBe(200);
+    expect(untrusted.json).toMatchObject({isTrusted: false});
+    expect((await db.company.findUniqueOrThrow({where: {id: company.id}})).isTrusted).toBe(false);
+  });
+
+  it('blocking a company takes its jobs off the board; unblocking brings them back; the owner company cannot be blocked', async () => {
+    const {job, company} = await seedJob('paid', 'published');
+    const visitor = new Browser(app);
+    expect((await visitor.get(`/site-api/jobs/${job.slug}`)).status).toBe(200);
+    expect((await member.post(`/site-api/manage/companies/${company.id}/block`, {blocked: true})).status).toBe(403);
+    const blocked = await admin.post(`/site-api/manage/companies/${company.id}/block`, {blocked: true});
+    expect(blocked.status).toBe(200);
+    expect(blocked.json).toMatchObject({isBlocked: true});
+    expect((await visitor.get(`/site-api/jobs/${job.slug}`)).status).toBe(404);
+    const row = ((await admin.get('/site-api/manage/jobs')).json.jobs as {id: number; companyId: number; companyBlocked: boolean}[]).find(j => j.id === job.id);
+    expect(row).toMatchObject({companyId: company.id, companyBlocked: true});
+    expect((await admin.post(`/site-api/manage/companies/${company.id}/block`, {blocked: false})).status).toBe(200);
+    expect((await visitor.get(`/site-api/jobs/${job.slug}`)).status).toBe(200);
+    expect((await admin.post('/site-api/manage/companies/999999/block', {blocked: true})).status).toBe(404);
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, ownerCompanyId: company.id}, update: {ownerCompanyId: company.id}});
+    const owned = await admin.post(`/site-api/manage/companies/${company.id}/block`, {blocked: true});
+    expect(owned.status).toBe(409);
+    expect(owned.json.error).toBe('owner_company');
+  });
+
+  it("the dashboard's numbers follow an admin write at once (the cached report is cleared)", async () => {
+    const {job} = await seedJob('paid', 'pending_review');
+    await db.job.update({where: {id: job.id}, data: {publishedAt: null, expiresAt: null, needsReview: true}});
+    expect((await admin.get('/site-api/manage/overview')).json.pendingApprovals).toMatchObject({value: 1});
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string}};
+    expect((await admin.post(`/site-api/manage/moderation/${job.id}/reject`, {reason: 'Not a real job.', seen: seen.item.submittedAt})).status).toBe(200);
+    expect((await admin.get('/site-api/manage/overview')).json.pendingApprovals).toMatchObject({value: 0});
+  });
+
+  it('a job in a category hidden since keeps it on an admin edit; another hidden category is refused', async () => {
+    const seeded = await seedJob('admin');
+    // Its own categories (categories outlive resetDatabase): the shared one stays active for other tests.
+    const category = await db.category.create({data: {name: 'Hidden since', slug: `hidden-since-${Date.now()}`}});
+    const job = await db.job.update({where: {id: seeded.job.id}, data: {categoryId: category.id}});
+    const other = await db.category.create({data: {name: 'Old hidden', slug: `old-hidden-${Date.now()}`, isActive: false}});
+    await db.category.update({where: {id: category.id}, data: {isActive: false}});
+    const options = (await admin.get('/site-api/manage/jobs/form-options')).json.categories as {id: number; active: boolean}[];
+    expect(options).toEqual(expect.arrayContaining([expect.objectContaining({id: category.id, active: false}), expect.objectContaining({id: other.id, active: false})]));
+    expect((await admin.request('PUT', `/site-api/manage/jobs/${job.id}`, {values: values('Kept category', category.id)})).status).toBe(200);
+    const moved = await admin.request('PUT', `/site-api/manage/jobs/${job.id}`, {values: values('Moved', other.id)});
+    expect(moved.status).toBe(422);
+    expect((await db.job.findUniqueOrThrow({where: {id: job.id}})).title).toBe('Kept category');
+    // The list's category filter finds jobs in a hidden category.
+    const filtered = await admin.get(`/site-api/manage/jobs?category=${category.id}`);
+    expect((filtered.json.jobs as {id: number}[]).map(j => j.id)).toEqual([job.id]);
   });
 
   it('the queue lists flagged jobs first; a reject reason needs 3 characters', async () => {

@@ -249,6 +249,15 @@ export const employerRoutes = new Hono<Env>()
     const reuse = input.jobId
       ? await db.job.findFirst({where: {id: input.jobId, companyId: company.id, status: {in: ['draft', 'pending_payment']}}, select: {id: true}})
       : null;
+    // Its job was paid for since (a slow payment event, another tab): never a second job and a
+    // second checkout for the same post. A job closed while still unpaid has no paid order: posted anew.
+    if (input.jobId && !reuse) {
+      const paid = await db.listingOrder.findFirst({
+        where: {jobId: input.jobId, companyId: company.id, kind: 'new', status: {in: ['paid', 'refunded']}},
+        select: {id: true},
+      });
+      if (paid) return c.json({...problem('already_paid', 'This job was paid for a moment ago. Open your jobs to see it.'), jobId: input.jobId}, 409);
+    }
     if (reuse) {
       // Reset only while it is STILL unpaid, in one conditional statement: a payment that settled
       // since the read above (another tab, a late event) keeps its live job.
