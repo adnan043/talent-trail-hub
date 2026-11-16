@@ -15,7 +15,7 @@ import {
 import {countryOptions} from '../../lib/job-display';
 import {checkJobValues, type JobField, type JobValues} from '../../lib/job-input';
 import {markdownTextLength} from '../../lib/markdown';
-import {Button, Field, RadioCards, type Rule, Select, useForm} from '../ui';
+import {Button, Field, MarkdownEditor, RadioCards, type Rule, Select, useForm} from '../ui';
 
 /**
  * The job fields form (title, category, type, workplace, location or applicant countries,
@@ -152,7 +152,7 @@ export function JobForm({
         label="Description"
         error={form.error('descriptionMd')}
         hint={`${textLength} of at least ${LIMITS.descriptionMin} characters. Simple Markdown: a blank line starts a paragraph, “## ” a heading, “- ” a list item, **bold**, _italic_, [link](https://…).`}>
-        <textarea {...form.field('descriptionMd')} rows={14} placeholder="What the role is, what the person will do, and what you are looking for." />
+        <MarkdownEditor {...form.field('descriptionMd')} rows={14} placeholder="What the role is, what the person will do, and what you are looking for." />
       </Field>
 
       <Field id="f-tags" label="Tags" optional error={form.error('tags')} hint={`Up to ${LIMITS.tags}, separated by commas, like react, typescript.`}>
