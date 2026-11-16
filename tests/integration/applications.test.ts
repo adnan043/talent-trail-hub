@@ -2,8 +2,9 @@ import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
+import {runPurge} from '../../src/server/board/tasks';
 import {overLimit} from '../../src/server/routes/applications';
-import {Browser, configureEnv, DATABASE_URL, db, resetDatabase, signedIn, userId} from './support/harness';
+import {Browser, configureEnv, DATABASE_URL, db, ORIGIN, resetDatabase, signedIn, userId} from './support/harness';
 
 /**
  * Apply + applicants (F4, F16, F36, F39) against a real Postgres: duplicate apply, the per-IP
@@ -14,6 +15,8 @@ let fileSeq = 0;
 /** What the stored file starts with (the first-bytes check reads it); and the files deleted. */
 let storedBytes = '%PDF-1.7\n';
 const deleted: string[] = [];
+/** True: storage refuses every delete (an outage). */
+let failDeletes = false;
 const harnessFetch = globalThis.fetch;
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -25,6 +28,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   if (path?.endsWith('/complete')) return json(200, {data: {file: {id: path.split('/')[1], status: 'ready'}}});
   if (path?.endsWith('/delete')) {
+    if (failDeletes) return json(503, {error: {code: 'E_UNAVAILABLE', message: 'down'}});
     deleted.push(path.split('/')[1]!);
     return json(200, {data: {deleted: true}});
   }
@@ -245,6 +249,30 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     const to = (await db.emailLog.findMany({where: {templateKey: 'new-applicant'}, select: {to: true}})).map(e => e.to);
     expect(to).toEqual([ADMIN]);
   });
+  it('a resume whose file storage refuses to delete is handed to the nightly purge, never left behind', async () => {
+    const job = await makeJob((await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}})).id, 'job-gone');
+    expect((await apply(new Browser(app, '198.51.100.9'), job.slug, 'g@example.test')).status).toBe(201);
+    const {resumeFileId} = await db.application.findFirstOrThrow({where: {jobId: job.id}, select: {resumeFileId: true}});
+    expect(resumeFileId).toBeTruthy();
+
+    failDeletes = true;
+    try {
+      const res = await admin.delete(`/site-api/manage/jobs/${job.id}`);
+      expect(res.status).toBe(200);
+      expect(res.json.filesLeft).toBe(1);
+    } finally {
+      failDeletes = false;
+    }
+    expect(await db.application.count({where: {jobId: job.id}})).toBe(0);
+    // The upload row stays, detached and with nothing personal, until its file is gone.
+    const left = await db.resumeUpload.findUniqueOrThrow({where: {fileId: resumeFileId!}, select: {applicationId: true, name: true, ipHash: true}});
+    expect(left).toEqual({applicationId: null, name: 'deleted', ipHash: null});
+
+    await runPurge(db, ORIGIN);
+    expect(deleted).toContain(resumeFileId);
+    expect(await db.resumeUpload.count({where: {fileId: resumeFileId!}})).toBe(0);
+  });
+
   it('a parallel burst against the per-IP limit lets at most 5 through (insert, then count)', async () => {
     // The limiter itself, on the test client: the harness ends its DB client after each request,
     // so parallel HTTP requests in one process do not work here.
