@@ -16,6 +16,7 @@ import {after} from './after';
 import {cachedBoardSettings} from './brand';
 import {forgetPublicLists} from './public-cache';
 import {getBoardSettings} from './settings';
+import {POSTS_PER_HOUR, userAttemptAllowed} from './employer-logo';
 
 /**
  * The employer's jobs and orders: `/site-api/employer/jobs…`, `/site-api/employer/orders…`.
@@ -136,6 +137,9 @@ export const employerJobRoutes = new Hono<Env>()
 
   .post('/jobs/:id/renew', renewBody, async c => {
     const db = c.var.db;
+    if (!(await userAttemptAllowed(db, 'post', c.var.viewer.id!, POSTS_PER_HOUR))) {
+      return c.json(problem('rate_limited', 'Too many jobs posted or renewed in the last hour. Try again later.'), 429);
+    }
     const company = await companyOf(db, c.var.viewer);
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);

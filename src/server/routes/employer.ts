@@ -20,7 +20,7 @@ import {
   toEmployerCompany,
 } from '../board/employer';
 import {createJob, jobData, setJobTags, validateJob} from '../board/employer-jobs';
-import {dropLogoFile, finishLogoUpload, isLogoImage, LOGO_MAX_BYTES, LOGO_TYPES, logoAttemptAllowed, startLogoUpload} from '../board/employer-logo';
+import {dropLogoFile, finishLogoUpload, isLogoImage, LOGO_MAX_BYTES, LOGO_TYPES, logoAttemptAllowed, POSTS_PER_HOUR, startLogoUpload, userAttemptAllowed} from '../board/employer-logo';
 import {activeTiers, chooseTier, startListing} from '../board/employer-orders';
 import {employerJobRoutes} from '../board/employer-routes';
 import {ipHashOf} from '../board/ip';
@@ -195,6 +195,9 @@ export const employerRoutes = new Hono<Env>()
   .post('/post', postBody, async c => {
     const db = c.var.db;
     const viewer = c.var.viewer;
+    if (!(await userAttemptAllowed(db, 'post', viewer.id!, POSTS_PER_HOUR))) {
+      return c.json(problem('rate_limited', 'Too many jobs posted or renewed in the last hour. Try again later.'), 429);
+    }
     const input = c.req.valid('json');
     const settings = await cachedBoardSettings(db);
     const [checked, existing, chosen] = await Promise.all([

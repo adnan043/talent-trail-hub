@@ -6,6 +6,7 @@ import {getDb} from '../../src/platform/db';
 import {inRequestScope} from '../../src/platform/request-scope';
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
+import {POSTS_PER_HOUR, userAttemptAllowed} from '../../src/server/board/employer-logo';
 import {paymentHooks} from '../../src/server/payments-hooks';
 import {Browser, configureEnv, DATABASE_URL, db, resetDatabase, signedIn} from './support/harness';
 
@@ -134,6 +135,17 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     const job = await db.job.findFirstOrThrow({select: {source: true, expiresAt: true}});
     expect(job.source).toBe('free');
     expect(job.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
+  });
+
+  it('posting and renewing are limited per user per hour (429), other employers unaffected', async () => {
+    // The hour's earlier attempts, as the limiter records them; then the next post is refused.
+    const userA = (await db.user.findFirstOrThrow({where: {email: 'a@example.test'}, select: {id: true}})).id;
+    for (let i = 0; i < POSTS_PER_HOUR; i++) await userAttemptAllowed(db, 'post', userA, POSTS_PER_HOUR);
+    const res = await post(a);
+    expect(res.status).toBe(429);
+    expect(res.json.error).toBe('rate_limited');
+    expect(await db.job.count()).toBe(0);
+    expect((await post(b)).status).not.toBe(429);
   });
 
   it("an employer cannot see or change another company's jobs or orders (404)", async () => {
