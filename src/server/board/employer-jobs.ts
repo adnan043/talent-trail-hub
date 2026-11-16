@@ -21,10 +21,11 @@ export const RENEWABLE: JobStatus[] = ['published', 'expired', 'closed'];
 export const effectiveStatus = (job: {status: string; expiresAt: Date | null}, now = new Date()): JobStatus =>
   (job.status === 'published' && job.expiresAt !== null && job.expiresAt <= now ? 'expired' : job.status) as JobStatus;
 
-export const jobActions = (status: JobStatus): EmployerJobActions => ({
+/** `publishedAt`: a job that was never live (closed while in review) cannot be renewed (the route says 409). */
+export const jobActions = (status: JobStatus, publishedAt: Date | null): EmployerJobActions => ({
   edit: EDITABLE.includes(status),
   close: status === 'published' || status === 'pending_review',
-  renew: RENEWABLE.includes(status),
+  renew: RENEWABLE.includes(status) && publishedAt !== null,
   duplicate: true,
 });
 
@@ -89,6 +90,7 @@ const rowSelect = {
   slug: true,
   status: true,
   expiresAt: true,
+  publishedAt: true,
   viewCount: true,
   applyClickCount: true,
   applicationCount: true,
@@ -122,7 +124,7 @@ export async function listOwnJobs(db: PrismaClient, companyId: number, before: n
       featured: job.isFeatured && (job.featuredUntil === null || job.featuredUntil > now),
       rejectionReason: status === 'rejected' ? job.rejectionReason : null,
       tierId: job.tierId,
-      actions: jobActions(status),
+      actions: jobActions(status, job.publishedAt),
     };
   });
   return {items, nextBefore: rows.length > pageSize ? items.at(-1)!.id : null};
@@ -132,6 +134,7 @@ const detailSelect = {
   id: true,
   slug: true,
   status: true,
+  salaryCurrency: true,
   expiresAt: true,
   publishedAt: true,
   tierId: true,
@@ -166,7 +169,8 @@ export function toJobDetail(job: NonNullable<Awaited<ReturnType<typeof findOwnJo
     slug: job.slug,
     status,
     tierId: job.tierId,
-    actions: jobActions(status),
+    salaryCurrency: job.salaryCurrency,
+    actions: jobActions(status, job.publishedAt),
     values: jobValuesOf({...job, tags: job.tags.map(t => t.tag.name)}),
   };
 }

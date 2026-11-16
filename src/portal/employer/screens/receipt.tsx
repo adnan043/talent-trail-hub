@@ -11,6 +11,8 @@ import {receiptQuery} from '../queries';
 export function EmployerReceipt() {
   const {id} = useParams({strict: false}) as {id: string};
   const receipt = useQuery(receiptQuery(Number(id)));
+  // Every hook before the first early return (React needs the same hooks on every render).
+  const site = useSite().data?.site;
   if (receipt.isPending) return <div className="app-page"><LoadingBlock rows={5} /></div>;
   if (receipt.error instanceof ApiError && receipt.error.status === 404) {
     return (
@@ -24,7 +26,6 @@ export function EmployerReceipt() {
   if (receipt.error) return <div className="app-page"><ErrorNote error={receipt.error} /></div>;
   const r = receipt.data.receipt;
   const o = r.order;
-  const site = useSite().data?.site;
   const logo = site?.logo;
   const rows = [
     {label: 'Order', value: o.number},

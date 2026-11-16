@@ -90,6 +90,8 @@ export interface EmployerJobDetail {
   slug: string;
   status: JobStatus;
   tierId: number | null;
+  /** The currency its salary was entered in (null: no salary): an edit keeps it, whatever the board's is now. */
+  salaryCurrency: string | null;
   actions: EmployerJobActions;
   values: JobValues;
 }

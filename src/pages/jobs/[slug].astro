@@ -395,6 +395,17 @@ const facts = job
     }
     if (first) void siteFetch(`/site-api/jobs/${encodeURIComponent(slug)}/view`, {method: 'POST'}).catch(() => null);
 
+    // F3: an "Apply" click on a url / email job (the side panel and the bottom bar). Those jobs
+    // render no apply section, so its script (which counts clicks) never loads: counted here, on
+    // the way out, never blocking the link. A link bound already (by the apply section) is skipped.
+    document.querySelectorAll<HTMLAnchorElement>('[data-apply-click]').forEach(link => {
+      if (link.dataset.clickBound) return;
+      link.dataset.clickBound = '1';
+      link.addEventListener('click', () => {
+        void siteFetch(`/site-api/applications/jobs/${encodeURIComponent(slug)}/click`, {method: 'POST', keepalive: true}).catch(() => null);
+      });
+    });
+
     // Web Share where the device has it (phones): the system share sheet.
     const canShare = typeof navigator.share === 'function';
     document.querySelectorAll<HTMLButtonElement>('[data-web-share]').forEach(button => {

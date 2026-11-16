@@ -1,6 +1,6 @@
-import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
+import {keepPreviousData, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {Link, useNavigate, useParams} from '@tanstack/react-router';
-import {useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 import {LIMITS} from '../../../lib/board';
 import {EMPTY_JOB_VALUES, type JobValues} from '../../../lib/job-input';
@@ -13,10 +13,28 @@ import {adminJobQuery, companiesQuery, invalidateAdminJobs, jobFormOptionsQuery}
 const fieldsOf = (err: unknown) => (err instanceof ApiError ? err.fields : undefined);
 const statusOf = (err: unknown) => (err && !(err instanceof ApiError && Object.keys(err.fields).length) ? <ErrorNote error={err as Error} /> : null);
 
+/** The picker's options: a new company, the found ones, and the chosen one when the search left it out. */
+function companyOptions(found: {id: number; name: string}[], selected: string, chosen: {current: {id: number; name: string} | null}) {
+  const pick = found.find(c => String(c.id) === selected);
+  if (pick) chosen.current = pick;
+  if (!selected) chosen.current = null;
+  const kept = chosen.current && !pick && String(chosen.current.id) === selected ? [chosen.current] : [];
+  return [{value: '', label: 'A new company (name it below)'}, ...[...kept, ...found].map(c => ({value: String(c.id), label: c.name}))];
+}
+
 /** `/manage/jobs/new` (site:job:manage): a free admin job, live at once (F21). */
 export function NewAdminJob() {
   const options = useQuery(jobFormOptionsQuery);
-  const companies = useQuery(companiesQuery(''));
+  // The picker lists 50 companies at a time: a search narrows it on the server (by name).
+  const [search, setSearch] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const companies = useQuery({...companiesQuery(q), placeholderData: keepPreviousData});
+  // The chosen company stays in the list when a later search doesn't find it.
+  const chosen = useRef<{id: number; name: string} | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
@@ -64,8 +82,11 @@ export function NewAdminJob() {
             <Notice tone="info">Single-company board: this job is posted for {locked.name}.</Notice>
           ) : (
             <>
+              <Field label="Find a company" id="f-companySearch" optional hint="Type part of its name.">
+                <input id="f-companySearch" type="search" value={search} onChange={e => setSearch(e.target.value)} maxLength={80} placeholder="Acme" />
+              </Field>
               <Field label="Company" id="f-companyId" error={meta.error('companyId')}>
-                <Select {...meta.field('companyId')} options={[{value: '', label: 'A new company (name it below)'}, ...companies.data.companies.map(c => ({value: String(c.id), label: c.name}))]} />
+                <Select {...meta.field('companyId')} options={companyOptions(companies.data.companies, meta.values.companyId, chosen)} />
               </Field>
               {!meta.values.companyId && (
                 <Field label="New company name" id="f-newCompanyName" error={meta.error('newCompanyName')} optional>
@@ -136,7 +157,7 @@ export function EditAdminJob() {
           key={data.id}
           initial={{...EMPTY_JOB_VALUES, ...data.values} as JobValues}
           categories={options.data.categories}
-          currency={options.data.currency}
+          currency={data.salaryCurrency ?? options.data.currency}
           onSubmit={values => save.mutate(values)}
           pending={save.isPending}
           serverErrors={fieldsOf(save.error)}

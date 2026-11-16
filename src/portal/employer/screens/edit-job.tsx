@@ -58,7 +58,7 @@ export function EditEmployerJob() {
           <JobForm
             initial={detail.values}
             categories={options.data.categories}
-            currency={options.data.currency}
+            currency={detail.salaryCurrency ?? options.data.currency}
             onSubmit={values => save.mutate(values)}
             pending={save.isPending}
             serverErrors={fieldErrors}

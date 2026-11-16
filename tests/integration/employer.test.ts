@@ -308,6 +308,10 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     const renew = await a.post(`/site-api/employer/jobs/${jobId}/renew`, {tierId});
     expect(renew.status).toBe(409);
     expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {status: true}})).status).toBe('closed');
+    // …and the dashboard never offers it (list and detail).
+    expect((await a.get(`/site-api/employer/jobs/${jobId}`)).json.job).toMatchObject({actions: {renew: false}});
+    const listed = (await a.get('/site-api/employer/jobs')).json.items as {id: number; actions: {renew: boolean}}[];
+    expect(listed.find(j => j.id === jobId)!.actions.renew).toBe(false);
   });
 
   it('renewing a live job adds the days to what is left; only the newest renewal checkout counts', async () => {
@@ -407,5 +411,30 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     expect(shown.status).toBe(200);
     expect(shown.headers.get('cache-control')).toMatch(/^public/);
     expect((await new Browser(app).get('/site-api/companies/BAD..slug/logo')).status).toBe(404);
+  });
+
+  it('the company screen says whether logos go to file storage (they do when the site has a Site Key)', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true}, update: {freePostingEnabled: true}});
+    forgetBoardSettings();
+    await post(a);
+    const res = await a.get('/site-api/employer/company');
+    expect(res.status).toBe(200);
+    expect(res.json.logoUploads).toBe(true);
+    // And with storage, the local fallback refuses: the portal must never pick it then.
+    expect((await a.post('/site-api/employer/company/logo/local', {contentType: 'image/png', data: 'AAAA'})).status).toBe(409);
+  });
+
+  it("an employer's edit keeps the currency the salary was entered in, after the board's currency changed", async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'auto', currency: 'EUR'}, update: {freePostingEnabled: true, moderationMode: 'auto', currency: 'EUR'}});
+    forgetBoardSettings();
+    const jobId = (await post(a, {job: jobValues({salaryMin: '50000', salaryMax: '60000', salaryPeriod: 'YEAR'})})).json.jobId as number;
+    expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {salaryCurrency: true}})).salaryCurrency).toBe('EUR');
+    await db.boardSettings.update({where: {id: 1}, data: {currency: 'USD'}});
+    forgetBoardSettings();
+    const detail = await a.get(`/site-api/employer/jobs/${jobId}`);
+    expect(detail.json.job).toMatchObject({salaryCurrency: 'EUR'});
+    const put = await a.request('PUT', `/site-api/employer/jobs/${jobId}`, {job: jobValues({title: 'Senior Backend Engineer', salaryMin: '55000', salaryMax: '65000', salaryPeriod: 'YEAR'})});
+    expect(put.status).toBe(200);
+    expect((await db.job.findUniqueOrThrow({where: {id: jobId}, select: {salaryCurrency: true}})).salaryCurrency).toBe('EUR');
   });
 });
