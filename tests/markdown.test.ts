@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 
 import {htmlToMarkdown, renderMarkdown} from '../src/lib/markdown';
+import {htmlToText} from '../src/lib/rich-text';
 
 /** The board's simple Markdown: shaped here, made safe by sanitizeRichText (security boundary). */
 describe('renderMarkdown', () => {
@@ -36,6 +37,13 @@ describe('renderMarkdown', () => {
     renderMarkdown('# a' + ' '.repeat(10_000) + 'b');
     renderMarkdown('# a' + '\t'.repeat(10_000) + 'b' + '#'.repeat(5_000) + ' x');
     expect(Date.now() - start).toBeLessThan(200);
+  });
+
+  it('htmlToText keeps one break between blocks and stays fast on long space runs', () => {
+    expect(htmlToText('<p>One  \u00a0two</p>\n \n<p> three</p><ul><li>a</li><li>b</li></ul>')).toBe('One two\nthree\na\nb');
+    const start = Date.now();
+    htmlToText('a' + '\u00a0'.repeat(50_000) + 'b');
+    expect(Date.now() - start).toBeLessThan(100);
   });
 
   it('round-trips through htmlToMarkdown', () => {
