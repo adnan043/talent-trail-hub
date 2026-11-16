@@ -64,6 +64,8 @@ function describe(event: AuditRow): Line {
       return {who: null, what: `A password reset was asked for ${user}`, icon: 'lock'};
     case 'two_factor_enabled':
       return {who, what: 'turned on two-step sign-in', icon: 'key', tone: 'brand'};
+    case 'other_sessions_ended':
+      return {who, what: 'signed out their other devices by turning on two-step sign-in', icon: 'key'};
     case 'two_factor_disabled':
       return {who, what: 'turned off two-step sign-in', icon: 'key', tone: 'warning'};
     case 'owner_link_two_factor':

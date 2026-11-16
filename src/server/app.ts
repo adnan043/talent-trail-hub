@@ -8,6 +8,7 @@ import {csrf, previewCookies, problem, sameOrigin} from '../platform/guards';
 import {syncPermissions} from '../platform/permission-sync';
 import {authEmailGuard} from './auth-email-guard';
 import {authSettings} from './auth-settings';
+import {signOutOthersOnTwoFactor} from './two-factor-signout';
 import {checkoutRoutes, membershipRoutes} from './routes/checkout';
 import {abilitiesFor, CATALOGUE} from './permissions';
 import {applicationRoutes} from './routes/applications';
@@ -95,6 +96,8 @@ export const app = new Hono()
 
   // Before the auth routes: an `email` shaped like one of the kit's internal limit keys is refused.
   .use('/auth/*', authEmailGuard)
+  // Turning on two-step sign-in signs out every other device (after the kit answers).
+  .use('/auth/two-factor/enable', signOutOthersOnTwoFactor)
   .route('/auth', authRoutes(authSettings))
   .route('/admin', adminRoutes)
   .route('/site', siteRoutes)

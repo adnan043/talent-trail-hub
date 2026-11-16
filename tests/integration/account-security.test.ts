@@ -38,6 +38,25 @@ describe.skipIf(!DATABASE_URL)('account security (integration, real Postgres)', 
       return {browser, secret, recoveryCodes};
     }
 
+    it('turning it on signs out every other device; this browser stays signed in', async () => {
+      const here = await signedIn(app, 'cat@example.test');
+      const other = new Browser(app, '198.51.100.40');
+      expect((await other.post('/site-api/auth/login', {email: 'cat@example.test', password: PASSWORD})).status).toBe(200);
+      expect((await other.get('/site-api/me')).json.viewer).toMatchObject({state: 'user'});
+      // A failed code changes nothing.
+      const setup = await here.post('/site-api/auth/two-factor/setup', {password: PASSWORD});
+      expect((await here.post('/site-api/auth/two-factor/enable', {code: '000000'})).status).toBe(422);
+      expect((await other.get('/site-api/me')).json.viewer).toMatchObject({state: 'user'});
+
+      expect((await here.post('/site-api/auth/two-factor/enable', {code: await code(setup.json.secret as string)})).status).toBe(200);
+      expect((await here.get('/site-api/me')).json.viewer).toMatchObject({state: 'user'});
+      expect((await other.get('/site-api/me')).json.viewer).not.toMatchObject({state: 'user'});
+      // Its refresh token is revoked too: it can't come back without signing in (and a code) again.
+      expect((await other.post('/site-api/auth/refresh')).status).not.toBe(200);
+      expect((await here.get('/site-api/auth/sessions')).json.sessions).toHaveLength(1);
+      expect(await db.auditEvent.count({where: {action: 'other_sessions_ended'}})).toBe(1);
+    });
+
     it('setup needs the password, and then signing in needs a code', async () => {
       const browser = await signedIn(app, 'ann@example.test');
       expect((await browser.post('/site-api/auth/two-factor/setup', {password: 'wrong one entirely'})).status).toBe(422);
