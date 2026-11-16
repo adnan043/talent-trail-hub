@@ -338,13 +338,23 @@ export function Menu({
       const rect = button.current!.getBoundingClientRect();
       const menu = list.current!;
       if (field) menu.style.minWidth = `${rect.width}px`;
-      const below = window.innerHeight - rect.bottom > menu.offsetHeight + 12;
+      // A long list (countries) scrolls inside itself: it fits the larger side of the trigger.
+      menu.style.maxHeight = '';
+      const natural = menu.offsetHeight;
+      const roomBelow = window.innerHeight - rect.bottom - 18;
+      const roomAbove = rect.top - 18;
+      const below = roomBelow >= natural || roomBelow >= roomAbove;
+      menu.style.maxHeight = `${Math.max(120, below ? roomBelow : roomAbove)}px`;
       menu.style.top = `${below ? rect.bottom + 6 : rect.top - menu.offsetHeight - 6}px`;
       const left = align === 'end' ? rect.right - menu.offsetWidth : rect.left;
       menu.style.left = `${Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8))}px`;
     };
     place();
-    focusItem(0);
+    // Start on the picked option (a picker), scrolled into view; otherwise the first item.
+    const nodes = [...list.current.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)')];
+    const picked = nodes.findIndex(node => node.getAttribute('aria-checked') === 'true');
+    focusItem(Math.max(0, picked));
+    if (picked > 0) nodes[picked]!.scrollIntoView({block: 'nearest'});
     const outside = (event: PointerEvent) => {
       if (!list.current?.contains(event.target as Node) && !button.current?.contains(event.target as Node)) close(false);
     };

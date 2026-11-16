@@ -22,8 +22,10 @@ export function countryName(code: string): string {
   }
 }
 
-/** Retired or non-country region codes that Intl still names. */
-const NOT_COUNTRIES = new Set(['BU', 'CS', 'DD', 'EU', 'EZ', 'FX', 'NT', 'QO', 'SU', 'TP', 'UK', 'UN', 'YU', 'ZR', 'ZZ']);
+/** Retired or non-country region codes that Intl still names (a retired one would list its country twice). */
+const NOT_COUNTRIES = new Set([
+  'AN', 'BU', 'CS', 'DD', 'DY', 'EU', 'EZ', 'FX', 'HV', 'NH', 'NT', 'QO', 'RH', 'SU', 'TP', 'UK', 'UN', 'VD', 'YD', 'YU', 'ZR', 'ZZ',
+]);
 let countries: [code: string, name: string][] | undefined;
 
 function allCountries(): [string, string][] {
