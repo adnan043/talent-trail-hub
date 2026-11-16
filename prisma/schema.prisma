@@ -575,6 +575,8 @@ model Job {
   /// The hourly featured sweep (any status).
   @@index([isFeatured, featuredUntil])
   @@index([categoryId, status, publishedAt(sort: Desc), id(sort: Desc)])
+  /// A job page's "similar jobs": same category, featured first, then newest.
+  @@index([categoryId, status, isFeatured(sort: Desc), publishedAt(sort: Desc), id(sort: Desc)])
   /// Admin jobs list and moderation queue (status, newest id first).
   @@index([status, id])
   @@index([companyId, status, id])

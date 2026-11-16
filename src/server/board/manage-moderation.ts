@@ -10,7 +10,8 @@ import {PERMISSIONS} from '../permissions';
 import {sendBoardEmail} from './email';
 import {publishJob} from './lifecycle';
 import {actorOf, asObject, effectiveStatus, employerEmail, idParam, invalid, notFound, originOf, refreshActiveJobCount, str} from './manage-shared';
-import {getBoardSettings} from './settings';
+import {after} from './after';
+import {cachedBoardSettings} from './brand';
 
 /**
  * F20 moderation: the queue (oldest first), one job's review page, approve and reject. The admin
@@ -233,24 +234,27 @@ export const manageModerationRoutes = new Hono()
       return c.json(body);
     }
 
-    const [to, settings, fresh] = await Promise.all([
-      employerEmail(db, job.company.ownerUserId),
-      getBoardSettings(db),
-      db.job.findUnique({where: {id}, select: {expiresAt: true}}),
-    ]);
-    if (to) {
+    // The employer's email after the answer: the moderator never waits for the mail service.
+    const requestUrl = c.req.url;
+    after(c, `approved email for job ${id}`, async () => {
+      const [to, settings, fresh] = await Promise.all([
+        employerEmail(db, job.company.ownerUserId),
+        cachedBoardSettings(db),
+        db.job.findUnique({where: {id}, select: {expiresAt: true}}),
+      ]);
+      if (!to) return;
       const expires = fresh?.expiresAt;
-      await sendBoardEmail(db, c.req.url, {
+      await sendBoardEmail(db, requestUrl, {
         template: 'job-approved',
         to,
         vars: {
           boardName: settings.name,
           jobTitle: job.title,
-          jobUrl: `${originOf(c.req.url)}/jobs/${job.slug}/`,
+          jobUrl: `${originOf(requestUrl)}/jobs/${job.slug}/`,
           expiresOn: expires ? expires.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'}) : '',
         },
       });
-    }
+    });
     const body: ModerationResult = {status: 'published', message: `${job.title} is live.`, refundNote: null};
     return c.json(body);
   })
@@ -273,9 +277,11 @@ export const manageModerationRoutes = new Hono()
     // An edit of a live job taken down by the rejection: the directory count follows.
     await refreshActiveJobCount(db, job.company.id);
 
-    const [to, settings] = await Promise.all([employerEmail(db, job.company.ownerUserId), getBoardSettings(db)]);
-    if (to) {
-      await sendBoardEmail(db, c.req.url, {
+    const requestUrl = c.req.url;
+    after(c, `rejected email for job ${id}`, async () => {
+      const [to, settings] = await Promise.all([employerEmail(db, job.company.ownerUserId), cachedBoardSettings(db)]);
+      if (!to) return;
+      await sendBoardEmail(db, requestUrl, {
         template: 'job-rejected',
         to,
         vars: {
@@ -283,10 +289,10 @@ export const manageModerationRoutes = new Hono()
           jobTitle: job.title,
           rejectionReason: reason,
           refundMessage: '',
-          dashboardUrl: `${originOf(c.req.url)}/dashboard/employer/jobs`,
+          dashboardUrl: `${originOf(requestUrl)}/dashboard/employer/jobs`,
         },
       });
-    }
+    });
     const paid = order ? money(order.amountCents, order.currency) : null;
     const body: ModerationResult = {
       status: 'rejected',

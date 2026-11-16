@@ -84,10 +84,9 @@ export const employerJobRoutes = new Hono<Env>()
     if (!company || !job) return c.json(NOT_FOUND, 404);
     const status = effectiveStatus(job);
     if (!isEditable(status)) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
-    const checked = await validateJob(db, c.req.valid('json').job);
+    // The settings from the database, never the Site Cache: they decide whether the edit skips review.
+    const [checked, settings] = await Promise.all([validateJob(db, c.req.valid('json').job), getBoardSettings(db)]);
     if ('fields' in checked) return c.json({...problem('invalid_input', Object.values(checked.fields)[0]!), fields: checked.fields}, 422);
-    // From the database, never the Site Cache: it decides whether the edit skips review.
-    const settings = await getBoardSettings(db);
     // The slug never changes, so links keep working. EVERY content edit needs a review before
     // the job is (again) live: `needs_review` (cleared by an approval, or here when the board
     // publishes without review). A live job leaves the board for review now; one that is down
@@ -100,8 +99,9 @@ export const employerJobRoutes = new Hono<Env>()
     // When the board reviews, the new content and `pending_review` land in the same write.
     const reReview = await db.$transaction(async tx => {
       const t = tx as unknown as PrismaClient;
-      await t.$queryRaw`SELECT "id" FROM "jobs" WHERE "id" = ${job.id} FOR UPDATE`;
-      const row = await t.job.findUniqueOrThrow({where: {id: job.id}, select: {status: true, expiresAt: true}});
+      const [row] = await t.$queryRaw<{status: string; expiresAt: Date | null}[]>`
+        SELECT "status", "expires_at" AS "expiresAt" FROM "jobs" WHERE "id" = ${job.id} FOR UPDATE`;
+      if (!row) return null;
       const current = effectiveStatus(row);
       if (!isEditable(current)) return null;
       const content = {...base, needsReview: !(target === 'published' && current === 'published')};
@@ -113,13 +113,19 @@ export const employerJobRoutes = new Hono<Env>()
     if (reReview === null) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
     // It left the board (re-review) or its live text changed: its company's count and the public
     // lists now; the reviewers' email after the answer (the employer never waits for the mail service).
-    if (reReview) await refreshActiveJobCount(db, company.id);
-    if (status === 'published') await forgetPublicLists();
+    // The count first, then the lists (a list refilled in between would hold the old count);
+    // the job's fresh copy for the answer alongside.
+    const [saved] = await Promise.all([
+      findOwnJob(db, company.id, job.id),
+      (async () => {
+        if (reReview) await refreshActiveJobCount(db, company.id);
+        if (status === 'published') await forgetPublicLists();
+      })(),
+    ]);
     if (reReview) {
       const requestUrl = c.req.url;
       after(c, `review alert for job ${job.id}`, () => notifyReviewers(db, requestUrl, job.id));
     }
-    const saved = await findOwnJob(db, company.id, job.id);
     return c.json({job: toJobDetail(saved!), reReview});
   })
 
