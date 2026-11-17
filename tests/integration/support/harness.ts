@@ -169,6 +169,11 @@ export async function resetDatabase() {
 
 type App = Pick<Hono, 'request'>;
 
+/** A request body sent byte for byte, not as JSON (`browser.request('POST', path, new RawBody('{oops'))`). */
+export class RawBody {
+  constructor(readonly text: string) {}
+}
+
 /**
  * One browser: a cookie jar, an IP, a user agent. `gateway: 'preview'` is a
  * browser behind the editor Preview's gateway, which drops `Cookie` and
@@ -199,7 +204,8 @@ export class Browser {
       if (!this.cookie('site_csrf')) await this.request('GET', '/site-api/auth/csrf');
       if (!('x-csrf-token' in extra)) headers.set('x-csrf-token', this.cookie('site_csrf') ?? '');
     }
-    if (body !== undefined) headers.set('content-type', 'application/json');
+    // A test may send its own type (`extra`); `RawBody` is sent as it is (a malformed body).
+    if (body !== undefined && !('content-type' in extra)) headers.set('content-type', 'application/json');
     const jar = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (this.jar.size) headers.set(this.gateway === 'preview' ? PREVIEW_COOKIE_HEADER : 'cookie', jar);
 
@@ -208,7 +214,7 @@ export class Browser {
       const ctx = {waitUntil: (p: Promise<unknown>) => void pending.push(p), passThroughOnException() {}, props: {}};
       const response = await this.app.request(
         `${ORIGIN}${path}`,
-        {method, headers, body: body === undefined ? undefined : JSON.stringify(body)},
+        {method, headers, body: body === undefined ? undefined : body instanceof RawBody ? body.text : JSON.stringify(body)},
         {},
         ctx as never
       );
