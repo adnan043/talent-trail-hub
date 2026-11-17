@@ -1,28 +1,28 @@
 -- Demo data for the LOCAL / Preview database: makes the board look like a live site.
 -- Run: npx prisma db execute --file prisma/seed-demo.sql   (after `npx prisma db seed`).
 -- Idempotent (skips rows that exist). Every board row has is_seed = true. Dates are relative to
--- now(). Fake people use example.com; the two demo accounts use @talenttrail.test.
---   admin@talenttrail.test     role admin    (the real owner account is made by the platform)
---   employer@talenttrail.test  role member, owns the company "Harbor & Pine"
+-- now(). Fake people use example.com; the two demo accounts use @gmail.com.
+--   admin@gmail.com    role admin    (the real owner account is made by the platform)
+--   company@gmail.com  role member, owns the company "Harbor & Pine"
 --   Both password: Talent#Trail2026
 BEGIN;
 
 INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
-VALUES ('admin@talenttrail.test', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Board Admin', 'active', now() - interval '40 days', now() - interval '0 days', now())
+VALUES ('admin@gmail.com', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Board Admin', 'active', now() - interval '40 days', now() - interval '0 days', now())
 ON CONFLICT ("email") DO NOTHING;
 INSERT INTO "user_roles" ("user_id","role_id")
-SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'admin@talenttrail.test' AND r."slug" = 'admin'
+SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'admin@gmail.com' AND r."slug" = 'admin'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
-VALUES ('employer@talenttrail.test', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Elena Fischer', 'active', now() - interval '40 days', now() - interval '1 days', now())
+VALUES ('company@gmail.com', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Elena Fischer', 'active', now() - interval '40 days', now() - interval '1 days', now())
 ON CONFLICT ("email") DO NOTHING;
 INSERT INTO "user_roles" ("user_id","role_id")
-SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'employer@talenttrail.test' AND r."slug" = 'member'
+SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'company@gmail.com' AND r."slug" = 'member'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO "companies" ("name","slug","website","location","about_html","source","owner_user_id","is_trusted","is_seed","updated_at")
-SELECT 'Harbor & Pine','harbor-pine','https://harborpine.example','Portland, USA','<p>Harbor &amp; Pine is a design-led outdoor gear brand. We make packs and apparel built to last and ship worldwide.</p>','employer',(SELECT "id" FROM "users" WHERE "email"='employer@talenttrail.test'),true,true,now()
+SELECT 'Harbor & Pine','harbor-pine','https://harborpine.example','Portland, USA','<p>Harbor &amp; Pine is a design-led outdoor gear brand. We make packs and apparel built to last and ship worldwide.</p>','employer',(SELECT "id" FROM "users" WHERE "email"='company@gmail.com'),true,true,now()
 WHERE NOT EXISTS (SELECT 1 FROM "companies" c WHERE c."slug"='harbor-pine');
 INSERT INTO "companies" ("name","slug","website","location","about_html","source","owner_user_id","is_trusted","is_seed","updated_at")
 SELECT 'Orbit Health','orbit-health','https://orbithealth.example','Boston, USA','<p>Orbit Health helps hospitals follow up with patients after discharge using simple text-message programs.</p>','admin',NULL,true,true,now()
@@ -554,7 +554,7 @@ WHERE NOT EXISTS (SELECT 1 FROM "applications" a WHERE a."job_id"=j."id" AND a."
 INSERT INTO "listing_orders" ("checkout_id","company_id","user_id","job_id","tier_id","kind","status","price_key","amount_cents","currency","tier_name","duration_days","includes_featured","paid_at","updated_at","created_at")
 SELECT 'pcs_demo_' || j."slug", c."id", u."id", j."id", t."id", 'new', 'paid', t."price_key", t."price_cents", t."currency", t."name", t."duration_days", t."includes_featured", j."published_at", now(), j."published_at"
 FROM "jobs" j JOIN "companies" c ON c."id"=j."company_id" AND c."slug"='harbor-pine'
-JOIN "users" u ON u."email"='employer@talenttrail.test'
+JOIN "users" u ON u."email"='company@gmail.com'
 JOIN "listing_tiers" t ON t."name" = CASE WHEN j."is_featured" THEN 'Featured' ELSE 'Standard' END
 WHERE j."status" IN ('published','expired') AND NOT EXISTS (SELECT 1 FROM "listing_orders" o WHERE o."checkout_id"='pcs_demo_' || j."slug");
 
