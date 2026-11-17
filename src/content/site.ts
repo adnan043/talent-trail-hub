@@ -46,11 +46,20 @@ export const NAV: NavItem[] = [
   {label: 'Pricing', href: '/pricing/', prefetch: false, marketplaceOnly: true},
 ];
 
-/** The signed-in visitor's employer area (header account menu, mobile menu; marketplace only). */
+/**
+ * The signed-in employer's area (header account menu, mobile menu; marketplace only). Hidden from a
+ * job seeker: `data-employer-only`, unhidden by src/lib/account-fill.ts for any other account.
+ */
 export const EMPLOYER_LINKS = [
   {label: 'Your jobs', href: '/dashboard/employer/jobs', icon: 'jobs'},
   {label: 'Company profile', href: '/dashboard/employer/company', icon: 'company'},
   {label: 'Billing', href: '/dashboard/employer/billing', icon: 'billing'},
+] as const;
+
+/** The signed-in job seeker's area (header account menu, mobile menu): `data-applicant-only`. */
+export const APPLICANT_LINKS = [
+  {label: 'My applications', href: '/dashboard/my-applications', icon: 'applications'},
+  {label: 'Your profile', href: '/dashboard/profile', icon: 'profile'},
 ] as const;
 
 /** The header's call to action for employers (marketplace only). */
