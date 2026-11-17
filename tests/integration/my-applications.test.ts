@@ -112,6 +112,19 @@ describe.skipIf(!DATABASE_URL)('my applications (integration, real Postgres)', (
     expect((await dana.get('/site-api/my-applications?q=acme')).json.items).toHaveLength(1);
   });
 
+  it('date filters use the browser\'s days (?tz=): an application at 02:00 in Dhaka is on that Dhaka day', async () => {
+    // 2026-03-10 20:00 UTC is 2026-03-11 02:00 in Dhaka (UTC+6, getTimezoneOffset() = -360).
+    await db.application.update({where: {id: caseyIds[0]!}, data: {createdAt: new Date('2026-03-10T20:00:00Z')}});
+    const ids = async (query: string) => ((await casey.get(`/site-api/my-applications?${query}`)).json.items as {id: number}[]).map(i => i.id);
+    expect(await ids('from=2026-03-11&to=2026-03-11&tz=-360')).toEqual([caseyIds[0]]);
+    expect(await ids('from=2026-03-10&to=2026-03-10&tz=-360')).toEqual([]);
+    // Without tz (or a nonsense one): UTC days, as before.
+    expect(await ids('from=2026-03-10&to=2026-03-10')).toEqual([caseyIds[0]]);
+    expect(await ids('from=2026-03-10&to=2026-03-10&tz=99999')).toEqual([caseyIds[0]]);
+    // West of UTC (New York, +300): 2026-03-10 20:00 UTC is 15:00 on the 10th there.
+    expect(await ids('from=2026-03-10&to=2026-03-10&tz=300')).toEqual([caseyIds[0]]);
+  });
+
   it('refuses a signed-out visitor', async () => {
     const res = await new Browser(app, '198.51.100.40').get('/site-api/my-applications');
     expect(res.status).toBe(401);

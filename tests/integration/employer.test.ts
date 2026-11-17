@@ -209,6 +209,35 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     expect(after.expiresAt).toEqual(before.expiresAt);
   });
 
+  it('a TRUSTED company skips review when every post is reviewed: its posts and edits go live (a blocked one never does)', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'all'}, update: {freePostingEnabled: true, moderationMode: 'all'}});
+    forgetBoardSettings();
+    const first = await post(a);
+    expect(first.json).toMatchObject({status: 'done', jobStatus: 'pending_review'});
+    const own = await db.company.findFirstOrThrow({select: {id: true}});
+    await db.company.update({where: {id: own.id}, data: {isTrusted: true}});
+    const second = await post(a, {job: jobValues({title: 'Frontend Engineer'}), company: undefined});
+    expect(second.json).toMatchObject({status: 'done', jobStatus: 'published'});
+    const edit = await a.request('PUT', `/site-api/employer/jobs/${second.json.jobId}`, {job: jobValues({title: 'Senior Frontend Engineer'})});
+    expect(edit.json.reReview).toBe(false);
+    expect(await db.job.findUniqueOrThrow({where: {id: second.json.jobId as number}, select: {status: true, needsReview: true}})).toEqual({status: 'published', needsReview: false});
+  });
+
+  it('an edit keeps the job\'s category although the admin hid it since; another hidden one is refused', async () => {
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: true, moderationMode: 'auto'}, update: {freePostingEnabled: true, moderationMode: 'auto'}});
+    forgetBoardSettings();
+    const jobId = (await post(a)).json.jobId as number;
+    await db.category.update({where: {id: categoryId}, data: {isActive: false}});
+    const detail = await a.get(`/site-api/employer/jobs/${jobId}`);
+    expect((detail.json.job as {category: unknown}).category).toEqual({id: categoryId, name: 'Engineering'});
+    const res = await a.request('PUT', `/site-api/employer/jobs/${jobId}`, {job: jobValues({title: 'Staff Backend Engineer'})});
+    expect(res.status).toBe(200);
+    const other = await db.category.upsert({where: {slug: 'hidden-x'}, create: {name: 'Hidden', slug: 'hidden-x', isActive: false}, update: {isActive: false}, select: {id: true}});
+    const moved = await a.request('PUT', `/site-api/employer/jobs/${jobId}`, {job: jobValues({categoryId: String(other.id)})});
+    expect(moved.status).toBe(422);
+    await db.category.update({where: {id: categoryId}, data: {isActive: true}});
+  });
+
   it('a full refund marks the order refunded and takes the listing down', async () => {
     await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, moderationMode: 'auto'}, update: {moderationMode: 'auto'}});
     forgetBoardSettings();

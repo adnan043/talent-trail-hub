@@ -1,6 +1,7 @@
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {app} from '../../src/server/app';
+import {forgetBoardSettings} from '../../src/server/board/brand';
 import {sendBoardEmail} from '../../src/server/board/email';
 import {reviewerEmails} from '../../src/server/board/review';
 import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn, userId} from './support/harness';
@@ -64,6 +65,7 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
   });
   beforeEach(async () => {
     await resetDatabase();
+    forgetBoardSettings();
     owner = await ownerSignedIn(app, undefined, '203.0.113.1');
     admin = await signedIn(app, 'admin@example.test', undefined, '203.0.113.2');
     member = await signedIn(app, 'member@example.test', undefined, '203.0.113.3');
@@ -212,8 +214,13 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect(relist.status).toBe(409);
     expect(relist.json.error).toBe('never_published');
     expect((await db.job.findUniqueOrThrow({where: {id: job.id}})).status).toBe('closed');
+    // So All jobs never offers "List again" for it.
+    const listed = (await admin.get('/site-api/manage/jobs')).json.jobs as {id: number; actions: {extend: boolean}}[];
+    expect(listed.find(j => j.id === job.id)!.actions.extend).toBe(false);
     // A job that was live once can be listed again.
     const live = await seedJob('admin', 'closed');
+    const relisted = (await admin.get('/site-api/manage/jobs')).json.jobs as {id: number; actions: {extend: boolean}}[];
+    expect(relisted.find(j => j.id === live.job.id)!.actions.extend).toBe(true);
     expect((await admin.post(`/site-api/manage/jobs/${live.job.id}/extend`, {days: 30})).status).toBe(200);
   });
 
@@ -272,8 +279,15 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
   it('approve and trust: the company is trusted; it can be untrusted again (site:job:moderate)', async () => {
     const {job, company} = await seedJob('paid', 'pending_review');
     await db.job.update({where: {id: job.id}, data: {publishedAt: null, expiresAt: null, needsReview: true}});
-    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string; company: {isTrusted: boolean; isBlocked: boolean}}};
+    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, currency: 'EUR'}, update: {currency: 'EUR'}});
+    forgetBoardSettings();
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {
+      item: {submittedAt: string; company: {isTrusted: boolean; isBlocked: boolean}};
+      history: {spentCents: number; spentCurrency: string};
+    };
     expect(seen.item.company).toMatchObject({isTrusted: false, isBlocked: false});
+    // No paid orders yet: "Spent" is in the board's currency, never a guessed USD.
+    expect(seen.history).toMatchObject({spentCents: 0, spentCurrency: 'EUR'});
     expect((await admin.post(`/site-api/manage/moderation/${job.id}/approve`, {seen: seen.item.submittedAt, trust: true})).status).toBe(200);
     expect((await db.company.findUniqueOrThrow({where: {id: company.id}})).isTrusted).toBe(true);
     expect((await member.post(`/site-api/manage/companies/${company.id}/trust`, {trusted: false})).status).toBe(403);

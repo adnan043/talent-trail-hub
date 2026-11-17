@@ -99,10 +99,11 @@ export const isEmployerJob = (source: string) => (EMPLOYER_SOURCES as readonly s
 export const isFeaturedNow = (job: {isFeatured: boolean; featuredUntil: Date | null}, now: Date) =>
   job.isFeatured && (job.featuredUntil === null || job.featuredUntil > now);
 
-export function actionsFor(status: JobStatus, source: string): AdminJobActions {
+/** `publishedAt`: null for a job that never went live (closed while in review): it is never listed again from here. */
+export function actionsFor(status: JobStatus, source: string, publishedAt: Date | null): AdminJobActions {
   return {
     feature: status === 'published',
-    extend: status === 'published' || status === 'expired' || status === 'closed',
+    extend: status === 'published' || ((status === 'expired' || status === 'closed') && publishedAt !== null),
     close: status === 'published' || status === 'pending_review',
     edit: !isEmployerJob(source),
   };

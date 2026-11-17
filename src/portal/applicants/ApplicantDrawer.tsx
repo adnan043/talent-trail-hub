@@ -69,10 +69,12 @@ const safeLink = (value: string | null) => {
 };
 
 /** One applicant's details: status (instant), contact, resume, cover note, private notes. */
-export function ApplicantDrawer({applicant, onClose, canEdit = true}: {applicant: ApplicantRow | null; onClose: () => void; canEdit?: boolean}) {
+export function ApplicantDrawer({applicant: given, onClose, canEdit = true}: {applicant: ApplicantRow | null; onClose: () => void; canEdit?: boolean}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const status = useApplicantStatus();
+  // The status picked here, also when the row has left the (status-filtered) list it came from.
+  const applicant = given && status.variables?.id === given.id && !status.isError ? {...given, status: status.variables.status} : given;
   const form = useForm({notes: applicant?.notes ?? ''}, {notes: [rules.maxLength(LIMITS.employerNotes)]});
   const saveNotes = useMutation({
     mutationFn: ({id, notes}: {id: number; notes: string}) => updateApplicant(id, {notes}),
@@ -90,6 +92,7 @@ export function ApplicantDrawer({applicant, onClose, canEdit = true}: {applicant
   useEffect(() => {
     if (applicant) form.reset({notes: applicant.notes});
     saveNotes.reset();
+    status.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id]);
 

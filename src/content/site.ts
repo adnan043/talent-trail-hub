@@ -76,12 +76,12 @@ export const HOME = {
 
 export const POST_A_JOB_PAGE = {
   title: 'Post a job',
-  description: 'Post a job on {name}: write your listing, choose how long it runs and reach candidates who are looking now. Live after a quick review.',
+  description: 'Post a job on {name}: write your listing, choose how long it runs and reach candidates who are looking now.',
   lede: 'Reach candidates who are looking now. Write your listing, pick a plan and publish.',
   steps: [
     {title: 'Create your employer account', body: 'Sign up with your email. It is free and takes a minute.'},
     {title: 'Write your listing', body: 'Title, description, location and how candidates apply. Your draft saves as you type.'},
-    {title: 'Pick a plan and publish', body: 'Choose how long it runs. After a quick review your job is live.'},
+    {title: 'Pick a plan and publish', body: 'Choose how long it runs. Your job goes live once it is paid for (and approved, if the board reviews new jobs).'},
   ],
   guestAction: 'Create an account to post',
   userAction: 'Start your listing',

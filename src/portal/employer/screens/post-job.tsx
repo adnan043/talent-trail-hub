@@ -87,6 +87,8 @@ export function PostJob() {
       if (!options.data?.company) {
         void queryClient.invalidateQueries({queryKey: ['employer', 'company']});
         void queryClient.invalidateQueries({queryKey: ['employer', 'options']});
+        // The account is a company account now (`/me`'s kind: the dashboard and the menu).
+        void queryClient.invalidateQueries({queryKey: ['me']});
       }
       if (answer.status === 'choose') {
         setGateways(answer.gateways);

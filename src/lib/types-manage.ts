@@ -85,6 +85,8 @@ export interface ModerationDetail {
     more: boolean;
     paidOrders: number;
     spentCents: number;
+    /** The currency `spentCents` is in. */
+    spentCurrency: string;
     /** The company's 5 most recent other jobs. */
     recent: {id: number; title: string; status: JobStatus; createdAt: string}[];
   };

@@ -10,18 +10,21 @@ import {type BoardSettings, getBoardSettings} from './settings';
 const DAY_MS = 86_400_000;
 
 /**
- * Where a submitted employer job goes: straight live (`auto` mode only; no company skips review), or
- * into the review queue. `first_post` is reserved (Release 2) and treated as `all`.
+ * Where a submitted employer job goes: straight live (`auto` mode, or a company the moderators
+ * TRUSTED), or into the review queue. `first_post` is reserved (Release 2) and treated as `all`.
+ * The trust flag is read from the database with the client given (inside the caller's transaction).
  * `settings`: the settings the caller already holds; without them, read from the database (never
  * the Site Cache: it decides whether a job skips review).
  */
 export async function submissionTarget(
   db: PrismaClient,
-  _companyId: number,
+  companyId: number,
   settings?: Pick<BoardSettings, 'moderationMode'>
 ): Promise<'published' | 'pending_review'> {
   const mode = (settings ?? (await getBoardSettings(db))).moderationMode;
-  return mode === 'auto' ? 'published' : 'pending_review';
+  if (mode === 'auto') return 'published';
+  const company = await db.company.findUnique({where: {id: companyId}, select: {isTrusted: true, isBlocked: true}});
+  return company?.isTrusted && !company.isBlocked ? 'published' : 'pending_review';
 }
 
 /**

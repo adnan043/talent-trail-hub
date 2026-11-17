@@ -1,4 +1,4 @@
-import {useMutation} from '@tanstack/react-query';
+import {useMutation, useQueryClient} from '@tanstack/react-query';
 import {Link} from '@tanstack/react-router';
 import {useState} from 'react';
 
@@ -34,6 +34,12 @@ type Item = PrivacyLookup['items'][number];
 export function Privacy() {
   const confirm = useConfirm();
   const toast = useToast();
+  const queryClient = useQueryClient();
+  // Deleted applications leave the applicants lists (and their jobs' counts): refetch those.
+  const forgetApplicants = () => {
+    void queryClient.invalidateQueries({queryKey: ['applicants']});
+    void queryClient.invalidateQueries({queryKey: ['manage', 'jobs']});
+  };
   const [result, setResult] = useState<{email: string; data: PrivacyLookup} | null>(null);
   const form = useForm({email: ''}, {email: AUTH_RULES.email});
 
@@ -71,6 +77,7 @@ export function Privacy() {
       },
     });
     if (ok) {
+      forgetApplicants();
       toast.success(filesLeft ? 'Deleted. A few files could not be removed yet; the nightly clean-up removes them.' : 'Everything for this email is deleted.');
       again(email);
     }
@@ -85,6 +92,7 @@ export function Privacy() {
       action: () => removeOne.mutateAsync({email: result.email, applicationId: item.id}),
     });
     if (ok) {
+      forgetApplicants();
       toast.success('Application deleted.');
       again(result.email);
     }
