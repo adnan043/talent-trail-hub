@@ -1,7 +1,8 @@
 import type {PrismaClient} from '../../generated/prisma/client';
 import {RESUME_RETENTION_DAYS} from '../../lib/board';
+import {fileInUse} from './applicant-profile';
 import {SiteKeyMissing} from '../../platform/api';
-import {deleteFile} from '../../platform/files';
+import {deleteFile} from '../files';
 import {sendBoardEmail} from './email';
 import {forgetPublicLists} from './public-cache';
 import {getBoardSettings, isSingleCompany} from './settings';
@@ -193,7 +194,9 @@ export async function runPurge(db: PrismaClient, requestUrl: string, now = new D
       });
       for (const app of due) {
         if (Date.now() >= deadline) break;
-        if (!(await removeFile(requestUrl, app.resumeFileId!))) {
+        // A profile CV still used by the profile or a newer application: only this application lets go of it.
+        const shared = await fileInUse(db, app.resumeFileId!, {applicationIds: [app.id]});
+        if (!shared && !(await removeFile(requestUrl, app.resumeFileId!))) {
           failedApps.push(app.id);
           continue;
         }

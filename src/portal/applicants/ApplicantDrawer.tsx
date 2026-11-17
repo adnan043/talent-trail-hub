@@ -1,4 +1,4 @@
-import {useMutation, useQueryClient} from '@tanstack/react-query';
+import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {useEffect} from 'react';
 
 import {APPLICATION_STATUSES, type ApplicationStatus, LIMITS} from '../../lib/board';
@@ -7,11 +7,15 @@ import {when} from '../shared';
 import {Button, DefinitionList, Drawer, ErrorNote, Field, Notice, rules, SegmentedControl, StatusBadge, type Tone, useForm, useToast} from '../ui';
 import {ApiError} from '../api';
 import {patchCachedApplicant, resumeLink, updateApplicant} from './queries';
+import {ProfilePhoto} from './profile-parts';
+import {applicantPhotoUrl, applicantProfileOfQuery} from './profile-queries';
+import {GENDER_LABELS, type Gender} from '../../lib/types-profile';
 
 export const STATUS_TONES: Record<ApplicationStatus, Tone> = {
   new: 'info',
   reviewed: 'neutral',
-  shortlisted: 'success',
+  shortlisted: 'brand',
+  approved: 'success',
   rejected: 'danger',
 };
 
@@ -112,6 +116,7 @@ export function ApplicantDrawer({applicant, onClose, canEdit = true}: {applicant
       }>
       {applicant && (
         <div className="form-stack">
+          <ApplicantProfileCard applicationId={applicant.id} name={applicant.name} />
           <div className="drawer-status">
             <p className="cell-title">Status</p>
             {canEdit ? (
@@ -124,7 +129,7 @@ export function ApplicantDrawer({applicant, onClose, canEdit = true}: {applicant
                     next !== applicant.status && status.mutate({id: applicant.id, status: next, previous: applicant.status})
                   }
                 />
-                <p className="field-hint">Shortlisted and rejected candidates get one email about it. Notes are never sent.</p>
+                <p className="field-hint">Shortlisted, approved and rejected candidates get one email about it. Notes are never sent.</p>
               </>
             ) : (
               <StatusBadge tone={STATUS_TONES[applicant.status]}>{APPLICATION_STATUS_LABELS[applicant.status]}</StatusBadge>
@@ -172,5 +177,37 @@ export function ApplicantDrawer({applicant, onClose, canEdit = true}: {applicant
         </div>
       )}
     </Drawer>
+  );
+}
+
+/**
+ * The candidate's job seeker profile beside the application: photo, career title, experience,
+ * education, skills. Applications sent without an account (before accounts were needed) have none.
+ */
+function ApplicantProfileCard({applicationId, name}: {applicationId: number; name: string}) {
+  const profile = useQuery(applicantProfileOfQuery(applicationId));
+  const p = profile.data?.profile;
+  if (profile.isPending || !p) return null;
+  const items = [
+    p.experienceYears !== null && {label: 'Experience', value: `${p.experienceYears} ${p.experienceYears === 1 ? 'year' : 'years'}`},
+    (p.degree || p.institute) && {label: 'Education', value: [p.degree, p.institute, p.passingYear].filter(Boolean).join(' · ')},
+    p.skills && {label: 'Skills', value: p.skills},
+    p.expectedSalary && {label: 'Expected salary', value: p.expectedSalary},
+    p.presentAddress && {label: 'Address', value: p.presentAddress},
+    p.dateOfBirth && {label: 'Date of birth', value: new Intl.DateTimeFormat('en-GB', {dateStyle: 'long', timeZone: 'UTC'}).format(new Date(p.dateOfBirth))},
+    p.gender && p.gender in GENDER_LABELS && {label: 'Gender', value: GENDER_LABELS[p.gender as Gender]},
+  ].filter(Boolean) as {label: string; value: string}[];
+  return (
+    <div className="applicant-profile-card">
+      <div className="applicant-profile-head">
+        <ProfilePhoto src={p.hasPhoto ? applicantPhotoUrl(applicationId) : null} name={name} size="lg" />
+        <div>
+          <p className="cell-title">{name}</p>
+          {p.headline && <p className="muted">{p.headline}</p>}
+        </div>
+      </div>
+      {p.careerSummary && <p className="applicant-profile-summary">{p.careerSummary}</p>}
+      {items.length > 0 && <DefinitionList items={items} />}
+    </div>
   );
 }

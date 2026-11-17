@@ -24,7 +24,6 @@ import '../styles/board.css';
 import {ClientRouter} from 'astro:transitions';
 
 import BrandMark from '../components/BrandMark.astro';
-import ThemeMenu from '../components/board/ThemeMenu.astro';
 import AccountMenu from '../components/board/AccountMenu.astro';
 import MobileMenu from '../components/board/MobileMenu.astro';
 import {NAV, POST_A_JOB, SITE, withName} from '../content/site';
@@ -32,7 +31,6 @@ import type {Site, Viewer} from '../lib/types';
 import type {PublicBoard} from '../lib/types-public';
 import {absoluteUrl, type JsonLd, jsonLdText, siteJsonLd} from '../lib/seo';
 import {config} from '../platform/config';
-import {THEME_BOOT, THEME_BOOT_HASH} from '../lib/theme-boot';
 import {createHash} from 'node:crypto';
 import {BRAND_CSS_HREF} from '../lib/brand-style';
 import {brandCss} from '../server/board/brand';
@@ -103,8 +101,6 @@ const {
   noindexFollow = false,
 } = Astro.props;
 const single = board?.singleCompany ?? false;
-// The theme-before-paint script's hash joins this page's CSP (src/lib/theme-boot.ts).
-Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
 // The board's brand, inline when this page has the settings (src/lib/brand-style.ts): the same CSS as
 // `/site-api/board/brand.css` (no sidebar on the website), its hash in this page's CSP.
 const brandStyle = board
@@ -143,7 +139,8 @@ const structured = indexable
 ---
 
 <!doctype html>
-<html lang={SITE.lang}>
+{/* Light only: the site has no dark theme choice (the dark tokens never apply). */}
+<html lang={SITE.lang} data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -169,9 +166,7 @@ const structured = indexable
     <meta name="twitter:title" content={title ?? name} />
     <meta name="twitter:description" content={description} />
     {socialImage && <meta name="twitter:image" content={socialImage} />}
-    <meta name="color-scheme" content="light dark" />
-    {/* The saved theme before first paint: a fixed string, hashed into the CSP (no data in it). */}
-    <script is:inline set:html={THEME_BOOT} />
+    <meta name="color-scheme" content="light" />
     {preloadFont && <link rel="preload" href={fontLatin} as="font" type="font/woff2" crossorigin="anonymous" />}
     {/* The board's brand (F30): colours, font, single-company mode. Inline on rendered board pages (its
         hash is in the CSP: no style ATTRIBUTES anywhere); a stylesheet on prerendered pages. */}
@@ -217,7 +212,6 @@ const structured = indexable
           ))}
         </nav>
         <div class="site-header-actions">
-          <ThemeMenu />
           {/* One slot as wide signed in as signed out (global.css `.account-slot`): no shift when a
               prerendered page learns the visitor. */}
           <div class="account-slot">

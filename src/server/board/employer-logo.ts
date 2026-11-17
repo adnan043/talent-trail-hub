@@ -40,7 +40,7 @@ export const POSTS_PER_HOUR = 20;
  * Counts this attempt of `kind` by this user; false when they already made `limit` in the last
  * hour (`board_attempts`, keyed hash of the user id; swept daily).
  */
-export async function userAttemptAllowed(db: PrismaClient, kind: 'logo' | 'post', userId: number, limit: number): Promise<boolean> {
+export async function userAttemptAllowed(db: PrismaClient, kind: 'logo' | 'post' | 'profile-file', userId: number, limit: number): Promise<boolean> {
   const ipHash = await keyed(`user:${userId}`);
   const since = new Date(Date.now() - 3_600_000);
   // Record FIRST, then look: parallel bursts all see each other. Bounded read on the

@@ -8,13 +8,15 @@ import {SiteKeyMissing} from '../../platform/api';
 import {config} from '../../platform/config';
 import {problem, requireAuth, requirePermission, withDb, withViewer} from '../../platform/guards';
 import {PERMISSIONS} from '../permissions';
-import {actorOf, asObject, deleteStoredFiles, handFilesToPurge, idParam, invalid} from './manage-shared';
+import {actorOf, asObject, deleteStoredFiles, handFilesToPurge, idParam, invalid, queueFilesForPurge} from './manage-shared';
 import {runPurge} from './tasks';
 
 /**
  * F36 privacy tool: look up an email (POSTed, never in a URL), see what the board keeps for it,
  * delete all of it or one application. Applications with their resume files and resume upload
- * rows, and the email log's rows to that address. Jobs, companies, users and orders stay.
+ * rows, the email log's rows to that address, and the job seeker profile of the account with that
+ * address (its details, photo and CV; the account itself stays, as a plain account that can set up
+ * a profile again). Jobs, companies, users and orders stay.
  * The audit log never holds the address: a salted hash (HMAC with the site's secret) lets a later
  * request be matched to this one.
  */
@@ -44,8 +46,8 @@ async function deleteApplications(db: PrismaClient, ids: number[]): Promise<{fil
   if (!ids.length) return {files: [], count: 0};
   return db.$transaction(async tx => {
     const apps = await tx.application.findMany({where: {id: {in: ids}}, select: {id: true, jobId: true, resumeFileId: true}});
-    const files = apps.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : []));
-    await handFilesToPurge(tx as unknown as PrismaClient, apps.map(a => a.id), files);
+    // Only the files nothing else uses (a profile CV stays while the profile has it).
+    const files = await handFilesToPurge(tx as unknown as PrismaClient, apps.map(a => a.id), apps.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : [])));
     const {count} = await tx.application.deleteMany({where: {id: {in: apps.map(a => a.id)}}});
     const perJob = new Map<number, number>();
     for (const a of apps) perJob.set(a.jobId, (perJob.get(a.jobId) ?? 0) + 1);
@@ -69,13 +71,19 @@ async function deleteFiles(db: PrismaClient, requestUrl: string, fileIds: string
   return left;
 }
 
+/** The job seeker profile of the account with this (normalized) address, if any. */
+async function profileOf(db: PrismaClient, email: string) {
+  const user = await db.user.findUnique({where: {email}, select: {id: true}});
+  return user ? db.applicantProfile.findUnique({where: {userId: user.id}, select: {userId: true, photoFileId: true, resumeFileId: true}}) : null;
+}
+
 const guard = [withViewer, requireAuth, requirePermission(PERMISSIONS.PRIVACY_MANAGE), withDb] as const;
 
 export const managePrivacyRoutes = new Hono()
   .post('/lookup', emailBody, ...guard, async c => {
     const {email} = c.req.valid('json');
     const db = c.var.db;
-    const [rows, logs] = await Promise.all([
+    const [rows, logs, profile] = await Promise.all([
       db.application.findMany({
         where: {email},
         select: {id: true, createdAt: true, resumeFileId: true, job: {select: {title: true, company: {select: {name: true}}}}},
@@ -83,6 +91,7 @@ export const managePrivacyRoutes = new Hono()
         take: ITEMS + 1,
       }),
       db.emailLog.findMany({where: {to: email}, select: {id: true}, orderBy: {id: 'desc'}, take: ITEMS + 1}),
+      profileOf(db, email),
     ]);
     const items = rows.slice(0, ITEMS).map(a => ({
       id: a.id,
@@ -95,6 +104,7 @@ export const managePrivacyRoutes = new Hono()
       applications: items.length,
       resumeFiles: items.filter(i => i.hasResume).length,
       emailLogs: Math.min(logs.length, ITEMS),
+      profile: profile !== null,
       items,
       more: rows.length > ITEMS || logs.length > ITEMS,
     };
@@ -111,7 +121,7 @@ export const managePrivacyRoutes = new Hono()
   .post('/delete', emailBody, ...guard, async c => {
     const {email} = c.req.valid('json');
     const db = c.var.db;
-    const result: PrivacyDeleted = {applications: 0, resumeFiles: 0, emailLogs: 0};
+    const result: PrivacyDeleted = {applications: 0, resumeFiles: 0, emailLogs: 0, profiles: 0};
     const files: string[] = [];
     // In batches, so a long history never builds one huge statement; bounded in time (a person
     // with even more rows is finished by running it again: the lookup shows what is left).
@@ -124,12 +134,28 @@ export const managePrivacyRoutes = new Hono()
       if (batch.length < DELETE_BATCH) break;
     }
     result.emailLogs = (await db.emailLog.deleteMany({where: {to: email}})).count;
+    // The job seeker profile, after the applications (so its CV is no longer shared by them).
+    const profile = await profileOf(db, email);
+    if (profile) {
+      const own = await db.$transaction(async tx => {
+        const t = tx as unknown as PrismaClient;
+        const {count} = await t.applicantProfile.deleteMany({where: {userId: profile.userId}});
+        if (!count) return [];
+        result.profiles = count;
+        // The photo always; the CV unless an application still points at it (a later one, say).
+        const cv = profile.resumeFileId && !(await t.application.findFirst({where: {resumeFileId: profile.resumeFileId}, select: {id: true}})) ? [profile.resumeFileId] : [];
+        const gone = [...(profile.photoFileId ? [profile.photoFileId] : []), ...cv];
+        await queueFilesForPurge(t, gone);
+        return gone;
+      });
+      files.push(...own);
+    }
     result.resumeFiles = files.length;
     await audit(db, {
       ...(await actorOf(c)),
       action: 'privacy_email_deleted',
       target: ['email', await emailAuditHash(email)],
-      meta: {applications: result.applications, resumeFiles: result.resumeFiles, emailLogs: result.emailLogs},
+      meta: {applications: result.applications, resumeFiles: result.resumeFiles, emailLogs: result.emailLogs, profiles: result.profiles},
     });
     const filesLeft = await deleteFiles(db, c.req.url, files);
     return c.json({deleted: result, filesLeft});

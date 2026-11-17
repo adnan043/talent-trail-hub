@@ -81,10 +81,18 @@ export async function downloadCsv(path: string, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/** `/dashboard/my-applications`: the signed-in candidate's own applications, newest first. */
-export const myApplicationsQuery = infiniteQueryOptions({
-  queryKey: ['my-applications'],
-  initialPageParam: '',
-  queryFn: ({pageParam}) => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: pageParam}})),
-  getNextPageParam: last => (last.nextBefore ? String(last.nextBefore) : undefined),
-});
+/** The "Applied jobs" filters: status, a keyword (job or company), applied from / to (YYYY-MM-DD). */
+export type MyApplicationsFilter = {status: ApplicationStatus | ''; q: string; from: string; to: string};
+export const NO_MY_FILTER: MyApplicationsFilter = {status: '', q: '', from: '', to: ''};
+
+/** `/dashboard/my-applications`: the signed-in candidate's own applications, newest first, filtered. */
+export const myApplicationsFilteredQuery = (filter: MyApplicationsFilter) =>
+  infiniteQueryOptions({
+    queryKey: ['my-applications', filter],
+    initialPageParam: '',
+    queryFn: ({pageParam}) => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: pageParam, ...filter}})),
+    getNextPageParam: last => (last.nextBefore ? String(last.nextBefore) : undefined),
+  });
+
+/** All of them (the dashboard's tiles and latest list). */
+export const myApplicationsQuery = myApplicationsFilteredQuery(NO_MY_FILTER);

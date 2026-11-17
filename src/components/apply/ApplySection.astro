@@ -1,13 +1,14 @@
 ---
 /**
- * F4 apply, on the job page (`<ApplySection job={…} />`). No account needed.
- * - `onsite`: the form (name, email, resume, consent; phone, profile link, cover note optional),
- *   posting to `/site-api/applications/*` from ./apply-form.ts. A hidden honeypot field catches bots.
+ * F4 apply, on the job page (`<ApplySection job={…} />`). Applying needs a job seeker account.
+ * - `onsite`: the browser asks `/site-api/applications/jobs/:slug/can-apply` and shows ONE step:
+ *   sign in, set up the profile, finish it (photo, CV), or the one-click form (cover note,
+ *   consent) made from the profile (./apply-form.ts).
  * - `url` / `email`: a button that opens the target; the click is counted.
  * Works on SSR and client-navigated pages (the script runs on every `astro:page-load`).
  */
 import {DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
-import {type ApplyJob, RESUME_ACCEPT} from '../../lib/types-apply';
+import type {ApplyJob} from '../../lib/types-apply';
 import '../../styles/board-pages.css';
 
 interface Props {
@@ -36,32 +37,42 @@ const id = `apply-${job.id}`;
     !job.open ? (
       <p class="notice">This job is no longer taking applications.</p>
     ) : job.applyMethod === 'onsite' ? (
-      <p class="notice" data-apply-blocked hidden></p>
-      <form id={`${id}-form`} class="form-card apply-form" novalidate data-apply-form>
-        <p class="apply-lead">No account needed. {job.companyName} will get your details and resume.</p>
-        <div class="form-grid">
-          <div class="field">
-            <label for={`${id}-name`}>Full name</label>
-            <input id={`${id}-name`} name="name" type="text" autocomplete="name" maxlength={LIMITS.applicantName} placeholder="Your full name" />
+      <div class="apply-onsite" data-apply-onsite>
+        {/* What shows depends on the visitor (filled in the browser from `can-apply`, never in this HTML). */}
+        <p class="muted" data-apply-loading>Checking your account…</p>
+        <p class="notice" data-apply-blocked hidden></p>
+
+        <div class="apply-step" data-apply-signin hidden>
+          <p class="apply-lead">Sign in to apply. A free job seeker account keeps your profile, photo and CV, so every application takes one click, and you can follow its status.</p>
+          <div class="apply-actions">
+            <a class="button bp-lg" href={`/account/login/?next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Sign in to apply</a>
+            <a class="button button-outline bp-lg" href={`/account/register/?as=applicant&next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Create an account</a>
           </div>
-          <div class="field">
-            <label for={`${id}-email`}>Email</label>
-            <input id={`${id}-email`} name="email" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" />
+        </div>
+
+        <div class="apply-step" data-apply-choose hidden>
+          <p class="apply-lead">Set up your job seeker profile first: your photo and CV (your email comes from your account). It takes a minute, and then you come back here.</p>
+          <div class="apply-actions">
+            <a class="button bp-lg" href={`/dashboard/welcome?as=applicant&next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Set up my profile</a>
           </div>
-          <div class="field">
-            <label for={`${id}-phone`}>Phone <span class="muted">(optional)</span></label>
-            <input id={`${id}-phone`} name="phone" type="tel" autocomplete="tel" placeholder="+1 555 123 4567" />
+        </div>
+
+        <div class="apply-step" data-apply-incomplete hidden>
+          <p class="apply-lead" data-apply-missing></p>
+          <div class="apply-actions">
+            <a class="button bp-lg" href="/dashboard/profile">Finish my profile</a>
           </div>
-          <div class="field">
-            <label for={`${id}-profile`}>Profile or portfolio link <span class="muted">(optional)</span></label>
-            <input id={`${id}-profile`} name="profileUrl" type="url" inputmode="url" placeholder="https://www.linkedin.com/in/you" />
-          </div>
-          <div class="field full">
-            <label for={`${id}-resume`}>Resume</label>
-            <input id={`${id}-resume`} name="resume" type="file" accept={RESUME_ACCEPT} aria-describedby={`${id}-resume-hint`} />
-            <p class="field-hint" id={`${id}-resume-hint`}>PDF or DOCX, up to {LIMITS.resumeMb} MB.</p>
-            <p class="muted small" data-upload-progress aria-live="polite" hidden></p>
-          </div>
+        </div>
+
+        <form id={`${id}-form`} class="form-card apply-form" novalidate data-apply-form hidden>
+          <p class="apply-lead">{job.companyName} will get your profile, photo and CV.</p>
+          <dl class="apply-profile">
+            <div><dt>Name</dt><dd data-profile-name></dd></div>
+            <div><dt>Email</dt><dd data-profile-email></dd></div>
+            <div><dt>Phone</dt><dd data-profile-phone></dd></div>
+            <div><dt>CV</dt><dd data-profile-resume></dd></div>
+          </dl>
+          <p class="muted small">Not right? <a href="/dashboard/profile">Update your profile</a> first.</p>
           <div class="field full">
             <label for={`${id}-note`}>Cover note <span class="muted">(optional)</span></label>
             <textarea id={`${id}-note`} name="coverNote" rows="5" placeholder="A few lines on why you are a good fit." aria-describedby={`${id}-note-hint`}></textarea>
@@ -73,16 +84,12 @@ const id = `apply-${job.id}`;
               <span>{DEFAULT_CONSENT_TEXT}</span>
             </label>
           </div>
-        </div>
-        <div class="apply-trap" aria-hidden="true">
-          <label for={`${id}-website`}>Leave this empty</label>
-          <input id={`${id}-website`} name="website" type="text" tabindex="-1" autocomplete="off" />
-        </div>
-        <p class="notice" data-form-status hidden></p>
-        <div class="actions">
-          <button class="button" type="submit">Send application</button>
-        </div>
-      </form>
+          <p class="notice" data-form-status hidden></p>
+          <div class="actions">
+            <button class="button" type="submit">Apply now</button>
+          </div>
+        </form>
+      </div>
     ) : url || mailto ? (
       <div class="apply-out">
         <p class="apply-lead">
@@ -159,13 +166,41 @@ const id = `apply-${job.id}`;
     gap: 1.25rem;
     justify-items: start;
   }
-  /* The honeypot: off screen for people, still in the form for bots. */
-  .apply-trap {
-    position: absolute;
-    left: -10000px;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
+  .apply-onsite,
+  .apply-step {
+    display: grid;
+    gap: 1rem;
+  }
+  .apply-onsite [hidden] {
+    display: none;
+  }
+  .apply-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .apply-profile {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 0;
+  }
+  .apply-profile dt {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .apply-profile dd {
+    margin: 0;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 640px) {
+    .apply-profile {
+      grid-template-columns: 1fr;
+    }
+    .apply-actions .button {
+      width: 100%;
+    }
   }
 </style>
 

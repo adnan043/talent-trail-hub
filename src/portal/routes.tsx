@@ -12,6 +12,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router';
 import {type ComponentType, useEffect, useRef, useState} from 'react';
+import {useQuery} from '@tanstack/react-query';
 
 import type {Abilities} from '../lib/types';
 import {logout} from '../platform/browser';
@@ -33,6 +34,9 @@ import {activityQuery, moderationQuery, overviewQuery} from './admin/queries';
 import {EMPLOYER_NAV, employerRoutes} from './employer/routes';
 import {myJobsQuery} from './employer/queries';
 import {myApplicationsQuery} from './applicants/queries';
+import {applicantProfileQuery, ownPhotoUrl} from './applicants/profile-queries';
+import {ProfilePhoto} from './applicants/profile-parts';
+import {welcomeSearch} from './applicants/WelcomeScreen';
 import {useMe, useSite} from './shared';
 import {
   Avatar,
@@ -122,21 +126,31 @@ export type NavItem = {to: string; label: string; icon: IconName; exact?: boolea
  * that only HIDES it, the route's guard is the enforcement. A group with no
  * visible item is not shown.
  */
-const NAV_GROUPS: {label: string; items: NavItem[]}[] = [
+/**
+ * `for`: a group only an applicant account sees (`applicant`), or one it never sees
+ * (`not-applicant`): an account is a job seeker OR a company (src/lib/types-profile.ts).
+ */
+type NavGroup = {label: string; items: NavItem[]; for?: 'applicant' | 'not-applicant'};
+
+const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Workspace',
     items: [
-      {to: '/', label: 'Overview', icon: 'dashboard', exact: true},
+      {to: '/', label: 'Dashboard', icon: 'dashboard', exact: true},
       {to: '/account', label: 'Your account', icon: 'user'},
     ],
   },
-  // The candidate's own applications (staff see every applicant under the admin's group instead).
+  // The job seeker's own profile and applications (staff see every applicant under the admin's group instead).
   {
     label: 'Job search',
-    items: [{to: '/my-applications', label: 'My applications', icon: 'file', hideForAbility: 'readApplicants'}],
+    for: 'applicant',
+    items: [
+      {to: '/profile', label: 'My profile', icon: 'file'},
+      {to: '/my-applications', label: 'My applications', icon: 'briefcase'},
+    ],
   },
   // The job board: the employer's area, then the admin's (src/portal/employer/, src/portal/admin/).
-  ...EMPLOYER_NAV,
+  ...EMPLOYER_NAV.map(group => ({...group, for: 'not-applicant' as const})),
   ...ADMIN_NAV.filter(group => group.label !== 'Board settings'),
   {
     label: 'Site',
@@ -181,36 +195,25 @@ function useNavigationFocus(title: string, siteName: string | undefined) {
   return {heading, resolved};
 }
 
-type Theme = 'system' | 'light' | 'dark';
-const THEME_KEY = 'site:theme';
-
-/** Light, dark or the device's: `data-theme` on <html> (global.css), remembered in this browser. */
-function useTheme() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    try {
-      const saved = localStorage.getItem(THEME_KEY);
-      return saved === 'light' || saved === 'dark' ? saved : 'system';
-    } catch {
-      return 'system';
-    }
-  });
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'system') delete root.dataset.theme;
-    else root.dataset.theme = theme;
-    try {
-      if (theme === 'system') localStorage.removeItem(THEME_KEY);
-      else localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      // Storage blocked: the choice lasts until the tab closes.
-    }
-  }, [theme]);
-  return [theme, setTheme] as const;
+/** The job seeker's photo, name and email, at the top of the sidebar. */
+function ApplicantSideCard() {
+  const answer = useQuery(applicantProfileQuery);
+  const profile = answer.data?.profile;
+  if (!profile) return null;
+  return (
+    <div className="app-side-profile">
+      <span className="app-side-photo">
+        <ProfilePhoto src={ownPhotoUrl(profile.photoVersion)} name={profile.name} size="md" />
+      </span>
+      <span className="app-side-name">{profile.name}</span>
+      <span className="app-side-hint">{profile.email}</span>
+    </div>
+  );
 }
 
 /**
  * The app shell: a full-height sidebar (brand, grouped nav, way back to the
- * website), a top bar (screen title, theme, the user's menu) and the screen
+ * website), a top bar (screen title, the user's menu) and the screen
  * in between; a drawer with a scrim on small screens. Every screen renders
  * inside it, with toasts (`useToast`) and confirmations (`useConfirm`)
  * mounted once here. Nothing here reloads the page.
@@ -249,11 +252,11 @@ function Shell() {
   const siteName = site.data?.site?.name;
   const {heading, resolved} = useNavigationFocus(title, siteName);
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useTheme();
   // `logout()` reloads the page when it is done, so pending never needs resetting.
   const [signingOut, setSigningOut] = useState(false);
   const viewer = me.data?.viewer;
   const abilities = me.data?.abilities;
+  const kind = me.data?.account?.kind;
   // Signed out meanwhile (or never signed in, in the editor Preview, where
   // the host page cannot see the session): go and sign in, then come back.
   const signedOut = viewer !== undefined && viewer.state !== 'user';
@@ -275,7 +278,8 @@ function Shell() {
   const name = siteName ?? 'My site';
   const logo = site.data?.site?.logo;
   return (
-    <div className="app-shell" data-nav-open={open ? '' : undefined}>
+    // A job seeker's dashboard has a white sidebar card with a grey border (app.css `[data-side='light']`).
+    <div className="app-shell" data-nav-open={open ? '' : undefined} data-side={kind === 'applicant' ? 'light' : undefined}>
       <aside className="app-sidebar" aria-label="Sidebar">
         <a className="app-brand" href="/">
           {logo ? (
@@ -287,8 +291,11 @@ function Shell() {
             </>
           )}
         </a>
+        {kind === 'applicant' && <ApplicantSideCard />}
         <nav className="app-nav" aria-label="Dashboard">
           {NAV_GROUPS.map(group => {
+            if (group.for === 'applicant' && kind !== 'applicant') return null;
+            if (group.for === 'not-applicant' && kind === 'applicant') return null;
             const items = group.items.filter(
               item => (!item.ability || abilities?.[item.ability]) && !(item.hideForAbility && abilities?.[item.hideForAbility]) && !(item.employer && me.data?.board.singleCompany)
             );
@@ -323,15 +330,6 @@ function Shell() {
             {title}
           </h1>
           <div className="app-topbar-actions">
-            <Menu
-              label={`Theme: ${theme}`}
-              trigger={<Icon name={theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'monitor'} size={18} />}
-              items={[
-                {label: 'Light', icon: 'sun', onSelect: () => setTheme('light')},
-                {label: 'Dark', icon: 'moon', onSelect: () => setTheme('dark')},
-                {label: 'Same as this device', icon: 'monitor', onSelect: () => setTheme('system')},
-              ]}
-            />
             {viewer && (
               <Menu
                 label={`Account menu for ${viewer.name ?? 'you'}`}
@@ -373,11 +371,15 @@ function Shell() {
 const overviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  staticData: {title: 'Overview'},
+  staticData: {title: 'Dashboard'},
   loader: async ({context: {queryClient}}) => {
     // `me` first: the screen branches on it (screens/overview.tsx), so the loader does too.
     const me = await queryClient.ensureQueryData(meQuery).catch(() => null);
     const can = me?.abilities;
+    // A job seeker sees their own dashboard (applicants/ApplicantOverview.tsx): their profile and applications.
+    if (me?.account?.kind === 'applicant') {
+      return warm(queryClient.ensureQueryData(applicantProfileQuery), queryClient.ensureInfiniteQueryData(myApplicationsQuery));
+    }
     // Board report readers see the admin dashboard (admin/Dashboard.tsx): only its two reads.
     if (can?.readBoardReports) return warm(queryClient.ensureQueryData(overviewQuery), queryClient.ensureQueryData(activityQuery('30d')));
     // Everyone else: the general overview's tiles, and the board panels it renders, as their `enabled` flags decide.
@@ -418,6 +420,22 @@ const myApplicationsRoute = createRoute({
     if (me?.viewer?.emailVerified) await warm(queryClient.ensureInfiniteQueryData(myApplicationsQuery));
   },
   component: lazyRouteComponent(() => import('./applicants/MyApplicationsScreen'), 'MyApplications'),
+});
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/profile',
+  staticData: {title: 'My profile'},
+  loader: ({context: {queryClient}}) => warm(queryClient.ensureQueryData(applicantProfileQuery)),
+  component: lazyRouteComponent(() => import('./applicants/ProfileScreen'), 'Profile'),
+});
+const welcomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/welcome',
+  staticData: {title: 'Welcome'},
+  // `?as=applicant|company&next=/jobs/x/`: from the sign-up page (applicants/WelcomeScreen.tsx).
+  validateSearch: welcomeSearch,
+  loader: ({context: {queryClient}}) => warm(queryClient.ensureQueryData(meQuery)),
+  component: lazyRouteComponent(() => import('./applicants/WelcomeScreen'), 'Welcome'),
 });
 const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -466,6 +484,8 @@ export const routeTree = rootRoute.addChildren([
   overviewRoute,
   accountRoute,
   myApplicationsRoute,
+  profileRoute,
+  welcomeRoute,
   ...employerRoutes,
   ...adminRoutes,
   usersRoute,

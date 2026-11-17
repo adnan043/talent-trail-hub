@@ -92,6 +92,14 @@ Good news: {{companyName}} has shortlisted your application for **{{jobTitle}}**
 
 Good luck!`,
   },
+  'application-approved': {
+    subject: 'Your application to {{companyName}} was approved',
+    body: `Hi,
+
+Great news: {{companyName}} has approved your application for **{{jobTitle}}** on {{boardName}}. They will contact you directly about what happens next.
+
+You can follow all your applications in your dashboard.`,
+  },
   'application-rejected': {
     subject: 'Update on your application to {{companyName}}',
     body: `Hi,

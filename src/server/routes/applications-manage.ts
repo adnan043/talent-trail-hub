@@ -5,9 +5,10 @@ import {validator} from 'hono/validator';
 import type {Prisma, PrismaClient} from '../../generated/prisma/client';
 import {APPLICATION_STATUSES, type ApplicationStatus, LIMITS} from '../../lib/board';
 import type {Viewer} from '../../lib/types';
+import type {ApplicantProfileForEmployer} from '../../lib/types-profile';
 import {SiteKeyMissing} from '../../platform/api';
 import {audit} from '../../platform/auth';
-import {fileUrl} from '../../platform/files';
+import {fileUrl} from '../files';
 import {can, problem, requireAuth, requirePermission, withDb, withViewer} from '../../platform/guards';
 import {
   adminApplicationSelect,
@@ -35,6 +36,8 @@ import {PERMISSIONS} from '../permissions';
  *   GET   /all[/export], /all/jobs        the admin's list of every applicant, its CSV, job filter
  *   PATCH /:id                            status and private notes
  *   POST  /:id/resume-link                a 10-minute download link (410 once past retention)
+ *   GET   /:id/profile                    the applicant's job seeker profile (signed-in applications only)
+ *   GET   /:id/photo                      the applicant's photo (a redirect to a 5-minute link)
  */
 type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
 const PAGE = LIMITS.pageSize;
@@ -189,9 +192,10 @@ export const applicantRoutes = new Hono<Env>()
       select: applicationSelect,
     });
     const template = changed && status && status in STATUS_TEMPLATES ? STATUS_TEMPLATES[status as keyof typeof STATUS_TEMPLATES] : null;
-    // The candidate hears each outcome at most ONCE per application: shortlisted (`status_emailed_at`)
-    // and rejected (`rejected_emailed_at`). Moving back and forth never sends a second one.
-    const mark = status === 'rejected' ? 'rejectedEmailedAt' : 'statusEmailedAt';
+    // The candidate hears each outcome at most ONCE per application: shortlisted (`status_emailed_at`),
+    // approved (`approved_emailed_at`) and rejected (`rejected_emailed_at`). Moving back and forth
+    // never sends a second one.
+    const mark = status === 'rejected' ? 'rejectedEmailedAt' : status === 'approved' ? 'approvedEmailedAt' : 'statusEmailedAt';
     if (template && (await db.application.updateMany({where: {id: found.id, [mark]: null}, data: {[mark]: new Date()}})).count === 1) {
       const [job, settings] = await Promise.all([
         db.job.findUnique({where: {id: found.jobId}, select: {title: true, company: {select: {name: true}}}}),
@@ -239,4 +243,60 @@ export const applicantRoutes = new Hono<Env>()
       meta: {staff: scope.kind === 'all' && found.job.company.ownerUserId !== c.var.viewer.id},
     });
     return c.json({url: link.data.url, expiresAt: link.data.expiresAt});
+  })
+
+  // The profile the candidate applied with, as it is now (null for the older guest applications).
+  .get('/:id/profile', withViewer, requireAuth, verifiedUnlessStaff, withDb, async c => {
+    const profile = await profileInScope(c);
+    if (profile === undefined) return notFound(c);
+    c.header('Cache-Control', 'private, no-store');
+    if (!profile) return c.json({profile: null});
+    const {photoFileId, resumeFileId: _cv, ...details} = profile;
+    return c.json({
+      profile: {
+        ...details,
+        dateOfBirth: details.dateOfBirth ? details.dateOfBirth.toISOString().slice(0, 10) : null,
+        hasPhoto: photoFileId !== null,
+      } satisfies ApplicantProfileForEmployer,
+    });
+  })
+
+  .get('/:id/photo', withViewer, requireAuth, verifiedUnlessStaff, withDb, async c => {
+    const profile = await profileInScope(c);
+    if (!profile?.photoFileId) return notFound(c);
+    const link = await fileUrl(c.req.url, profile.photoFileId, {expiresIn: 300}).catch(() => null);
+    if (!link?.ok) return c.json(problem('storage_unavailable', 'The photo cannot be shown right now.'), 503);
+    c.header('Cache-Control', 'private, no-store');
+    return c.redirect(link.data.url, 302);
   });
+
+/**
+ * The applicant's profile when application `:id` is in the viewer's scope: undefined when it is not
+ * (404), null for an application made without an account.
+ */
+async function profileInScope(c: Context<Env>) {
+  const id = idOf(c.req.param('id'));
+  const where = jobWhereOf(await applicantScope(c));
+  if (!id || !where) return undefined;
+  const app = await c.var.db.application.findFirst({where: {id, job: where}, select: {applicantUserId: true}});
+  if (!app) return undefined;
+  if (!app.applicantUserId) return null;
+  return c.var.db.applicantProfile.findUnique({
+    where: {userId: app.applicantUserId},
+    select: {
+      dateOfBirth: true,
+      gender: true,
+      presentAddress: true,
+      headline: true,
+      careerSummary: true,
+      experienceYears: true,
+      expectedSalary: true,
+      degree: true,
+      institute: true,
+      passingYear: true,
+      skills: true,
+      photoFileId: true,
+      resumeFileId: true,
+    },
+  });
+}

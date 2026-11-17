@@ -8,7 +8,7 @@ import {Browser, configureEnv, DATABASE_URL, db, resetDatabase, signedIn, userId
 
 /**
  * Release 1 end to end through the real Site API: the admin opens free posting with review of
- * every post, an employer posts (hidden until approved), the admin approves, a guest applies,
+ * every post, an employer posts (hidden until approved), the admin approves, a job seeker applies,
  * the employer edits (back to review, dates kept), expiry takes it down, single-company mode
  * closes the employer side. The platform's file storage is faked (as in applications.test.ts).
  */
@@ -21,6 +21,7 @@ const description = 'We are hiring a careful engineer to build and run our servi
 
 const harnessFetch = globalThis.fetch;
 let fileSeq = 0;
+const files = new Map<string, {name: string; contentType: string; size: number; visibility: string}>();
 function fakeFiles() {
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -28,12 +29,17 @@ function fakeFiles() {
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), {status});
     if (path === '/uploads') {
       const id = `file_${String(++fileSeq).padStart(26, '0')}`;
+      const asked = JSON.parse(String(init?.body ?? '{}')) as {name: string; contentType: string; size: number; visibility?: string};
+      files.set(id, {name: asked.name, contentType: asked.contentType, size: asked.size, visibility: asked.visibility ?? 'private'});
       return json(201, {data: {file: {id}, upload: {method: 'PUT', url: `/__platform/files/uploads/${id}`, headers: {}, expiresAt: ''}}});
     }
-    if (path?.endsWith('/complete')) return json(200, {data: {file: {id: path.split('/')[1], status: 'ready'}}});
-    // The resume first-bytes check: a short link to the file, then its first bytes (a real PDF).
-    if (path?.endsWith('/url')) return json(200, {data: {url: 'https://files.example.test/x?sig=1', expiresAt: new Date().toISOString()}});
-    if (url.startsWith('https://files.example.test/')) return new Response('%PDF-1.7\n', {status: 206});
+    if (path?.endsWith('/complete')) return json(200, {data: {file: {id: path.split('/')[1], status: 'ready', ...files.get(path.split('/')[1]!)}}});
+    // The first-bytes check: a short link to the file, then its first bytes (a real PNG / PDF).
+    if (path?.endsWith('/url')) return json(200, {data: {url: `https://files.example.test/${path.split('/')[1]}?sig=1`, expiresAt: new Date().toISOString()}});
+    if (url.startsWith('https://files.example.test/')) {
+      const image = files.get(new URL(url).pathname.slice(1))?.contentType.startsWith('image/');
+      return new Response(Buffer.from(image ? '\x89PNG\r\n\x1a\n0000' : '%PDF-1.7\n', 'latin1'), {status: 206});
+    }
     if (path && init?.method === 'DELETE') return json(200, {data: {deleted: true}});
     return harnessFetch(input, init);
   };
@@ -76,13 +82,20 @@ describe.skipIf(!DATABASE_URL)('board flow, Release 1 end to end (integration, r
     expect(res.json.status).toBe('published');
   }
 
-  async function apply(browser: Browser, slug: string, email: string) {
-    const grant = await browser.post('/site-api/applications/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 1000});
-    expect(grant.status).toBe(201);
-    const token = grant.json.token as string;
-    expect((await browser.post('/site-api/applications/resume/complete', {token})).status).toBe(200);
-    return browser.post(`/site-api/applications/jobs/${slug}/apply`, {name: 'Casey Candidate', email, consent: true, resumeToken: token});
+  /** A job seeker: sign up, set up the profile (photo, CV, phone). */
+  async function jobSeeker(email: string) {
+    const browser = await signedIn(app, email, undefined, '198.51.100.40');
+    expect((await browser.post('/site-api/applicant-profile/start')).status).toBe(200);
+    for (const [kind, name, contentType] of [['photo', 'me.png', 'image/png'], ['resume', 'cv.pdf', 'application/pdf']] as const) {
+      const grant = await browser.post(`/site-api/applicant-profile/${kind}`, {name, contentType, size: 1000});
+      expect(grant.status).toBe(201);
+      expect((await browser.post(`/site-api/applicant-profile/${kind}/complete`, {fileId: grant.json.fileId, token: grant.json.token})).status).toBe(200);
+    }
+    expect((await browser.request('PUT', '/site-api/applicant-profile', {phone: '+1 555 123 4567'})).status).toBe(200);
+    return browser;
   }
+
+  const apply = (browser: Browser, slug: string) => browser.post(`/site-api/applications/jobs/${slug}/apply`, {consent: true});
 
   beforeAll(async () => {
     configureEnv();
@@ -153,9 +166,10 @@ describe.skipIf(!DATABASE_URL)('board flow, Release 1 end to end (integration, r
     expect(detail.status).toBe(200);
     expect((detail.json.job as {state: string}).state).toBe('active');
 
-    // (4) A guest applies; the employer sees them, the other employer cannot, staff see all.
-    const visitor = guest();
-    expect((await apply(visitor, slug, 'casey@example.test')).status).toBe(201);
+    // (4) A job seeker applies; the employer sees them, the other employer cannot, staff see all.
+    expect((await apply(guest(), slug)).status).toBe(401);
+    const visitor = await jobSeeker('casey@example.test');
+    expect((await apply(visitor, slug)).status).toBe(201);
     const mine = await employer.get(`/site-api/applications/jobs/${jobId}/applicants?status=&before=`);
     expect(mine.status).toBe(200);
     expect((mine.json.items as {email: string}[]).map(r => r.email)).toEqual(['casey@example.test']);
@@ -163,8 +177,8 @@ describe.skipIf(!DATABASE_URL)('board flow, Release 1 end to end (integration, r
     const all = await admin.get('/site-api/applications/all?status=&before=&job=');
     expect(all.status).toBe(200);
     expect((all.json.items as {email: string; job: {company: string}}[]).map(r => [r.email, r.job.company])).toEqual([['casey@example.test', 'Flow Robots']]);
-    const again = await apply(visitor, slug, 'Casey@Example.test');
-    expect(again.status).toBe(201);
+    const again = await apply(visitor, slug);
+    expect(again.status).toBe(409);
     expect(await db.application.count()).toBe(1);
 
     // (5) Editing the live job sends it back to review; approval keeps its dates.

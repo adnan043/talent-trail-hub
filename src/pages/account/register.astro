@@ -2,7 +2,9 @@
 /**
  * Create an account. PRERENDERED; posts to `/site-api/auth/register`. The answer is the same whether
  * or not the email already has an account, and no account exists until the emailed code comes back
- * in this browser (`/account/verify/`).
+ * in this browser (`/account/verify/`). First the visitor says what the account is for: a job seeker
+ * (`?as=applicant` picks it, from a job's "Create an account") or a company. After the code, the
+ * dashboard's welcome step sets that up (`/dashboard/welcome?as=…`).
  */
 import Base from '../../layouts/Base.astro';
 import {staticContext} from '../../server/page';
@@ -21,8 +23,25 @@ const {site, viewer} = await staticContext(Astro.request);
         <a href="/account/register/" aria-current="page">Sign up</a>
       </nav>
       <h1>Create an account</h1>
-      <p class="auth-lead">Post jobs, follow their applicants and get receipts.</p>
+      <p class="auth-lead">Find a job with one click, or hire the right people.</p>
       <form id="register-form" class="auth-form" novalidate>
+        <fieldset class="kind-choice">
+          <legend>I want to</legend>
+          <label class="kind-option">
+            <input type="radio" name="kind" value="applicant" checked />
+            <span class="kind-text">
+              <strong>Find a job</strong>
+              <span>Build a profile with your photo and CV, apply and follow every application.</span>
+            </span>
+          </label>
+          <label class="kind-option">
+            <input type="radio" name="kind" value="company" />
+            <span class="kind-text">
+              <strong>Hire people</strong>
+              <span>Create your company profile, post jobs and review applicants.</span>
+            </span>
+          </label>
+        </fieldset>
         <div class="field">
           <label for="register-name">Your name</label>
           <input id="register-name" name="name" type="text" autocomplete="name" maxlength="80" placeholder="Your full name" />
@@ -67,6 +86,15 @@ const {site, viewer} = await staticContext(Astro.request);
     void signedIn().then(yes => yes && window.location.replace(next));
 
     const form = document.querySelector<HTMLFormElement>('#register-form')!;
+    const params = new URLSearchParams(window.location.search);
+    const kinds = form.querySelectorAll<HTMLInputElement>('input[name="kind"]');
+    if (params.get('as') === 'company') kinds.forEach(input => (input.checked = input.value === 'company'));
+    /** After the emailed code: the welcome step sets up what the account is for, then goes on. */
+    const afterSignUp = () => {
+      const kind = [...kinds].find(input => input.checked)?.value === 'company' ? 'company' : 'applicant';
+      const back = kind === 'applicant' && next !== '/dashboard' ? `&next=${encodeURIComponent(next)}` : '';
+      return `/dashboard/welcome?as=${kind}${back}`;
+    };
     const email = form.elements.namedItem('email') as HTMLInputElement;
     const password = form.elements.namedItem('password') as HTMLInputElement;
     bindPasswordChecks(password, document.getElementById('register-password-checks')!, {email});
@@ -75,11 +103,55 @@ const {site, viewer} = await staticContext(Astro.request);
       rules: {name: AUTH_RULES.name, email: AUTH_RULES.email, password: [passwordMeetsRules(() => email.value)]},
       pendingLabel: 'Creating account…',
       async submit(values) {
-        const {result} = await postJson(siteFetch, '/site-api/auth/register', values);
+        const {result} = await postJson(siteFetch, '/site-api/auth/register', {name: values.name, email: values.email, password: values.password});
         if (!result.ok) return result;
         rememberSignUpEmail(String(values.email));
-        return {ok: true, redirect: `/account/verify/?next=${encodeURIComponent(next)}`};
+        return {ok: true, redirect: `/account/verify/?next=${encodeURIComponent(afterSignUp())}`};
       },
     });
   });
 </script>
+
+<style>
+  .kind-choice {
+    display: grid;
+    gap: 0.625rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .kind-choice legend {
+    margin-bottom: 0.5rem;
+    padding: 0;
+    font-weight: 600;
+  }
+  .kind-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .kind-option:has(input:checked) {
+    border-color: var(--brand);
+    background: var(--brand-soft);
+  }
+  .kind-option input {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    margin: 3px 0 0;
+    accent-color: var(--brand);
+  }
+  .kind-text {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .kind-text span {
+    font-size: 14px;
+    color: var(--muted);
+  }
+</style>

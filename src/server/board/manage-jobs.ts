@@ -251,10 +251,10 @@ export const manageJobRoutes = new Hono()
       const batch = await db.application.findMany({where: {jobId: id}, select: {id: true, resumeFileId: true}, orderBy: {id: 'asc'}, take: DELETE_BATCH});
       if (!batch.length) break;
       const ids = batch.map(a => a.id);
-      const files = batch.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : []));
-      await db.$transaction(async tx => {
-        await handFilesToPurge(tx as unknown as PrismaClient, ids, files);
+      const files = await db.$transaction(async tx => {
+        const handed = await handFilesToPurge(tx as unknown as PrismaClient, ids, batch.flatMap(a => (a.resumeFileId ? [a.resumeFileId] : [])));
         await tx.application.deleteMany({where: {id: {in: ids}}});
+        return handed;
       });
       applications += batch.length;
       filesLeft += await deleteStoredFiles(db, c.req.url, files, deadline);

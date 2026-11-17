@@ -160,14 +160,6 @@ describe('brand colours', () => {
   });
 });
 
-describe('theme boot script', () => {
-  it('matches the CSP hash the layouts insert', async () => {
-    const {createHash} = await import('node:crypto');
-    const {THEME_BOOT, THEME_BOOT_HASH} = await import('../src/lib/theme-boot');
-    expect(`sha256-${createHash('sha256').update(THEME_BOOT).digest('base64')}`).toBe(THEME_BOOT_HASH);
-  });
-});
-
 describe('clip', () => {
   it('cuts at a word boundary with an ellipsis, and leaves short text alone', async () => {
     const {clip} = await import('../src/lib/rich-text');

@@ -18,13 +18,6 @@ export interface ApplyJob {
   open: boolean;
 }
 
-/** `POST /applications/resume` → 201. */
-export interface ResumeGrant {
-  /** Unguessable: sent back with `complete` and with the application. */
-  token: string;
-  upload: {method: 'PUT'; url: string; headers: Record<string, string>; expiresAt: string};
-}
-
 /** One applicant, as the employer or the admin sees them. */
 export interface ApplicantRow {
   id: number;
@@ -88,6 +81,7 @@ export const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
   new: 'New',
   reviewed: 'Reviewed',
   shortlisted: 'Shortlisted',
+  approved: 'Approved',
   rejected: 'Rejected',
 };
 
@@ -122,6 +116,8 @@ export interface MyApplicationRow {
 export interface MyApplicationsPage {
   items: MyApplicationRow[];
   nextBefore: number | null;
+  /** Per status over ALL the person's applications (unfiltered); first page only, else null. */
+  counts: Record<ApplicationStatus, number> | null;
 }
 
 /** How the candidate sees each status (the employer's words are in APPLICATION_STATUS_LABELS). */
@@ -129,5 +125,6 @@ export const MY_APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
   new: 'Submitted',
   reviewed: 'In review',
   shortlisted: 'Shortlisted',
+  approved: 'Approved',
   rejected: 'Not selected',
 };

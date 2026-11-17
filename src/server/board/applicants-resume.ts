@@ -1,4 +1,4 @@
-import {deleteFile, fileUrl} from '../../platform/files';
+import {deleteFile, firstBytes} from '../files';
 
 /**
  * F4 resume check: the stored file's FIRST BYTES must match its type (the name and the browser's
@@ -15,20 +15,8 @@ export function looksLikeResume(contentType: string, bytes: Uint8Array): boolean
   return Boolean(signature && signature.every((b, i) => bytes[i] === b));
 }
 
-async function firstBytes(requestUrl: string, fileId: string): Promise<Uint8Array | null> {
-  const link = await fileUrl(requestUrl, fileId, {expiresIn: 60});
-  if (!link.ok) return null;
-  try {
-    const res = await fetch(link.data.url, {headers: {range: 'bytes=0-15'}, signal: AbortSignal.timeout(8000)});
-    if (!res.ok || !res.body) return null;
-    const reader = res.body.getReader();
-    const {value} = await reader.read();
-    await reader.cancel().catch(() => undefined);
-    return value ?? null;
-  } catch {
-    return null;
-  }
-}
+/** The stored file's first bytes (`../files`: the platform's storage, or the local development table). */
+export {firstBytes};
 
 /** True when the stored file really is a PDF / DOCX; otherwise deletes it and answers false. */
 export async function checkStoredResume(requestUrl: string, fileId: string, contentType: string): Promise<boolean> {

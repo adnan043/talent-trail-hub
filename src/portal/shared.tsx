@@ -1,6 +1,7 @@
 import {useQuery} from '@tanstack/react-query';
 
 import type {Abilities, Viewer} from '../lib/types';
+import type {AccountKind} from '../lib/types-profile';
 import {meQuery, siteQuery} from './queries';
 
 /** Data helpers every portal screen uses. The visual pieces are the kit: `./ui`. */
@@ -28,6 +29,8 @@ export interface Me {
   abilities: Abilities;
   /** The board mode: single-company hides the employer area. */
   board: {singleCompany: boolean};
+  /** Applicant, company or neither yet: which part of the dashboard this account sees. */
+  account: {kind: AccountKind};
 }
 
 /** Who is signed in, and what the portal may SHOW them. Shared by every screen. */

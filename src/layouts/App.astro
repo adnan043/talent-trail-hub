@@ -11,7 +11,6 @@
 import '../styles/global.css';
 import '../styles/app.css';
 
-import {THEME_BOOT, THEME_BOOT_HASH} from '../lib/theme-boot';
 import type {Site, Viewer} from '../lib/types';
 
 interface Props {
@@ -25,20 +24,18 @@ interface Props {
 
 const {site, viewer, title, brandHref = '/site-api/board/brand.css'} = Astro.props;
 const name = site?.name ?? 'My site';
-// The theme-before-paint script's hash joins this page's CSP (src/lib/theme-boot.ts).
-Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{`${title} · ${name}`}</title>
     <!-- Signed-in screens are never search results. -->
     <meta name="robots" content="noindex" />
-    <!-- The saved theme before first paint: a fixed string, hashed into the CSP. -->
-    <script is:inline set:html={THEME_BOOT} />
+    <!-- Light only: the dashboard has no dark theme choice. -->
+    <meta name="color-scheme" content="light" />
     <!-- The board's brand (F30): accent colour and font, as a stylesheet (CSP: no inline styles). -->
     <link rel="stylesheet" href={brandHref} />
     {site?.favIcon ? <link rel="icon" href={site.favIcon} /> : <link rel="icon" href="/favicon.svg" type="image/svg+xml" />}
@@ -54,14 +51,6 @@ Astro.csp?.insertScriptHash(THEME_BOOT_HASH);
       // it, then close. Its code loads only on such a return.
       if (new URLSearchParams(window.location.search).has('checkout')) {
         void import('../lib/checkout-session').then(({notifyPaymentOpener}) => notifyPaymentOpener());
-      }
-
-      // The theme picked in the dashboard's top bar (src/portal/routes.tsx `useTheme`), before the app draws.
-      try {
-        const theme = localStorage.getItem('site:theme');
-        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-      } catch {
-        // Storage blocked: the device's theme.
       }
 
       // Same as the website layout: the server saw an expired access token but

@@ -405,18 +405,23 @@
     width: min(280px, 86vw);
     transform: translateX(-100%);
     visibility: hidden;
+    /* Slides in decelerating, out a little quicker; visibility flips at the end of the close. */
     transition:
-      transform 0.2s ease,
-      visibility 0.2s;
+      transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+      visibility 0s linear 0.28s;
     box-shadow: var(--shadow-lg);
   }
 
   .app-shell[data-nav-open] .app-sidebar {
     transform: none;
     visibility: visible;
+    transition:
+      transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s;
   }
 
-  .app-shell[data-nav-open] .app-scrim {
+  /* The backdrop fades with the drawer instead of popping in. */
+  .app-scrim {
     display: block;
     position: fixed;
     inset: 0;
@@ -424,6 +429,21 @@
     background: var(--overlay);
     border: 0;
     padding: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.28s ease,
+      visibility 0s linear 0.28s;
+  }
+
+  .app-shell[data-nav-open] .app-scrim {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity 0.32s ease,
+      visibility 0s;
   }
 
   .app-menu-button {
@@ -444,7 +464,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-sidebar {
+  .app-sidebar,
+  .app-shell[data-nav-open] .app-sidebar,
+  .app-scrim,
+  .app-shell[data-nav-open] .app-scrim {
     transition: none;
   }
 }
@@ -3265,4 +3288,680 @@
   overflow-y: auto;
   padding: 0.75rem 0.875rem;
   margin: 0;
+}
+
+/* ------------------------------------------------ the job seeker's dashboard --
+   src/portal/applicants/ (profile, overview, welcome) and the applicant card in the
+   employer's drawer. Tokens only; sizes are classes (no inline styles: CSP). */
+
+/* The completion ring: an SVG circle filled by stroke-dasharray, the number in the middle. */
+.profile-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 72px;
+  height: 72px;
+}
+.profile-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.profile-ring-track {
+  stroke: var(--line);
+}
+.profile-ring-fill {
+  stroke: var(--brand);
+  transition: stroke-dasharray 0.4s ease;
+}
+.profile-ring-value {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.profile-ring-sm {
+  width: 40px;
+  height: 40px;
+}
+.profile-ring-sm .profile-ring-value {
+  font-size: 0.6875rem;
+}
+
+/* The photo, or initials. */
+.profile-photo {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+  font-weight: 700;
+}
+.profile-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-photo-sm {
+  width: 36px;
+  height: 36px;
+  font-size: 0.8125rem;
+}
+.profile-photo-md {
+  width: 64px;
+  height: 64px;
+  font-size: 1.25rem;
+}
+.profile-photo-lg {
+  width: 96px;
+  height: 96px;
+  font-size: 1.75rem;
+}
+
+/* The sidebar's profile card (applicant accounts). */
+.app-side-profile {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  padding: 1rem 0.75rem 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--ink);
+  text-align: center;
+}
+.app-side-photo {
+  position: relative;
+  margin-bottom: 0.375rem;
+}
+.app-side-photo .profile-photo {
+  box-shadow: 0 0 0 3px var(--card);
+}
+.app-side-name {
+  font-weight: 600;
+}
+.app-side-hint {
+  max-width: 100%;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Screen heads and the completion banner. */
+.profile-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-title);
+}
+.profile-head p {
+  margin: 0;
+}
+.profile-banner {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--card), var(--brand-soft));
+}
+.profile-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.profile-banner-text p {
+  margin: 0;
+}
+.profile-banner-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+.profile-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.profile-banner-actions .icon {
+  margin-inline-start: 0.25rem;
+}
+@media (max-width: 640px) {
+  .profile-banner {
+    flex-wrap: wrap;
+  }
+  .profile-banner-actions {
+    width: 100%;
+  }
+}
+
+/* Sections that open and close. */
+.profile-sections {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+}
+.profile-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.profile-section-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--text-subheading);
+}
+.profile-section-head h3 .icon {
+  color: var(--brand-text);
+}
+.profile-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.profile-section-body {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.profile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.profile-chip {
+  padding: 0.1875rem 0.625rem;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* The photo and CV sections. */
+.profile-file {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+}
+.profile-file-text {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+}
+.profile-file-text p {
+  margin: 0;
+}
+.profile-file-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius);
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+}
+
+/* The applicant's dashboard. */
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+.profile-hero-text {
+  flex: 1;
+  min-width: 0;
+}
+.profile-hero-text h2 {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-title);
+}
+.profile-hero-text p {
+  margin: 0;
+}
+.profile-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+@media (max-width: 640px) {
+  .profile-hero {
+    flex-wrap: wrap;
+  }
+}
+.applicant-latest {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.applicant-latest li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.applicant-latest li:first-child {
+  border-top: 0;
+}
+.applicant-latest p {
+  margin: 0;
+}
+
+/* The welcome step: two choices. */
+.welcome-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.welcome-choice .card-body,
+.welcome-choice {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+}
+.welcome-choice h3 {
+  margin: 0;
+}
+.welcome-choice p {
+  margin: 0;
+}
+.welcome-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+}
+
+/* The employer's drawer: the candidate's profile. */
+.applicant-profile-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.applicant-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.applicant-profile-head p {
+  margin: 0;
+}
+.applicant-profile-summary {
+  margin: 0;
+  white-space: pre-line;
+}
+
+/* ------------------------------------------- the job seeker's light shell --
+   An applicant account's sidebar is a white card with a grey border (routes.tsx
+   `data-side="light"`): the dark sidebar's re-scoped tokens go back to the page's
+   own (custom properties take `inherit`). Beats the brand sheet's `html:root .app-sidebar`. */
+html:root .app-shell[data-side='light'] .app-sidebar {
+  --ink: inherit;
+  --muted: inherit;
+  --subtle: inherit;
+  --line: inherit;
+  --line-strong: inherit;
+  --hover: inherit;
+  --card: inherit;
+  --accent: inherit;
+  --accent-ink: inherit;
+  --accent-text: var(--brand-text);
+  background: var(--card);
+  color: var(--ink);
+  border-right: 0;
+}
+/* Wide screens: ONE centred container, the sidebar card and the screen side by side with a
+   fixed gap (no empty band between them), the page's grey all around. */
+.app-body:has(.app-shell[data-side='light']) {
+  background: var(--bg);
+}
+@media (min-width: 961px) {
+  .app-shell[data-side='light'] {
+    grid-template-columns: 280px minmax(0, 1fr);
+    column-gap: 1.5rem;
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding: 0 1.5rem;
+  }
+  html:root .app-shell[data-side='light'] .app-sidebar {
+    top: 1rem;
+    height: calc(100vh - 2rem);
+    margin: 1rem 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  .app-shell[data-side='light'] .app-topbar {
+    height: 56px;
+    margin-top: 1rem;
+    padding: 0 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    top: 1rem;
+  }
+  .app-shell[data-side='light'] .app-content {
+    max-width: none;
+    padding: 1.5rem 0 3rem;
+  }
+}
+.app-shell[data-side='light'] .app-nav-link {
+  color: var(--ink-soft);
+}
+.app-shell[data-side='light'] .app-nav-link:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.app-shell[data-side='light'] .app-nav-link.active {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+.app-shell[data-side='light'] .app-nav-link.active .icon {
+  color: var(--brand-text);
+}
+.app-shell[data-side='light'] .app-side-profile {
+  gap: 0.375rem;
+  padding: 1.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+/* The photo a size up from the kit's md (64px), still compact. */
+.app-shell[data-side='light'] .app-side-photo .profile-photo {
+  width: 96px;
+  height: 96px;
+  font-size: 1.75rem;
+}
+.app-shell[data-side='light'] .app-side-name {
+  font-size: 1.0625rem;
+}
+.app-shell[data-side='light'] .app-side-photo .profile-ring-fill {
+  stroke: var(--brand);
+}
+.app-shell[data-side='light'] .app-side-photo .profile-ring-track {
+  stroke: var(--line);
+}
+
+/* ------------------------------------------------- "Applied jobs" screen -- */
+.applied-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+.applied-head {
+  padding: 1.5rem 1.5rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.applied-head h2 {
+  margin: 0 0 0.375rem;
+  font-size: var(--text-title);
+}
+.applied-head p {
+  margin: 0;
+}
+.applied-panel > .notice,
+.applied-panel > .skeleton-block {
+  margin: 1.5rem;
+}
+.applied-body {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.25rem 1.5rem 1.75rem;
+}
+.applied-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.applied-filters .field {
+  margin: 0;
+}
+.applied-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.applied-filter-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+@media (max-width: 1100px) {
+  .applied-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .applied-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .applied-filter-actions .button {
+    flex: 1;
+  }
+}
+.applied-tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+  gap: 1rem;
+}
+.applied-tile-card {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.applied-tile-group .applied-tile + .applied-tile {
+  border-left: 1px solid var(--line);
+}
+.applied-tile {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem;
+}
+.applied-tile > span:last-child {
+  display: grid;
+}
+.applied-tile-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+.applied-tile-label {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.applied-tile-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .applied-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .applied-tile-group {
+    flex-wrap: wrap;
+  }
+}
+.applied-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1rem 3rem;
+  text-align: center;
+}
+.applied-empty p {
+  margin: 0;
+}
+.applied-empty-rings {
+  display: grid;
+  place-items: center;
+  width: 168px;
+  height: 168px;
+  margin-bottom: 0.5rem;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 54%, var(--line) 54.5%, transparent 55.5%),
+    radial-gradient(circle, transparent 74%, color-mix(in srgb, var(--line) 60%, transparent) 74.5%, transparent 75.5%),
+    radial-gradient(circle, transparent 94%, color-mix(in srgb, var(--line) 35%, transparent) 94.5%, transparent 95.5%);
+}
+.applied-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--card);
+  box-shadow: 0 0 0 8px var(--brand-soft);
+}
+.applied-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.applied-empty .button {
+  margin-top: 0.75rem;
+}
+
+/* ------------------------------------------ the job seeker's screens on a phone -- */
+@media (max-width: 640px) {
+  /* Label above value, so neither column gets squeezed. */
+  .screen-profile .definition-list > div,
+  .applicant-profile-card .definition-list > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+  }
+  .profile-banner {
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .profile-banner .profile-ring {
+    width: 56px;
+    height: 56px;
+  }
+  .profile-banner-title {
+    font-size: 1rem;
+  }
+  .profile-banner-actions {
+    justify-content: space-between;
+  }
+  .profile-section-head {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .profile-section-head h3 {
+    font-size: 1.0625rem;
+  }
+  .profile-section-actions {
+    margin-inline-start: auto;
+    gap: 0.25rem;
+  }
+  /* Photo / CV: the picture above its text and button. */
+  .profile-file {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .profile-file-text {
+    justify-items: center;
+  }
+  .profile-hero {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.25rem 1rem;
+  }
+  .profile-hero-actions {
+    justify-content: center;
+  }
+  .profile-hero-actions > * {
+    flex: 1 1 140px;
+  }
+  .applicant-latest li {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
+  .applied-head {
+    padding: 1.25rem 1rem 1rem;
+  }
+  .applied-head h2 {
+    font-size: 1.375rem;
+  }
+  .applied-body {
+    padding: 1rem;
+  }
+  .applied-filters {
+    padding: 1rem;
+  }
+  /* Tiles: three outcomes in a row of small boxes, no side borders squeezing them. */
+  .applied-tile-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .applied-tile {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+  .applied-tile-icon {
+    width: 32px;
+    height: 32px;
+  }
+  .applied-tile-card:first-child .applied-tile {
+    flex-direction: row;
+    align-items: center;
+  }
+  .applied-empty-rings {
+    width: 128px;
+    height: 128px;
+  }
+  .welcome-choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .applicant-profile-head {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+/* The dates: one per line when the screen is very narrow. */
+@media (max-width: 380px) {
+  .applied-dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .applied-tile-label {
+    font-size: 0.75rem;
+  }
 }

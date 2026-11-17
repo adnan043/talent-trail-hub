@@ -2,6 +2,8 @@ import {useQuery} from '@tanstack/react-query';
 import {Link} from '@tanstack/react-router';
 
 import {AdminDashboard} from '../admin/Dashboard';
+import {ApplicantOverview} from '../applicants/ApplicantOverview';
+import {Welcome} from '../applicants/WelcomeScreen';
 import {AdminOverviewPanel} from '../admin/OverviewPanel';
 import {EmployerOverviewPanel} from '../employer/OverviewPanel';
 import {firstAuditQuery, firstUsersQuery, healthQuery, siteQuery, twoFactorQuery} from '../queries';
@@ -21,7 +23,11 @@ const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
 /** Whoever reads the board's reports lands on the admin dashboard; everyone else on the general overview. */
 export function Overview() {
   const me = useMe();
-  return me.data?.abilities.readBoardReports ? <AdminDashboard /> : <GeneralOverview />;
+  if (me.data?.abilities.readBoardReports) return <AdminDashboard />;
+  // A job seeker: their own dashboard. A new account that is neither (and not staff): pick one first.
+  if (me.data?.account?.kind === 'applicant') return <ApplicantOverview />;
+  if (me.data?.account?.kind === 'none' && !me.data.abilities.readApplicants) return <Welcome />;
+  return <GeneralOverview />;
 }
 
 function GeneralOverview() {
