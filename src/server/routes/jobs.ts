@@ -11,7 +11,7 @@ import {after} from '../board/after';
 import {cachedBoardSettings} from '../board/brand';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
-import {SITEMAP_KEY} from '../board/public-cache';
+import {HOME_PREFIX, SITEMAP_KEY} from '../board/public-cache';
 import {cursorHour, cursorWhere, encodeCursor, featuredCount, featuredPinsAndCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
 import {jobDetailSelect, jobSummarySelect, toJobDetail, toJobSummary} from '../board/public-shapes';
 import {isSingleCompany} from '../board/settings';
@@ -35,6 +35,8 @@ const SITEMAP_JOBS = 5000;
 const SITEMAP_COMPANIES = 1000;
 /** The sitemap is public and crawlers tolerate an hour: time-based (also cleared on job and settings changes). */
 const SITEMAP_TTL = 3600;
+/** The plain first page of /jobs/, as the home lists: jobs expire and featured periods end by themselves. */
+const JOBS_FIRST_PAGE_TTL = 180;
 
 const sha256Hex = async (text: string) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -86,31 +88,40 @@ export const jobRoutes = new Hono()
       // No filter (`searchWhere` is the public rule alone) on page 1: the pins and the count read the
       // same rows, so one read serves both.
       const unfiltered = firstPage && Array.isArray(where.AND) && where.AND.length === 1;
-      const [pinned, featuredTotal] = unfiltered
-        ? await featuredPinsAndCount(db, settings, now, seedAt).then(r => [r.pinned, r.count] as const)
-        : await Promise.all([
-            search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, seedAt),
-            firstPage ? featuredCount(db, settings, now) : Promise.resolve(0),
-          ]);
-      const shown = firstPage ? pinned : [];
-      const take = LIMITS.pageSize - shown.length;
-      const orderBy = orderFor(search.sort);
-      // The salary sort's cursor key (a bigint, kept out of the shared select and the JSON).
-      const listSelect = {...jobSummarySelect, salarySortCents: true} as const;
-      const restWhere = {AND: [where, ...(pinned.length ? [{id: {notIn: pinned}}] : []), ...(after ? [after] : [])]};
-      const [top, rest] = await Promise.all([
-        shown.length ? db.job.findMany({where: {AND: [where, {id: {in: shown}}]}, orderBy, select: jobSummarySelect}) : [],
-        db.job.findMany({where: restWhere, orderBy, take: take + 1, select: listSelect}),
-      ]);
-      const page = rest.slice(0, take);
-      const last = page.at(-1);
-      const body: JobsPage = {
-        jobs: [...top, ...page].map(row => toJobSummary(row, now, settings.currency)),
-        pinned: top.length,
-        nextBefore: rest.length > take && last ? encodeCursor(search.sort, last, hour) : null,
-        featuredMore: moreFeatured(featuredTotal),
-        featuredCount: featuredTotal,
+      const load = async (): Promise<JobsPage> => {
+        const [pinned, featuredTotal] = unfiltered
+          ? await featuredPinsAndCount(db, settings, now, seedAt).then(r => [r.pinned, r.count] as const)
+          : await Promise.all([
+              search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, seedAt),
+              firstPage ? featuredCount(db, settings, now) : Promise.resolve(0),
+            ]);
+        const shown = firstPage ? pinned : [];
+        const take = LIMITS.pageSize - shown.length;
+        const orderBy = orderFor(search.sort);
+        // The salary sort's cursor key (a bigint, kept out of the shared select and the JSON).
+        const listSelect = {...jobSummarySelect, salarySortCents: true} as const;
+        const restWhere = {AND: [where, ...(pinned.length ? [{id: {notIn: pinned}}] : []), ...(after ? [after] : [])]};
+        const [top, rest] = await Promise.all([
+          shown.length ? db.job.findMany({where: {AND: [where, {id: {in: shown}}]}, orderBy, select: jobSummarySelect}) : [],
+          db.job.findMany({where: restWhere, orderBy, take: take + 1, select: listSelect}),
+        ]);
+        const page = rest.slice(0, take);
+        const last = page.at(-1);
+        const body: JobsPage = {
+          jobs: [...top, ...page].map(row => toJobSummary(row, now, settings.currency)),
+          pinned: top.length,
+          nextBefore: rest.length > take && last ? encodeCursor(search.sort, last, hour) : null,
+          featuredMore: moreFeatured(featuredTotal),
+          featuredCount: featuredTotal,
+        };
+        return body;
       };
+      // The plain first page (the /jobs/ page as most visitors open it) is the same for everyone:
+      // kept 3 minutes in the Site Cache under the home lists' prefix, so every job write that
+      // clears those (`forgetPublicLists`) clears it too. Per sort and per pin hour (the pins rotate
+      // hourly). Filtered and later pages are too many shapes to cache: they read the database.
+      const scope = isSingleCompany(settings) ? `company-${settings.ownerCompanyId}` : 'all';
+      const body = unfiltered ? await cache.getOrSet(`${HOME_PREFIX}jobs:${scope}:${search.sort}:${hour}`, JOBS_FIRST_PAGE_TTL, load) : await load();
       c.header('Cache-Control', 'public, max-age=60');
       return c.json(body);
     }

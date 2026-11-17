@@ -169,7 +169,7 @@ export const manageJobEditRoutes = new Hono()
           select: {id: true, slug: true},
         })
     );
-    await setJobTags(db, job.id, checked.columns.tags);
+    await setJobTags(db, job.id, checked.columns.tags, {newJob: true});
     await audit(db, {...(await actorOf(c)), action: 'job_created', target: ['job', job.id], meta: {companyId: owner.id}});
     await refreshActiveJobCount(db, owner.id, now);
     return c.json({id: job.id, slug: job.slug}, 201);

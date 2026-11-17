@@ -3,6 +3,7 @@ import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
 import {refreshActiveJobCount} from '../../src/server/board/employer';
+import {forgetPublicLists} from '../../src/server/board/public-cache';
 import {Browser, configureEnv, DATABASE_URL, db, resetDatabase} from './support/harness';
 
 /**
@@ -140,6 +141,8 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect(((await slugs()).json.jobs as {slug: string}[]).map(j => j.slug)).toEqual(['hourly-60', 'min-only-100k', 'yearly-90k', 'monthly-5k', 'no-salary']);
     // An edit moves the job (the trigger keeps the sort column).
     await db.job.update({where: {id: monthly.id}, data: {salaryMaxCents: 1_500_000}});
+    // A real edit goes through a route that clears the cached first page; this one is direct.
+    await forgetPublicLists();
     expect(((await slugs()).json.jobs as {slug: string}[])[0]!.slug).toBe('monthly-5k');
   });
 

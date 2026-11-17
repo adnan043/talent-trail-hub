@@ -302,6 +302,10 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
   document.addEventListener('astro:page-load', () => {
     const form = document.querySelector<HTMLFormElement>('form[data-jobs-form]');
     if (!form) return;
+    // Listeners on `document` and the media query outlive this page: drop them when it is swapped
+    // out, or every filter change (a ClientRouter navigation) would add another set.
+    const controller = new AbortController();
+    document.addEventListener('astro:before-swap', () => controller.abort(), {once: true});
     try {
       if (sessionStorage.getItem(FOCUS_KEY)) document.getElementById('results-title')?.focus();
       sessionStorage.removeItem(FOCUS_KEY);
@@ -391,9 +395,13 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
         else return;
         if (event.key !== 'Tab') event.preventDefault();
       });
-      document.addEventListener('click', event => {
-        if (!pop.hidden && !group.contains(event.target as Node)) setOpen(false);
-      });
+      document.addEventListener(
+        'click',
+        event => {
+          if (!pop.hidden && !group.contains(event.target as Node)) setOpen(false);
+        },
+        {signal: controller.signal}
+      );
       form.addEventListener('reset', () => window.setTimeout(sync));
       const box = document.createElement('div');
       box.className = 'fselect-box';
@@ -431,7 +439,7 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
         sheet.open = !narrow.matches;
       };
       fit();
-      narrow.addEventListener('change', fit);
+      narrow.addEventListener('change', fit, {signal: controller.signal});
     }
   });
 </script>
