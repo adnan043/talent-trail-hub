@@ -6,18 +6,20 @@
 --   company@gmail.com    role member, owns the company "Harbor & Pine"
 --   applicant@gmail.com  role member, a job seeker with a profile and four applications
 --                        (no photo or CV: files cannot be seeded, so upload them to apply)
---   All three password: Talent#Trail2026
+--   No password: this repository is public, so a password written here would let anyone into
+--   every database this file is run on. Set one with "Forgot password" (locally the code is
+--   printed in the terminal), or `npm run platform -- dev-admin <email>` for a local admin.
 BEGIN;
 
 INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
-VALUES ('admin@gmail.com', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Board Admin', 'active', now() - interval '40 days', now() - interval '0 days', now())
+VALUES ('admin@gmail.com', '!', 'Board Admin', 'active', now() - interval '40 days', now() - interval '0 days', now())
 ON CONFLICT ("email") DO NOTHING;
 INSERT INTO "user_roles" ("user_id","role_id")
 SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'admin@gmail.com' AND r."slug" = 'admin'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
-VALUES ('company@gmail.com', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Elena Fischer', 'active', now() - interval '40 days', now() - interval '1 days', now())
+VALUES ('company@gmail.com', '!', 'Elena Fischer', 'active', now() - interval '40 days', now() - interval '1 days', now())
 ON CONFLICT ("email") DO NOTHING;
 INSERT INTO "user_roles" ("user_id","role_id")
 SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'company@gmail.com' AND r."slug" = 'member'
@@ -564,7 +566,7 @@ INSERT INTO "email_logs" ("template_key","to_address","status","error","created_
 
 -- The demo job seeker: a profile, and applications in each status the employer can set.
 INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
-VALUES ('applicant@gmail.com', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Rahim Uddin', 'active', now() - interval '20 days', now() - interval '1 days', now())
+VALUES ('applicant@gmail.com', '!', 'Rahim Uddin', 'active', now() - interval '20 days', now() - interval '1 days', now())
 ON CONFLICT ("email") DO NOTHING;
 INSERT INTO "user_roles" ("user_id","role_id")
 SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'applicant@gmail.com' AND r."slug" = 'member'

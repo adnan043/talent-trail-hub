@@ -140,6 +140,21 @@ describe.skipIf(!DATABASE_URL)('employer area (integration, real Postgres)', () 
     expect(job.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
   });
 
+  it('a first post and a job seeker start sent at once never make an account both', async () => {
+    for (let i = 0; i < 6; i++) {
+      const email = `both${i}@example.test`;
+      const browser = await signedIn(app, email, undefined, `203.0.113.${60 + i}`);
+      const [posted, started] = await Promise.all([post(browser), browser.post('/site-api/applicant-profile/start')]);
+      const user = await db.user.findUniqueOrThrow({where: {email}, select: {id: true}});
+      const [company, profile] = await Promise.all([
+        db.company.findUnique({where: {ownerUserId: user.id}, select: {id: true}}),
+        db.applicantProfile.findUnique({where: {userId: user.id}, select: {userId: true}}),
+      ]);
+      expect(company !== null && profile !== null).toBe(false);
+      expect([posted.status, started.status].some(s => s === 200)).toBe(company !== null || profile !== null);
+    }
+  });
+
   it('posting and renewing are limited per user per hour (429), other employers unaffected', async () => {
     // The hour's earlier attempts, as the limiter records them; then the next post is refused.
     const userA = (await db.user.findFirstOrThrow({where: {email: 'a@example.test'}, select: {id: true}})).id;

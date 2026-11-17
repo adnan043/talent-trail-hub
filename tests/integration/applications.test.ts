@@ -351,6 +351,13 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     const csv = await ownerA.get(`/site-api/applications/jobs/${jobA.id}/applicants/export?status=`);
     expect(csv.status).toBe(200);
     expect(String(csv.json.text)).toContain('Resume deleted after 180 days (privacy policy)');
+    // The profile (birth date, address) and the photo end with the CV, for the employer and staff.
+    for (const browser of [ownerA, admin]) {
+      const profile = await browser.get(`/site-api/applications/${appId}/profile`);
+      expect(profile.status).toBe(200);
+      expect(profile.json.profile).toBeNull();
+      expect((await browser.get(`/site-api/applications/${appId}/photo`)).status).toBe(404);
+    }
   });
   it('staff see a note instead of the form', async () => {
     const path = `/site-api/applications/jobs/${jobA.slug}/can-apply`;

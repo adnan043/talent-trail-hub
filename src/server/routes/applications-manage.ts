@@ -245,7 +245,8 @@ export const applicantRoutes = new Hono<Env>()
     return c.json({url: link.data.url, expiresAt: link.data.expiresAt});
   })
 
-  // The profile the candidate applied with, as it is now (null for the older guest applications).
+  // The profile the candidate applied with, as it is now (null for the older guest applications and
+  // once the application is past the retention period).
   .get('/:id/profile', withViewer, requireAuth, verifiedUnlessStaff, withDb, async c => {
     const profile = await profileInScope(c);
     if (profile === undefined) return notFound(c);
@@ -272,15 +273,16 @@ export const applicantRoutes = new Hono<Env>()
 
 /**
  * The applicant's profile when application `:id` is in the viewer's scope: undefined when it is not
- * (404), null for an application made without an account.
+ * (404), null for an application made without an account, or one past the retention period (the
+ * birth date, address and photo are kept from the employer as long as the CV is, never longer).
  */
 async function profileInScope(c: Context<Env>) {
   const id = idOf(c.req.param('id'));
   const where = jobWhereOf(await applicantScope(c));
   if (!id || !where) return undefined;
-  const app = await c.var.db.application.findFirst({where: {id, job: where}, select: {applicantUserId: true}});
+  const app = await c.var.db.application.findFirst({where: {id, job: where}, select: {applicantUserId: true, createdAt: true}});
   if (!app) return undefined;
-  if (!app.applicantUserId) return null;
+  if (!app.applicantUserId || isResumeExpired(app.createdAt)) return null;
   return c.var.db.applicantProfile.findUnique({
     where: {userId: app.applicantUserId},
     select: {
