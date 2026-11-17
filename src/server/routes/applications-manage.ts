@@ -123,18 +123,21 @@ export const applicantRoutes = new Hono<Env>()
     const where = jobWhereOf(await applicantScope(c));
     const jobId = idOf(c.req.param('id'));
     if (!where || !jobId) return notFound(c);
-    const job = await c.var.db.job.findFirst({
-      where: {...where, id: jobId},
-      select: {id: true, title: true, slug: true, status: true, applicationCount: true},
-    });
-    if (!job) return notFound(c);
     const {status, before} = c.req.valid('query');
-    const rows = await c.var.db.application.findMany({
-      where: {jobId, ...(status ? {status} : {}), ...(before ? {id: {lt: before}} : {})},
-      select: applicationSelect,
-      orderBy: {id: 'desc'},
-      take: PAGE + 1,
-    });
+    // One parallel trip: the job in scope, and its applicants (never answered unless the job is in scope).
+    const [job, rows] = await Promise.all([
+      c.var.db.job.findFirst({
+        where: {...where, id: jobId},
+        select: {id: true, title: true, slug: true, status: true, applicationCount: true},
+      }),
+      c.var.db.application.findMany({
+        where: {jobId, ...(status ? {status} : {}), ...(before ? {id: {lt: before}} : {})},
+        select: applicationSelect,
+        orderBy: {id: 'desc'},
+        take: PAGE + 1,
+      }),
+    ]);
+    if (!job) return notFound(c);
     const items = rows.slice(0, PAGE).map(r => toApplicantRow(r));
     return c.json({job, items, nextBefore: rows.length > PAGE ? items.at(-1)!.id : null});
   })

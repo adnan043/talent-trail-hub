@@ -33,8 +33,11 @@ export function useApplicantStatus() {
       toast.danger(`The status was not saved: ${error.message}`);
     },
     onSuccess: ({applicant}) => patchCachedApplicant(queryClient, applicant.id, () => applicant),
-    // A list filtered by status (and its counts) must drop or gain the row: refetch every list.
-    onSettled: () => void queryClient.invalidateQueries({queryKey: ['applicants']}),
+    // A list filtered by status (and its counts) must drop or gain the row: refetch every list. The
+    // open applicant's profile and the job filter (`['applicants', 'profile' | 'jobs', …]`) do not
+    // change with a status: not refetched.
+    onSettled: () =>
+      void queryClient.invalidateQueries({queryKey: ['applicants'], predicate: q => q.queryKey[1] !== 'profile' && q.queryKey[1] !== 'jobs'}),
   });
 }
 

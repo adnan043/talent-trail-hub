@@ -29,12 +29,14 @@ export async function applicantScope(c: ViewerContext, access: 'read' | 'write' 
   // Reading every company's applicants and CHANGING them are two permissions: a staff member who
   // may only look never sets a status (which emails the candidate) or overwrites notes.
   const all = access === 'write' ? PERMISSIONS.APPLICANT_MANAGE_ALL : PERMISSIONS.APPLICANT_READ_ALL;
-  if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, all)) return {kind: 'all'};
   const db = c.var.db;
-  const [settings, company] = await Promise.all([
+  // One parallel trip: the permission check and the own company (only used when it is not `all`).
+  const [staff, settings, company] = await Promise.all([
+    can(c as unknown as Context<{Variables: {viewer: Viewer}}>, all),
     cachedBoardSettings(db),
     db.company.findUnique({where: {ownerUserId: c.var.viewer.id!}, select: {id: true, isBlocked: true}}),
   ]);
+  if (staff) return {kind: 'all'};
   if (isSingleCompany(settings) || !company) return {kind: 'none'};
   // A blocked company keeps reading its applicants but changes nothing: a status change emails the
   // candidate in the board's name.
