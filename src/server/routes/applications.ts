@@ -152,10 +152,13 @@ export const applicationRoutes = new Hono<Env>()
     const no = (reason: CanApplyAnswer['reason'], more: Partial<CanApplyAnswer> = {}) => c.json<CanApplyAnswer>({canApply: false, reason, ...more});
     if (viewer.state !== 'user' || !viewer.id) return no('sign_in');
     if (!slug) return no(null);
-    const [job, kind, profile] = await Promise.all([
+    const email = viewer.email ? normalizeEmail(viewer.email) : null;
+    // One parallel trip: "already applied?" goes by the job's unique slug, not after the job read.
+    const [job, kind, profile, applied] = await Promise.all([
       db.job.findFirst({where: {slug}, select: {id: true, company: {select: {ownerUserId: true}}}}),
       accountKind(db, viewer.id),
       db.applicantProfile.findUnique({where: {userId: viewer.id}, select: applyProfileSelect}),
+      email ? db.application.findFirst({where: {email, job: {slug}}, select: {id: true}}) : null,
     ]);
     if (job?.company.ownerUserId === viewer.id) return no('own_job');
     if (kind === 'employer') return no('employer_account');
@@ -170,8 +173,7 @@ export const applicationRoutes = new Hono<Env>()
       headline: profile?.headline ?? null,
       resumeFileName: profile?.resumeFileId ? profile.resumeFileName : null,
     };
-    const email = viewer.email ? normalizeEmail(viewer.email) : null;
-    if (job && email && (await db.application.findFirst({where: {jobId: job.id, email}, select: {id: true}}))) return no('applied', {profile: summary});
+    if (job && applied) return no('applied', {profile: summary});
     const missing = profile ? missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId}) : [];
     if (missing.length) return no('incomplete', {missing, profile: summary});
     return c.json<CanApplyAnswer>({canApply: true, reason: null, profile: summary});

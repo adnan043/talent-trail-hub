@@ -65,7 +65,8 @@ async function ask(slug: string): Promise<CanApplyAnswer | null> {
 
 /** Shows the one step that fits this visitor. */
 async function showStep(section: HTMLElement, form: HTMLFormElement, slug: string) {
-  const answer = await ask(slug);
+  // A signed-out visitor (the SSR page says so) needs no question: the sign-in step, no request.
+  const answer = document.body.dataset.viewer === 'guest' ? null : await ask(slug);
   const pick = (name: string) => section.querySelector<HTMLElement>(`[data-${name}]`);
   pick('apply-loading')?.setAttribute('hidden', '');
   const show = (name: string) => pick(name)?.removeAttribute('hidden');
