@@ -31,7 +31,7 @@ export function PostJob() {
   const queryClient = useQueryClient();
   const search = useSearch({strict: false}) as {step?: PostDraft['step']};
   const [draft, setDraft] = useState<PostDraft>(() => {
-    const saved = loadDraft();
+    const saved = loadDraft(me.data?.viewer.id);
     return search.step ? {...saved, step: search.step} : saved;
   });
   const stepBox = useRef<HTMLDivElement>(null);
@@ -56,12 +56,14 @@ export function PostJob() {
   // Autosave every 5 s (only when something changed).
   const latest = useRef(draft);
   latest.current = draft;
+  const owner = useRef(me.data?.viewer.id);
+  owner.current = me.data?.viewer.id;
   useEffect(() => {
     let saved = '';
     const timer = window.setInterval(() => {
       const text = JSON.stringify(latest.current);
       if (text !== saved) {
-        saveDraft(latest.current);
+        saveDraft(owner.current, latest.current);
         saved = text;
       }
     }, 5000);
@@ -79,7 +81,7 @@ export function PostJob() {
     onSuccess: async answer => {
       const next = {...draft, jobId: answer.jobId};
       setDraft(next);
-      saveDraft(next);
+      saveDraft(me.data?.viewer.id, next);
       // The job is saved in every case; an order exists once it is done or off to pay; a first post
       // also created the company (the company screen, and the options that carry it).
       void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
@@ -121,7 +123,7 @@ export function PostJob() {
       if (err instanceof ApiError && typeof err.body.jobId === 'number' && err.body.jobId !== draft.jobId) {
         const next = {...draft, jobId: err.body.jobId};
         setDraft(next);
-        saveDraft(next);
+        saveDraft(me.data?.viewer.id, next);
         void queryClient.invalidateQueries({queryKey: ['employer', 'jobs']});
       }
       if (!(err instanceof ApiError) || !Object.keys(err.fields).length) return;

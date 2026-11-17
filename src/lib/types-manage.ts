@@ -44,6 +44,8 @@ export interface ModerationItem {
   submittedAt: string;
   /** An edit of a live job: approving keeps this expiry. */
   liveUntil: string | null;
+  /** An edit of a job that was live, whose period ended while it waited: approving keeps it expired. */
+  periodEnded: boolean;
   payment: {amountCents: number; currency: string} | null;
 }
 

@@ -35,6 +35,14 @@ You can follow its status in your [dashboard]({{dashboardUrl}}).`,
 
 It stays up until {{expiresOn}}. We'll remind you before it expires.`,
   },
+  'job-approved-expired': {
+    subject: 'Your changes were approved: {{jobTitle}}',
+    body: `Hi,
+
+Your changes to **{{jobTitle}}** on {{boardName}} were approved. Its listing period ended while it waited for review, so it is not visible to candidates.
+
+Still hiring? [Renew it]({{renewUrl}}).`,
+  },
   'job-rejected': {
     subject: 'Your job was not approved: {{jobTitle}}',
     body: `Hi,

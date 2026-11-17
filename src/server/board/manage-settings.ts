@@ -12,7 +12,7 @@ import {problem, requireAuth, requirePermission, withDb, withViewer} from '../..
 import {PERMISSIONS} from '../permissions';
 import {actorOf, asObject, invalid, str} from './manage-shared';
 import {dropLogoFile, finishLogoUpload, isLogoImage, logoAttemptAllowed, startLogoUpload} from './employer-logo';
-import {getBoardSettings} from './settings';
+import {ensureBoardSettingsRow, getBoardSettings} from './settings';
 import {createWithUniqueSlug} from './slug';
 import {forgetBoardSettings} from './brand';
 
@@ -40,7 +40,9 @@ const logoLocal = validator('json', (value, c) => {
  * brand.ts) for every Worker instance: the next public read shows the change.
  */
 const saveSettings = async (db: PrismaClient, data: Record<string, unknown>) => {
-  const saved = await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, ...data}, update: data, select: {id: true}});
+  // Row first (a race-free insert), then the change: a plain upsert can fail on a new database.
+  await ensureBoardSettingsRow(db);
+  const saved = await db.boardSettings.update({where: {id: 1}, data, select: {id: true}});
   await forgetBoardSettings();
   return saved;
 };

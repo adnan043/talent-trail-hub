@@ -4,6 +4,7 @@ import {app} from '../../src/server/app';
 import {forgetBoardSettings} from '../../src/server/board/brand';
 import {sendBoardEmail} from '../../src/server/board/email';
 import {reviewerEmails} from '../../src/server/board/review';
+import {getBoardSettings} from '../../src/server/board/settings';
 import {Browser, configureEnv, DATABASE_URL, db, ownerSignedIn, resetDatabase, signedIn, userId} from './support/harness';
 
 /** The board's admin (`/site-api/manage/*`): codename gating, the employer edit lock, tier rules, board mode. */
@@ -372,6 +373,19 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect((await admin.request('PUT', '/site-api/manage/settings/currency', {currency: 'eur'})).json.currency).toBe('EUR');
   });
 
+  it('first reads of the board settings at once, on a database without the row, all succeed', async () => {
+    await db.boardSettings.deleteMany();
+    forgetBoardSettings();
+    const reads = await Promise.all(Array.from({length: 6}, () => getBoardSettings(db as never)));
+    expect(new Set(reads.map(s => s.name)).size).toBe(1);
+    expect(await db.boardSettings.count()).toBe(1);
+    // An admin save on a database without the row creates it too.
+    await db.boardSettings.deleteMany();
+    forgetBoardSettings();
+    expect((await admin.request('PUT', '/site-api/manage/settings/currency', {currency: 'eur'})).status).toBe(200);
+    expect(await db.boardSettings.findUniqueOrThrow({where: {id: 1}, select: {currency: true}})).toEqual({currency: 'EUR'});
+  });
+
   it('deleting a job removes its applications', async () => {
     const {job} = await seedJob('admin');
     await db.application.create({data: {jobId: job.id, name: 'Sam', email: 'sam@example.test', consentAt: new Date(), consentText: 'ok'}});
@@ -382,16 +396,25 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
   });
 
   it('approving an edit of a job whose period ran out in review lists it as expired, never a new free period', async () => {
-    const {job} = await seedJob('paid', 'pending_review');
+    const {job, company} = await seedJob('paid', 'pending_review');
+    await db.company.update({where: {id: company.id}, data: {ownerUserId: await userId('member@example.test')}});
     const ended = new Date(Date.now() - 86_400_000);
     await db.job.update({where: {id: job.id}, data: {needsReview: true, expiresAt: ended, listingFeatured: true, isFeatured: false, featuredUntil: null}});
-    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string}};
+    const seen = (await admin.get(`/site-api/manage/moderation/${job.id}`)).json as {item: {submittedAt: string; liveUntil: string | null; periodEnded: boolean}};
+    // The queue and the review page say what approving does: not "New", not "Edit of a live job".
+    expect(seen.item).toMatchObject({liveUntil: null, periodEnded: true});
+    const queue = (await admin.get('/site-api/manage/moderation')).json as {items: {id: number; periodEnded: boolean}[]};
+    expect(queue.items.find(item => item.id === job.id)?.periodEnded).toBe(true);
     const res = await admin.post(`/site-api/manage/moderation/${job.id}/approve`, {seen: seen.item.submittedAt});
     expect(res.status).toBe(200);
     expect(res.json.status).toBe('expired');
     const after = await db.job.findUniqueOrThrow({where: {id: job.id}});
     expect(after).toMatchObject({status: 'expired', needsReview: false, isFeatured: false});
     expect(after.expiresAt?.getTime()).toBe(ended.getTime());
+    // The employer hears it: approved, but off the board until renewed.
+    expect(await db.emailLog.findMany({where: {templateKey: {in: ['job-approved', 'job-approved-expired']}}, select: {templateKey: true, to: true}})).toEqual([
+      {templateKey: 'job-approved-expired', to: 'member@example.test'},
+    ]);
   });
 
   it('extend and feature never act on a job whose edit went into review after the admin read it', async () => {

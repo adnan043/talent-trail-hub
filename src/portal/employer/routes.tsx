@@ -2,6 +2,7 @@ import type {QueryClient} from '@tanstack/react-query';
 import {createRoute, lazyRouteComponent} from '@tanstack/react-router';
 
 import {type NavItem, rootRoute} from '../routes';
+import {meQuery} from '../queries';
 import {applicantsSearch, jobApplicantsQuery} from '../applicants/queries';
 import {employerCompanyQuery, employerOptionsQuery, myJobQuery, myJobsQuery, myOrdersQuery, receiptQuery} from './queries';
 
@@ -84,7 +85,8 @@ const postJobRoute = createRoute({
     const step = Number(search.step);
     return step === 1 || step === 2 || step === 3 || step === 4 ? {step} : {};
   },
-  loader: ({context: {queryClient}}: Ctx) => warm(queryClient.ensureQueryData(employerOptionsQuery)),
+  // `me` too: the saved draft belongs to one account (../draft.ts), read as the screen opens.
+  loader: ({context: {queryClient}}: Ctx) => warm(queryClient.ensureQueryData(employerOptionsQuery), queryClient.ensureQueryData(meQuery)),
   component: lazyRouteComponent(() => import('./screens/post-job'), 'PostJob'),
 });
 

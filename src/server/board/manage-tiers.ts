@@ -11,7 +11,7 @@ import {problem, requireAuth, requirePermission, withDb, withViewer} from '../..
 import type {Viewer} from '../../platform/types';
 import {PERMISSIONS} from '../permissions';
 import {actorOf, asObject, idParam, invalid, str, tryPlatform} from './manage-shared';
-import {getBoardSettings} from './settings';
+import {ensureBoardSettingsRow, getBoardSettings} from './settings';
 import {forgetBoardSettings} from './brand';
 
 /**
@@ -118,7 +118,8 @@ export const manageTierRoutes = new Hono()
         return c.json(problem('tier_without_price', `"${unpriced.name}" has no price. Pick one for it, or deactivate it, before turning free posting off.`), 409);
       }
     }
-    await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, freePostingEnabled: enabled}, update: {freePostingEnabled: enabled}, select: {id: true}});
+    await ensureBoardSettingsRow(db);
+    await db.boardSettings.update({where: {id: 1}, data: {freePostingEnabled: enabled}, select: {id: true}});
     // After the write, outside any transaction: every instance's cached settings go (brand.ts).
     await forgetBoardSettings();
     await audit(db, {...(await actorOf(c)), action: 'free_posting_changed', target: ['board', 1], meta: {enabled}});

@@ -12,6 +12,7 @@ import {publishJob} from './lifecycle';
 import {actorOf, asObject, effectiveStatus, employerEmail, idParam, invalid, notFound, refreshActiveJobCount, str} from './manage-shared';
 import {after} from './after';
 import {cachedBoardSettings} from './brand';
+import {isSingleCompany} from './settings';
 
 /**
  * F20 moderation: the queue (oldest first), one job's review page, approve and reject. The admin
@@ -44,6 +45,9 @@ type ItemRow = Prisma.JobGetPayload<{select: typeof itemSelect}>;
 const keepsDates = (job: {publishedAt: Date | null; expiresAt: Date | null}, now: Date) =>
   job.publishedAt !== null && job.expiresAt !== null && job.expiresAt > now;
 
+/** Was live once, and its period ended while it waited: approving it keeps it expired. */
+const ranOutAt = (job: {publishedAt: Date | null; expiresAt: Date | null}, now: Date) => !keepsDates(job, now) && job.publishedAt !== null;
+
 function toItem(row: ItemRow, now: Date): ModerationItem {
   const order = row.orders[0];
   return {
@@ -54,6 +58,7 @@ function toItem(row: ItemRow, now: Date): ModerationItem {
     flagged: row.flagged,
     submittedAt: row.updatedAt.toISOString(),
     liveUntil: keepsDates(row, now) ? row.expiresAt!.toISOString() : null,
+    periodEnded: ranOutAt(row, now),
     payment: order ? {amountCents: order.amountCents, currency: order.currency} : null,
   };
 }
@@ -208,7 +213,7 @@ export const manageModerationRoutes = new Hono()
     // An edit of a job that was already live, whose period ran out while it waited: approving the
     // text never starts a new (unpaid, maybe featured) period. It is approved as expired; the
     // employer renews it to list it again.
-    const ranOut = !keep && job.publishedAt !== null;
+    const ranOut = ranOutAt(job, now);
     // The row is locked while it is published, so an employer edit cannot slip in between the
     // check of what the moderator saw and the publish (it waits, then sees a live job).
     const published = await db.$transaction(async tx => {
@@ -236,6 +241,18 @@ export const manageModerationRoutes = new Hono()
     await audit(db, {...actor, action: 'job_approved', target: ['job', id], meta: {keptDates: keep, ...(ranOut ? {expired: true} : {})}});
     await refreshActiveJobCount(db, job.company.id, now);
     if (ranOut) {
+      // The employer hears it too: approved, but off the board until renewed (not on a
+      // single-company board, which has no employer area to renew from).
+      const requestUrl = c.req.url;
+      after(c, `approved-expired email for job ${id}`, async () => {
+        const [to, settings] = await Promise.all([employerEmail(db, job.company.ownerUserId), cachedBoardSettings(db)]);
+        if (!to || isSingleCompany(settings)) return;
+        await sendBoardEmail(db, requestUrl, {
+          template: 'job-approved-expired',
+          to,
+          vars: {boardName: settings.name, jobTitle: job.title, renewUrl: '/dashboard/employer/jobs'},
+        }, settings);
+      });
       const body: ModerationResult = {status: 'expired', message: `${job.title} is approved. Its listing period had ended, so it stays expired until it is renewed.`, refundNote: null};
       return c.json(body);
     }

@@ -11,7 +11,7 @@ import {errorLabel} from '../error-label';
  * Every call writes an `email_logs` row: `sent`, `failed`, or `skipped` when no mail service
  * is set up. Never throws: the caller's answer to the visitor must not depend on it.
  *
- * Templates (src/server/board/emails/): job-submitted, job-approved, job-rejected,
+ * Templates (src/server/board/emails/): job-submitted, job-approved, job-approved-expired, job-rejected,
  * job-expiring, job-expired, new-applicant, application-confirmation,
  * application-shortlisted, application-approved, application-rejected, admin-job-review, order-receipt.
  *
@@ -24,6 +24,7 @@ import {errorLabel} from '../error-label';
 export type BoardEmailTemplate =
   | 'job-submitted'
   | 'job-approved'
+  | 'job-approved-expired'
   | 'job-rejected'
   | 'job-expiring'
   | 'job-expired'

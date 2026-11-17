@@ -661,8 +661,10 @@ model Application {
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  @@unique([jobId, email])
-  /// One application per ACCOUNT per job too: the account's email can change after applying.
+  /// One application per ACCOUNT per job: the account's email can change after applying, and an
+  /// address can pass to a new account. Also in SQL only: `applications_job_id_guest_email_key`,
+  /// unique (job_id, email) WHERE applicant_user_id IS NULL (the old guest applications, one per
+  /// address per job), a partial index.
   @@unique([jobId, applicantUserId])
   /// "My applications": an account's own applications.
   @@index([applicantUserId, id])

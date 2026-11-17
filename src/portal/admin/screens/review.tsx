@@ -142,6 +142,11 @@ export function Review() {
           The employer changed a live job, so it is off the board until you decide. Approving puts it back with its end date ({day(item.liveUntil)}).
         </Notice>
       )}
+      {item.periodEnded && (
+        <Notice tone="warning" title="An edit of a job whose period ended">
+          The employer changed a live job, and its listing period ended while it waited for review. Approving keeps it expired: the employer is emailed and renews it to list it again.
+        </Notice>
+      )}
       <div className="grid-main-side">
         <Card title="The job as it will appear">
           <div className="form-stack">
