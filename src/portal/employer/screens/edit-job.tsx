@@ -47,17 +47,20 @@ export function EditEmployerJob() {
     <div className="app-page screen-edit-job">
       <PageHeader
         title={detail.values.title}
-        description="Changes show on the board once saved. The job's address stays the same."
+        description="Edit the job's details. Its address stays the same."
         actions={<StatusBadge tone={STATUS_TONES[detail.status]}>{JOB_STATUS_LABELS[detail.status]}</StatusBadge>}
       />
       {!detail.actions.edit ? (
         <Notice tone="info">This job can no longer be edited.</Notice>
       ) : (
         <Card>
-          {detail.status === 'published' && <Notice tone="info">On this board, edits to a live job may be reviewed again before they show.</Notice>}
+          {detail.status === 'published' && <Notice tone="info">If this board reviews jobs, saving takes the job off the board until the changes are approved.</Notice>}
           <JobForm
             initial={detail.values}
-            categories={options.data.categories}
+            // The active categories, and the job's own one although it was hidden since (kept unchanged).
+            categories={
+              options.data.categories.some(c => c.id === detail.category.id) ? options.data.categories : [...options.data.categories, detail.category]
+            }
             currency={detail.salaryCurrency ?? options.data.currency}
             onSubmit={values => save.mutate(values)}
             pending={save.isPending}

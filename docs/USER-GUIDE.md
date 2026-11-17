@@ -175,7 +175,7 @@ price.
 
 ### 2.8 Candidate data (privacy)
 **Candidate data** looks up an email address and can delete that person's applications, resumes,
-job seeker profile and job alerts. Use it for erasure requests. **Run purge now** removes resumes older than 180 days; this also
+job seeker profile (with its photo and CV) and email log rows. The account itself stays. Use it for erasure requests. **Run purge now** removes resumes older than 180 days; this also
 runs daily automatically.
 
 ### 2.9 Email log

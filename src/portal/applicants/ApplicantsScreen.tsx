@@ -1,6 +1,6 @@
 import {keepPreviousData, useInfiniteQuery, useMutation, useQuery} from '@tanstack/react-query';
 import {useNavigate, useParams, useSearch} from '@tanstack/react-router';
-import {type ReactNode, useState} from 'react';
+import {type ReactNode, useRef, useState} from 'react';
 
 import {APPLICATION_STATUSES} from '../../lib/board';
 import {APPLICATION_STATUS_LABELS, type ApplicantRow} from '../../lib/types-apply';
@@ -65,8 +65,13 @@ function ApplicantsTable({
   const status = useApplicantStatus();
   const download = useResumeDownload();
   const busyKey = (status.isPending && status.variables?.id) || (download.isPending && download.variables) || null;
-  // The drawer shows the CACHED row, so an optimistic status change shows there at once.
-  const open = rows?.find(row => row.id === openId) ?? null;
+  // The drawer shows the CACHED row, so an optimistic status change shows there at once. A row that
+  // leaves this list (a status change in a list filtered by status refetches it) stays open as last
+  // seen: the drawer closes only when the user closes it (unsaved notes are kept).
+  const lastOpen = useRef<ApplicantRow | null>(null);
+  const cached = openId === null ? null : (rows?.find(row => row.id === openId) ?? null);
+  if (cached) lastOpen.current = cached;
+  const open = openId === null ? null : (cached ?? (lastOpen.current?.id === openId ? lastOpen.current : null));
 
   const menu = (row: ApplicantRow): MenuItem[] => [
     ...(canEdit

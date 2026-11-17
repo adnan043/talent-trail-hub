@@ -92,6 +92,8 @@ export interface EmployerJobDetail {
   tierId: number | null;
   /** The currency its salary was entered in (null: no salary): an edit keeps it, whatever the board's is now. */
   salaryCurrency: string | null;
+  /** Its category, also when the admin has hidden it since (the edit form keeps offering it). */
+  category: {id: number; name: string};
   actions: EmployerJobActions;
   values: JobValues;
 }

@@ -23,7 +23,8 @@ export function CompletionRing({value, size = 'md', label}: {value: number; size
           r={r}
           fill="none"
           strokeWidth="6"
-          strokeLinecap="round"
+          // A round cap would draw a dot at 0%.
+          strokeLinecap={filled > 0 ? 'round' : 'butt'}
           strokeDasharray={`${filled} ${length}`}
           transform="rotate(-90 32 32)"
         />

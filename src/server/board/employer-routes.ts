@@ -86,7 +86,8 @@ export const employerJobRoutes = new Hono<Env>()
     const status = effectiveStatus(job);
     if (!isEditable(status)) return c.json(problem('not_editable', 'This job can no longer be edited.'), 409);
     // The settings from the database, never the Site Cache: they decide whether the edit skips review.
-    const [checked, settings] = await Promise.all([validateJob(db, c.req.valid('json').job), getBoardSettings(db)]);
+    // The job's own category stays valid although the admin hid it since (as the admin's edit does).
+    const [checked, settings] = await Promise.all([validateJob(db, c.req.valid('json').job, job.categoryId), getBoardSettings(db)]);
     if ('fields' in checked) return c.json({...problem('invalid_input', Object.values(checked.fields)[0]!), fields: checked.fields}, 422);
     // The slug never changes, so links keep working. EVERY content edit needs a review before
     // the job is (again) live: `needs_review` (cleared by an approval, or here when the board

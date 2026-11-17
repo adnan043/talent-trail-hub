@@ -13,7 +13,8 @@ import {idOf, isResumeExpired} from '../board/applicants';
  *
  *   GET /    the signed-in user's applications, newest first (keyset page, `?before=<id>`), filtered by
  *            `?status=`, `?q=` (job title or company, contains), `?from=` / `?to=` (YYYY-MM-DD, applied
- *            on those days, UTC); with `counts` per status over ALL their applications (first page only)
+ *            on those days in the browser's time zone: `?tz=` is its `getTimezoneOffset()` in minutes,
+ *            UTC without it); with `counts` per status over ALL their applications (first page only)
  *
  * An application belongs to the ACCOUNT that sent it (`applicant_user_id`), so it stays theirs when
  * they change their email. The older guest applications (no account) belong to whoever owns their
@@ -31,12 +32,28 @@ const dayOf = (v: unknown): Date | null => {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? null : d;
 };
 
+/** `Date#getTimezoneOffset()` minutes (UTC − local), within the real range; 0 (UTC) otherwise. */
+const tzOf = (v: unknown): number => {
+  const n = typeof v === 'string' && /^-?\d{1,4}$/.test(v) ? Number(v) : 0;
+  return n >= -900 && n <= 900 ? n : 0;
+};
+
 const listQuery = validator('query', v => {
   const status = (APPLICATION_STATUSES as readonly unknown[]).includes(v.status) ? (v.status as ApplicationStatus) : null;
   const q = typeof v.q === 'string' ? v.q.trim().slice(0, 100) : '';
+  // A day starts at the browser's local midnight: UTC midnight plus its offset.
+  const tz = tzOf(v.tz);
+  const shift = tz * 60_000;
   const from = dayOf(v.from);
   const to = dayOf(v.to);
-  return {before: idOf(typeof v.before === 'string' ? v.before : undefined), status, q, from, to: to ? new Date(to.getTime() + 86_400_000) : null};
+  return {
+    before: idOf(typeof v.before === 'string' ? v.before : undefined),
+    status,
+    q,
+    from: from ? new Date(from.getTime() + shift) : null,
+    to: to ? new Date(to.getTime() + 86_400_000 + shift) : null,
+    tz,
+  };
 });
 
 const select = {

@@ -117,7 +117,7 @@ export const manageJobRoutes = new Hono()
         applicants: j.applicationCount,
         createdAt: j.createdAt.toISOString(),
         needsReview: j.needsReview,
-        actions: actionsFor(status, j.source),
+        actions: actionsFor(status, j.source, j.publishedAt),
       };
     });
     const body: AdminJobsPage = {jobs, nextBefore: rows.length > PAGE ? jobs.at(-1)!.id : null};
@@ -180,7 +180,7 @@ export const manageJobRoutes = new Hono()
     const job = await db.job.findUnique({where: {id}, select: jobFacts});
     if (!job) return notFound(c);
     const status = effectiveStatus(job, now);
-    if (!actionsFor(status, job.source).extend) {
+    if (!actionsFor(status, job.source, job.publishedAt).extend && status !== 'expired' && status !== 'closed') {
       return c.json(problem('not_extendable', 'Only live, expired or closed jobs can be extended.'), 409);
     }
     // A job that never went live (closed while in review) has never been approved: only

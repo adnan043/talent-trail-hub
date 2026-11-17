@@ -90,7 +90,9 @@ export const myApplicationsFilteredQuery = (filter: MyApplicationsFilter) =>
   infiniteQueryOptions({
     queryKey: ['my-applications', filter],
     initialPageParam: '',
-    queryFn: ({pageParam}) => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: pageParam, ...filter}})),
+    // The dates are the browser's days: the server shifts them by its time zone offset.
+    queryFn: ({pageParam}) =>
+      read<MyApplicationsPage>(api['my-applications'].$get({query: {before: pageParam, ...filter, tz: String(new Date().getTimezoneOffset())}})),
     getNextPageParam: last => (last.nextBefore ? String(last.nextBefore) : undefined),
   });
 
