@@ -481,6 +481,8 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(res.status).toBe(200);
     expect(await db.applicantProfile.count()).toBe(0);
     expect(deleted).toEqual(expect.arrayContaining([files.photoFileId, files.resumeFileId]));
+    // Deleted now, so nothing is left queued for the nightly purge.
+    expect(await db.resumeUpload.count()).toBe(0);
   });
 
   it('the privacy tool deletes the job seeker profile with its photo and CV; the account stays', async () => {

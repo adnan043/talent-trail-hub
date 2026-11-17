@@ -7,6 +7,7 @@ import {completeUpload, createUpload, deleteFile} from '../files';
 import {randomBytes, toBase64Url} from '../../platform/auth/encoding';
 import {firstBytes, looksLikeResume} from './applicants-resume';
 import {isLogoImage} from './employer-logo';
+import {deleteStoredFiles, queueFilesForPurge} from './manage-shared';
 
 /**
  * A job seeker's profile (`applicant_profiles`): what kind an account is, the profile as the
@@ -224,13 +225,59 @@ export async function finishProfileUpload(
   }
 }
 
-/** Deletes a replaced file, unless something still uses it; a failure only leaves an unused private file. */
+/**
+ * Deletes a replaced file, unless something still uses it. Queued for the nightly purge FIRST
+ * (`queueFilesForPurge`), so a delete storage refuses now is retried there, never left behind.
+ */
 export async function dropProfileFile(db: PrismaClient, requestUrl: string, fileId: string | null): Promise<void> {
   if (!fileId) return;
   try {
     if (await fileInUse(db, fileId)) return;
-    await deleteFile(requestUrl, fileId);
+    await queueFilesForPurge(db, [fileId]);
+    await deleteStoredFiles(db, requestUrl, [fileId]);
   } catch (err) {
     console.warn(`applicant file not removed: ${(err as Error).name}`);
   }
+}
+
+/**
+ * Deletes the job seeker profile of `userId` (its details, photo and CV), in ONE transaction with
+ * its files handed to the nightly purge (the CV only when no application still uses it); then
+ * deletes those files now when storage answers. False: there was no profile.
+ */
+export async function eraseApplicantProfile(db: PrismaClient, requestUrl: string, userId: number): Promise<boolean> {
+  const files = await db.$transaction(async tx => {
+    const t = tx as unknown as PrismaClient;
+    const [row] = await t.$queryRaw<{photo_file_id: string | null; resume_file_id: string | null}[]>`
+      DELETE FROM "applicant_profiles" WHERE "user_id" = ${userId} RETURNING "photo_file_id", "resume_file_id"`;
+    if (!row) return null;
+    const cv = row.resume_file_id && !(await t.application.findFirst({where: {resumeFileId: row.resume_file_id}, select: {id: true}})) ? [row.resume_file_id] : [];
+    const gone = [...(row.photo_file_id ? [row.photo_file_id] : []), ...cv];
+    await queueFilesForPurge(t, gone);
+    return gone;
+  });
+  if (files === null) return false;
+  if (files.length) await deleteStoredFiles(db, requestUrl, files, Date.now() + 10_000);
+  return true;
+}
+
+/**
+ * Profiles whose account is gone (`applicant_profiles` has no foreign key to `users`): the
+ * account-delete hook missed them (a failed request, the Worker stopped). Run by the nightly
+ * purge, so deleting an account always deletes its profile, photo and CV in the end.
+ */
+export async function sweepOrphanProfiles(db: PrismaClient, requestUrl: string, deadline: number): Promise<number> {
+  let swept = 0;
+  for (let batch = 0; batch < 20 && Date.now() < deadline; batch++) {
+    const rows = await db.$queryRaw<{user_id: number}[]>`
+      SELECT p."user_id" FROM "applicant_profiles" p
+      WHERE NOT EXISTS (SELECT 1 FROM "users" u WHERE u."id" = p."user_id")
+      ORDER BY p."user_id" LIMIT 50`;
+    for (const row of rows) {
+      if (Date.now() >= deadline) return swept;
+      if (await eraseApplicantProfile(db, requestUrl, row.user_id)) swept++;
+    }
+    if (rows.length < 50) break;
+  }
+  return swept;
 }
