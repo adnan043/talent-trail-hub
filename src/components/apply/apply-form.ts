@@ -51,12 +51,15 @@ const BLOCKED_NOTES: Partial<Record<NonNullable<CanApplyAnswer['reason']>, strin
   own_job: 'This is your company’s job, so you cannot apply to it. Its applicants are in your dashboard.',
   staff: 'You are signed in as board staff. To apply for jobs, sign up with another email as a job seeker.',
   employer_account: 'You are signed in with a company account. To apply for jobs, sign up with another email as a job seeker.',
+  closed: 'This job is no longer taking applications.',
   applied: 'You have already applied for this job. Follow its status under My applications in your dashboard.',
 };
 
 async function ask(slug: string): Promise<CanApplyAnswer | null> {
   try {
     const res = await siteFetch(`/site-api/applications/jobs/${encodeURIComponent(slug)}/can-apply`);
+    // Still 401 after the refresh: the session is gone, so sign in again.
+    if (res.status === 401) return {canApply: false, reason: 'sign_in'};
     return res.ok ? ((await res.json()) as CanApplyAnswer) : null;
   } catch {
     return null;
@@ -71,8 +74,8 @@ async function showStep(section: HTMLElement, form: HTMLFormElement, slug: strin
   pick('apply-loading')?.setAttribute('hidden', '');
   const show = (name: string) => pick(name)?.removeAttribute('hidden');
 
-  if (!answer || answer.reason === 'sign_in') return show('apply-signin');
-  if (answer.canApply && answer.profile) {
+  if (answer?.reason === 'sign_in') return show('apply-signin');
+  if (answer?.canApply && answer.profile) {
     const set = (field: string, value: string | null) => {
       const node = form.querySelector<HTMLElement>(`[data-profile-${field}]`);
       if (node) node.textContent = value || '—';
@@ -84,14 +87,15 @@ async function showStep(section: HTMLElement, form: HTMLFormElement, slug: strin
     form.hidden = false;
     return;
   }
-  if (answer.reason === 'choose_kind') return show('apply-choose');
-  if (answer.reason === 'incomplete') {
+  if (answer?.reason === 'choose_kind') return show('apply-choose');
+  if (answer?.reason === 'incomplete') {
     const line = pick('apply-missing');
     if (line) line.textContent = `Almost there: add ${(answer.missing ?? []).map(m => REQUIREMENT_LABELS[m]).join(', ')} to your profile, then come back to apply.`;
     return show('apply-incomplete');
   }
   const note = pick('apply-blocked');
-  const text = answer.reason ? BLOCKED_NOTES[answer.reason] : null;
+  // No answer (offline, a server error) or one this page does not know: say so, never "sign in".
+  const text = (answer?.reason ? BLOCKED_NOTES[answer.reason] : null) ?? 'We could not check your account just now. Reload the page to try again.';
   if (note && text) {
     note.textContent = text;
     note.hidden = false;

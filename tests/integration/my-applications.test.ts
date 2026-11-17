@@ -123,4 +123,21 @@ describe.skipIf(!DATABASE_URL)('my applications (integration, real Postgres)', (
     expect(res.status).toBe(200);
     expect(res.json.items).toEqual([]);
   });
+  it('follows the account, not the address: applications sent before an email change stay listed', async () => {
+    const caseyUser = await db.user.findUniqueOrThrow({where: {email: CASEY}, select: {id: true}});
+    const danaUser = await db.user.findUniqueOrThrow({where: {email: DANA}, select: {id: true}});
+    const category = await db.category.findUniqueOrThrow({where: {slug: 'mine-test'}, select: {id: true}});
+    const company = await db.company.findFirstOrThrow({select: {id: true}});
+    const other = await makeJob(company.id, category.id, 'other-job');
+    // Sent from Casey's account under the address it had before.
+    const old = await db.application.create({data: application(other.id, 'casey-old@example.test', {applicantUserId: caseyUser.id}), select: {id: true}});
+    // Sent with Casey's CURRENT address but from another account (the address used to be theirs): not Casey's.
+    const third = await makeJob(company.id, category.id, 'third-job');
+    const notMine = await db.application.create({data: application(third.id, CASEY, {applicantUserId: danaUser.id}), select: {id: true}});
+    const res = await casey.get('/site-api/my-applications');
+    const ids = (res.json.items as {id: number}[]).map(i => i.id);
+    expect(ids).toContain(old.id);
+    expect(ids).not.toContain(notMine.id);
+    expect((res.json.counts as {new: number}).new).toBe(1);
+  });
 });

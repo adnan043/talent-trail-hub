@@ -201,14 +201,17 @@ export const applicantRoutes = new Hono<Env>()
       // The candidate's email after the answer: the employer never waits for the mail service.
       const requestUrl = c.req.url;
       after(c, `applicant ${status} email for application ${found.id}`, async () => {
-        const [job, settings] = await Promise.all([
+        const [job, settings, account] = await Promise.all([
           db.job.findUnique({where: {id: found.jobId}, select: {title: true, company: {select: {name: true}}}}),
           cachedBoardSettings(db),
+          // The account's CURRENT address: it may have changed since they applied.
+          found.applicantUserId ? db.user.findUnique({where: {id: found.applicantUserId}, select: {email: true}}) : null,
         ]);
-        if (!job) return;
+        const to = account?.email ?? found.email;
+        if (!job || !to) return;
         await sendBoardEmail(db, requestUrl, {
           template,
-          to: found.email,
+          to,
           vars: {boardName: settings.name, jobTitle: job.title, companyName: job.company.name},
         });
       });

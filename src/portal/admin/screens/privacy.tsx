@@ -101,7 +101,7 @@ export function Privacy() {
     <div className="app-page screen-privacy">
       <PageHeader
         title="Candidate data"
-        description={`Find and delete what the board keeps for an email: applications, resumes, the job seeker profile (with its photo and CV) and the email log. Payment records (orders) keep their email: they are money records. Resumes are deleted ${RESUME_RETENTION_DAYS} days after applying in any case.`}
+        description={`Find and delete what the board keeps for an email: applications, resumes, the job seeker profile (with its photo and CV) and the email log. Payment records (orders) keep their email: they are money records. An application's resume is removed ${RESUME_RETENTION_DAYS} days after applying in any case; the profile's photo and CV stay until the profile is deleted (here, or when the account is deleted).`}
         actions={
           <Button variant="secondary" icon="refresh" pending={purge.isPending} pendingLabel="Running…" onClick={() => purge.mutate()}>
             Run purge now

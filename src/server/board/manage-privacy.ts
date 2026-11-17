@@ -77,15 +77,25 @@ async function profileOf(db: PrismaClient, email: string) {
   return user ? db.applicantProfile.findUnique({where: {userId: user.id}, select: {userId: true, photoFileId: true, resumeFileId: true}}) : null;
 }
 
+/**
+ * The applications of this address: those sent with it, and those sent from the account that now
+ * has it (under an older address it has since changed).
+ */
+async function applicationsWhere(db: PrismaClient, email: string) {
+  const user = await db.user.findUnique({where: {email}, select: {id: true}});
+  return user ? {OR: [{email}, {applicantUserId: user.id}]} : {email};
+}
+
 const guard = [withViewer, requireAuth, requirePermission(PERMISSIONS.PRIVACY_MANAGE), withDb] as const;
 
 export const managePrivacyRoutes = new Hono()
   .post('/lookup', emailBody, ...guard, async c => {
     const {email} = c.req.valid('json');
     const db = c.var.db;
+    const mine = await applicationsWhere(db, email);
     const [rows, logs, profile] = await Promise.all([
       db.application.findMany({
-        where: {email},
+        where: mine,
         select: {id: true, createdAt: true, resumeFileId: true, job: {select: {title: true, company: {select: {name: true}}}}},
         orderBy: {id: 'desc'},
         take: ITEMS + 1,
@@ -126,8 +136,9 @@ export const managePrivacyRoutes = new Hono()
     // In batches, so a long history never builds one huge statement; bounded in time (a person
     // with even more rows is finished by running it again: the lookup shows what is left).
     const deadline = Date.now() + 20_000;
+    const mine = await applicationsWhere(db, email);
     for (let round = 0; round < MAX_DELETE_ROUNDS && Date.now() < deadline; round++) {
-      const batch = await db.application.findMany({where: {email}, select: {id: true}, take: DELETE_BATCH});
+      const batch = await db.application.findMany({where: mine, select: {id: true}, take: DELETE_BATCH});
       const done = await deleteApplications(db, batch.map(a => a.id));
       result.applications += done.count;
       files.push(...done.files);
@@ -166,7 +177,7 @@ export const managePrivacyRoutes = new Hono()
     if (!applicationId) return invalid(c, {applicationId: 'Pick an application.'});
     const db = c.var.db;
     // The email must match: a stale or guessed id never removes someone else's application.
-    const app = await db.application.findFirst({where: {id: applicationId, email}, select: {id: true, jobId: true}});
+    const app = await db.application.findFirst({where: {id: applicationId, ...(await applicationsWhere(db, email))}, select: {id: true, jobId: true}});
     if (!app) return c.json(problem('not_found', 'No such application for this email.'), 404);
     const done = await deleteApplications(db, [app.id]);
     await audit(db, {

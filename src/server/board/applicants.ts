@@ -66,6 +66,7 @@ export const applicationSelect = {
   employerNotes: true,
   resumeFileId: true,
   resumeFileName: true,
+  applicantUserId: true,
   createdAt: true,
 } as const;
 

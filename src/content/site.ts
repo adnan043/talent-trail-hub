@@ -94,7 +94,7 @@ export const ABOUT = {
   /** The meta description (120–160 characters). Use `{name}`. */
   description: 'About {name}: a job board where candidates search, save and apply for free, and employers post roles and manage applicants in one place.',
   sections: [
-    {heading: 'For candidates', body: 'Search and filter open roles, save the ones you like and apply in minutes. No account needed.'},
+    {heading: 'For candidates', body: 'Search and filter open roles, save the ones you like, then apply in minutes with a free job seeker profile.'},
     {heading: 'For employers', body: 'Post a job, choose how long it runs and manage applicants from your dashboard.'},
   ],
 };

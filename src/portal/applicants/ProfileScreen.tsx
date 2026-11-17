@@ -42,7 +42,7 @@ import {
   useToast,
 } from '../ui';
 import {ProfilePhoto} from './profile-parts';
-import {applicantProfileQuery, ownPhotoUrl, ownResumeUrl, saveProfileDetails, storeProfile, uploadProfileFile} from './profile-queries';
+import {applicantProfileQuery, ownPhotoUrl, openOwnResume, ownResumeUrl, saveProfileDetails, storeProfile, uploadProfileFile} from './profile-queries';
 
 /**
  * `/dashboard/profile`: the job seeker's profile. A completion banner, then tabs of sections that
@@ -115,7 +115,7 @@ export function Profile() {
         </div>
         <div className="profile-banner-actions">
           {profile.resumeFileName && (
-            <a className={buttonClass({variant: 'link'})} href={ownResumeUrl}>
+            <a className={buttonClass({variant: 'link'})} href={ownResumeUrl} onClick={openOwnResume}>
               Download CV <Icon name="download" size={16} />
             </a>
           )}
@@ -252,7 +252,14 @@ function EditDrawer({profile, title, fields, withName = false, open, onClose}: {
         </>
       }>
       <div className="form-stack">
-        {save.error && !(save.error instanceof ApiError && Object.keys(save.error.fields).length) && <ErrorNote error={save.error} title="Not saved" />}
+        {/* The general note unless a field shown HERE carries the error (every save sends all the details). */}
+        {save.error &&
+          !(save.error instanceof ApiError && Object.keys(save.error.fields).some(k => (k === 'name' && withName) || fields.some(f => f.name === k))) && (
+            <ErrorNote
+              error={save.error instanceof ApiError && Object.keys(save.error.fields).length ? new Error(`Another section needs fixing first: ${Object.values(save.error.fields).join(' ')}`) : save.error}
+              title="Not saved"
+            />
+          )}
         {withName && (
           <Field id="f-name" label="Full name" hint="Employers see it on every application." error={form.error('name')}>
             <input {...form.field('name')} autoComplete="name" placeholder="Your full name" />
@@ -593,7 +600,9 @@ function ResumeSection({profile}: {profile: ApplicantProfileView}) {
         <div className="profile-file-text">
           {profile.resumeFileName ? (
             <p>
-              <a href={ownResumeUrl}>{profile.resumeFileName}</a>
+              <a href={ownResumeUrl} onClick={openOwnResume}>
+                {profile.resumeFileName}
+              </a>
               {profile.resumeUpdatedAt && <span className="muted"> · uploaded {when(profile.resumeUpdatedAt)}</span>}
             </p>
           ) : (

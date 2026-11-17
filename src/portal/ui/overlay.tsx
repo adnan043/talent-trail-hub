@@ -379,7 +379,12 @@ export function Menu({
     else if (event.key === 'ArrowUp') focusItem(at - 1);
     else if (event.key === 'Home') focusItem(0);
     else if (event.key === 'End') focusItem(nodes.length - 1);
-    else if (event.key === 'Escape' || event.key === 'Tab') return close(event.key === 'Escape');
+    else if (event.key === 'Escape') {
+      // Only the menu closes: not the drawer or modal it may sit in.
+      event.preventDefault();
+      event.stopPropagation();
+      return close(true);
+    } else if (event.key === 'Tab') return close(false);
     else return;
     event.preventDefault();
   };
@@ -437,7 +442,9 @@ export function Menu({
             )
           )}
         </div>,
-        document.body
+        // Inside an open modal <dialog> (a drawer) everything else is inert: the list goes into
+        // that dialog, in the top layer with it. Still `position: fixed` to the viewport.
+        button.current?.closest('dialog[open]') ?? document.body
       )}
     </>
   );

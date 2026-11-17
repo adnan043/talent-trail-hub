@@ -10,7 +10,7 @@ Cloudflare Worker:
 - **roles and permissions**: owner, admin and member out of the box, custom roles, and admin screens
   for users, roles and an activity log;
 - a **dashboard** at `/dashboard`: a React app ([TanStack Router](https://tanstack.com/router) and
-  [Query](https://tanstack.com/query)) on its own UI kit (`src/portal/ui/`), light and dark;
+  [Query](https://tanstack.com/query)) on its own UI kit (`src/portal/ui/`), light only;
 - your own **backend** at `/site-api`: a [Hono](https://hono.dev) app every page and screen reads through;
 - your own **database**: Postgres, through [Prisma ORM 7](https://www.prisma.io).
 

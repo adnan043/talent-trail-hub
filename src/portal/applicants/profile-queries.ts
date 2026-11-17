@@ -42,6 +42,17 @@ export const saveProfileDetails = (details: ProfileDetails) =>
 export const ownPhotoUrl = (version: string | null) => (version ? `/site-api/applicant-profile/photo?v=${version}` : null);
 export const ownResumeUrl = '/site-api/applicant-profile/resume';
 
+/**
+ * Opens the own CV. A plain link would carry an access token that may have expired (10 minutes)
+ * and show the raw `token_expired` answer: one `siteFetch` first refreshes the session if needed
+ * (the redirect is not followed), then the browser follows the link.
+ */
+export async function openOwnResume(event: {preventDefault(): void}) {
+  event.preventDefault();
+  await siteFetch(ownResumeUrl, {redirect: 'manual'}).catch(() => null);
+  window.location.assign(ownResumeUrl);
+}
+
 const FILE_RULES = {
   photo: {types: PHOTO_TYPES as readonly string[], mb: LIMITS.photoMb, message: `Use a PNG, JPG or WebP photo up to ${LIMITS.photoMb} MB.`},
   resume: {types: RESUME_TYPES as readonly string[], mb: LIMITS.resumeMb, message: `Upload your CV as a PDF or DOCX file up to ${LIMITS.resumeMb} MB.`},

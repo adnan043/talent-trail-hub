@@ -625,7 +625,8 @@ model JobTag {
   @@map("job_tags")
 }
 
-/// A candidate's application (no account). One per email per job. The resume is a PRIVATE file
+/// A candidate's application, sent from their applicant account (older guest ones have none).
+/// One per email and one per account per job. The resume is a PRIVATE file
 /// (src/platform/files.ts); after RESUME_RETENTION_DAYS the purge deletes it and clears the fields.
 model Application {
   id             Int       @id @default(autoincrement())
@@ -638,7 +639,7 @@ model Application {
   coverNote      String?   @map("cover_note") @db.VarChar(3000)
   resumeFileId   String?   @map("resume_file_id") @db.VarChar(32)
   resumeFileName String?   @map("resume_file_name") @db.VarChar(200)
-  /// `new`, `reviewed`, `shortlisted` or `rejected`.
+  /// `new`, `reviewed`, `shortlisted`, `approved` or `rejected`.
   status         String    @default("new") @db.VarChar(12)
   /// Private to the employer / admin; never emailed.
   employerNotes  String?   @map("employer_notes") @db.VarChar(5000)
@@ -661,6 +662,10 @@ model Application {
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, email])
+  /// One application per ACCOUNT per job too: the account's email can change after applying.
+  @@unique([jobId, applicantUserId])
+  /// "My applications": an account's own applications.
+  @@index([applicantUserId, id])
   @@index([jobId, status, id(sort: Desc)])
   @@index([jobId, id(sort: Desc)])
   @@index([status, id(sort: Desc)])
@@ -707,9 +712,9 @@ model ApplicantProfile {
   @@map("applicant_profiles")
 }
 
-/// A resume upload in progress or done, before / after it is attached to an application.
-/// Guests upload first (createUpload), then apply with the `token`; unattached rows older
-/// than a day are swept with their files by the purge job.
+/// A tracked file: a job seeker profile's photo / CV upload until it is confirmed, the older guest
+/// resume uploads, and files queued for deletion. Unattached rows older than a day are swept with
+/// their files by the purge job (a file a profile or an application still uses is kept).
 model ResumeUpload {
   id            Int      @id @default(autoincrement())
   /// Random, unguessable: what the apply form sends back.

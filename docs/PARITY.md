@@ -46,8 +46,8 @@ Status:
 | Unique title/description/OG/Twitter/canonical per page | DONE `layouts/Base.astro`, `lib/seo.ts` |
 | Runtime branding: colour → CSS vars, accessible foreground, font preset, logo, no rebuild | DONE `server/board/brand.ts` (`brandCss`), `layouts/Base.astro` |
 | Brand colour kept WCAG AA per scheme | DONE `server/board/brand.ts`; `tests/json-ld.test.ts` ("keeps accent pairs at WCAG AA") |
-| Public theme toggle Light / Dark / System, localStorage, applied BEFORE FIRST PAINT | PARTIAL: menu + storage done (`components/board/ThemeMenu.astro`); applied by a module script (runs after first paint), no head script, so a saved Dark flashes Light |
-| Uploaded logos on a light plate in dark mode | DONE `styles/board.css` (`--logo-plate`) |
+| Public theme toggle Light / Dark / System, localStorage, applied BEFORE FIRST PAINT | CHANGED: toggle removed; the site is light only (`data-theme="light"` in `layouts/Base.astro`, `layouts/App.astro`), so nothing to apply before paint |
+| Uploaded logos on a light plate in dark mode | DONE `styles/board.css` (`--logo-plate`); moot while the site is light only |
 | Board favicon upload + `/favicon.ico` | CHANGED-BY-PLATFORM: platform `site.favIcon` (`layouts/Base.astro`); `/favicon.ico` answers 404 |
 | Header/mobile/footer nav per board mode | DONE `server/board/brand.ts` (`[data-marketplace-only]` hidden), `layouts/Base.astro` |
 | Single-company public effects (owner jobs only, `/companies` 404, owner profile + Organization JSON-LD on home, owner profile reachable) | DONE `server/board/public.ts`, `server/routes/companies.ts`, `pages/index.astro`, `lib/json-ld.ts`; `public-board.test.ts` |
@@ -58,18 +58,18 @@ Status:
 
 | Feature/behaviour | Status |
 | --- | --- |
-| On-site apply without account: name, email, resume, consent; phone, URL, cover note ≤3000 | DONE `server/routes/applications.ts`, `components/apply/` |
+| On-site apply without account: name, email, resume, consent; phone, URL, cover note ≤3000 | CHANGED: guest apply removed. Applying needs a signed-in job seeker account (confirmed email) whose profile has a photo + CV (phone optional); the form sends only cover note ≤3000 + consent, name/email come from the session, CV/phone/profile link from the profile (`server/routes/applications.ts`, `server/routes/applicant-profile.ts`, `server/board/applicant-profile.ts`, `components/apply/`) |
 | Consent text (180 days) + timestamp stored | DONE `lib/board.ts` (`DEFAULT_CONSENT_TEXT`), `server/routes/applications.ts` |
-| Resume PDF/DOC/DOCX ≤5 MB, TYPE CHECKED BY FIRST BYTES, private | PARTIAL: PDF/DOCX ≤5 MB private upload done (`server/routes/applications.ts`); only the declared content type is checked, no first-bytes check after `completeUpload`; `.doc` dropped (platform storage) |
-| Upload progress in the form | DONE ("Uploading name (x MB)…" state; `putFile` cannot report bytes) `components/apply/apply-form.ts` |
-| Duplicate email per job, honeypot, >5 per IP-hash/hour → silent 201 (a duplicate is never a 409: it would tell anyone whether a named person applied) | DONE `server/routes/applications.ts`; `tests/integration/applications.test.ts` |
+| Resume PDF/DOC/DOCX ≤5 MB, TYPE CHECKED BY FIRST BYTES, private | PARTIAL: PDF/DOCX ≤5 MB private upload to the profile done (`server/routes/applicant-profile.ts`, `/resume` then `/complete`); only the declared content type is checked, no first-bytes check after `completeUpload`; `.doc` dropped (platform storage) |
+| Upload progress in the form | DONE ("Uploading name (x MB)…" state; `putFile` cannot report bytes); uploads now happen on My profile, not in the apply form |
+| Duplicate email per job, honeypot, >5 per IP-hash/hour → silent 201 (a duplicate is never a 409: it would tell anyone whether a named person applied) | CHANGED: one application per account per job (and per email); a duplicate answers 409 `already_applied` (the address is the session's own, so it tells nobody anything); >5 per IP-hash/hour → 429; no honeypot (signed-in only) `server/routes/applications.ts` |
 | url/email apply link out + click counter capped per IP | DONE `server/routes/applications.ts` (`/jobs/:slug/click`, 120/h) |
 | Emails to candidate + employer | DONE `server/board/applicants.ts` (`notifyNewApplication`) |
 | `new-applicant` to ADMINS for ownerless companies / single-company, link `?job=<id>` | DONE `server/board/applicants.ts` links `?job=<id>`; `ApplicantsScreen.tsx` reads job/status from the URL |
-| Apply form hidden for admin and the job's own employer (server refuses owner) | DONE `server/routes/applications.ts` (`/can-apply`, 403 `own_job`), `components/apply/apply-form.ts`; test |
+| Apply form hidden for admin and the job's own employer (server refuses owner) | DONE `server/routes/applications.ts` (`/can-apply` answers which step to show: `sign_in`, `choose_kind`, `incomplete`, `applied`, `closed`, `own_job`, `employer_account`, `staff`; POST 403 `own_job`), `components/apply/apply-form.ts`; test |
 | Applicants per job: status filter IN URL, table, sheet, optimistic status + rollback, notes, "Copy job link" empty state | PARTIAL: table, drawer, optimistic + rollback, notes done (`portal/applicants/`); status filter is component state (not in URL); empty state has no "Copy job link" |
-| Statuses new/reviewed/shortlisted/rejected | DONE `lib/board.ts` (`APPLICATION_STATUSES`) |
-| Shortlisted / rejected emails once, never notes | DONE `server/routes/applications-manage.ts` (conditional + `statusEmailedAt`); test |
+| Statuses new/reviewed/shortlisted/rejected | DONE + `approved` `lib/board.ts` (`APPLICATION_STATUSES`) |
+| Shortlisted / rejected emails once, never notes | DONE, plus approved (`application-approved`): each at most once (`statusEmailedAt` / `approvedEmailedAt` / `rejectedEmailedAt`), sent to the account's current email `server/routes/applications-manage.ts`; test |
 | CSV: formula cells defused, Resume = file name or retention text; admin CSV + Job + Company, ≤5,000 rows | DONE `server/board/applicants.ts` (`csvCell`, `applicantsCsv`); `EXPORT_MAX` 5,000 |
 | Resume link 10 min, scope re-checked, attachment | CHANGED-BY-PLATFORM: platform short link (`fileUrl`, 600 s, `download: true`) in `server/routes/applications-manage.ts`; not bound to the user |
 | Admin resume downloads audit-logged | DONE `server/routes/applications-manage.ts` (`resume_downloaded`) |
@@ -177,7 +177,7 @@ Status:
 
 Only PARTIAL / MISSING rows. Area, where the fix belongs, one-line fix.
 
-2. **Theme before first paint** (A): `layouts/Base.astro`: an `is:inline` head script (hashed for the CSP) that applies `site:theme` before the body renders.
+2. ~~**Theme before first paint** (A): `layouts/Base.astro`: an `is:inline` head script (hashed for the CSP) that applies `site:theme` before the body renders.~~ DROPPED: the theme toggle is removed; the site is light only.
 3. DONE **Paid checkout leaves the wizard draft** (C): `portal/employer/screens/jobs.tsx`: `clearDraft()` when `confirmCheckout` answers `paid` (and when the popup reports paid in `post-job.tsx`).
 5. DONE **Filters not in the URL** (admin jobs DONE via validateSearch; applicants screen DONE): `portal/applicants/ApplicantsScreen.tsx` (status) and `portal/admin/screens/jobs.tsx` (all filters): `validateSearch` on the routes + `navigate({search})`.
 6. ~~**Moderation queue** (D): `server/board/manage-moderation.ts`: order `[{flagged: 'desc'}, {id: 'asc'}]` (keyset on both); review page notes for flagged/unverified and the company's 5 recent jobs (`history`); nav count on the Moderation item (`portal/admin/routes.tsx`, a capped `pageCount`).~~ FIXED

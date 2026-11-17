@@ -28,8 +28,8 @@ app's habits. Never edit `src/platform/**` or `docs/agent/**`.
 | Renew a listing | Renewing a live job keeps the remaining days: the tier's days are added to the current expiry; a job that is down starts from today (owner decision 2026-10-30) |
 | Refund of a renewal | A full refund of a RENEW order takes the whole job down, including the time paid for earlier (owner decision 2026-10-30, intended) |
 | Rich-text sanitizer | `src/lib/rich-text.ts` (the `xss` package with the board's strict allow-list p, ul, ol, li, strong, em, a, h3, h4, br) on write; pages render it through the platform's `sanitizeHtml` as well, by decision (the platform's list is wider: iframes, images) |
-| Theme flash on first load | ONE fixed inline `<head>` script (`src/lib/theme-boot.ts`) applies the saved theme before paint; its hash is added to the page CSP (`Astro.csp.insertScriptHash`), a unit test keeps the hash in step. The only `is:inline` script, by decision |
-| Status emails to candidates (old: once in total) | Owner decision 2026-10-30: at most one shortlisted (`statusEmailedAt`) and one rejected (`rejectedEmailedAt`) email per application |
+| Theme flash on first load | No longer applies: the theme toggle is removed and the site is light only (`data-theme="light"` on `<html>`); `ThemeMenu.astro`, `src/lib/theme-boot.ts` and `theme-choice.ts` are deleted |
+| Status emails to candidates (old: once in total) | Owner decision 2026-10-30: at most one shortlisted (`statusEmailedAt`) and one rejected (`rejectedEmailedAt`) email per application; later one approved (`approvedEmailedAt`) too |
 
 ## Shared foundation (done; change only with care, tell the others)
 - `prisma/schema.prisma` + migration `*_job_board`: all board tables. Need a column? Add a NEW

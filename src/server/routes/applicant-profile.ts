@@ -26,6 +26,7 @@ import {
   toProfileView,
 } from '../board/applicant-profile';
 import {userAttemptAllowed} from '../board/employer-logo';
+import {trackProfileUpload} from '../board/applicant-profile';
 
 /**
  * The job seeker's own profile, mounted at `/site-api/applicant-profile`. Signed in with a
@@ -163,6 +164,9 @@ function fileRoutes(kind: ProfileFileKind) {
       }
       const grant = await startProfileUpload(c.req.url, userId, kind, input);
       if (!grant.ok) return c.json({...problem(grant.code, grant.message), fields: {[kind]: grant.message}}, status(grant.status));
+      // Tracked until `/complete` takes it: an upload never confirmed (tab closed) is swept by the
+      // nightly purge after a day, like any upload never attached (tasks.ts).
+      await trackProfileUpload(db, grant.fileId, input);
       return c.json({fileId: grant.fileId, token: grant.token, upload: grant.upload}, 201);
     })
     .post('/complete', completeBody, async c => {
@@ -176,13 +180,15 @@ function fileRoutes(kind: ProfileFileKind) {
       const done = await finishProfileUpload(c.req.url, userId, kind, fileId, token);
       if (!done.ok) return c.json({...problem(done.code, done.message), fields: {[kind]: done.message}}, status(done.status));
       const now = new Date();
-      await db.applicantProfile.update({
-        where: {userId},
+      // Only over the file read above: a second tab that switched it first wins, and this new
+      // file (referenced by nothing) is dropped instead of being left behind.
+      const {count} = await db.applicantProfile.updateMany({
+        where: {userId, [column]: before[column]},
         data: kind === 'photo' ? {photoFileId: done.fileId} : {resumeFileId: done.fileId, resumeFileName: done.name, resumeUpdatedAt: now},
-        select: {userId: true},
       });
+      await db.resumeUpload.deleteMany({where: {fileId: done.fileId, applicationId: null}});
       // The old photo goes now; an old CV only once no application points at it.
-      await dropProfileFile(db, c.req.url, before[column]);
+      await dropProfileFile(db, c.req.url, count ? before[column] : done.fileId);
       return c.json(await answer(c));
     })
     .get('/', async c => {

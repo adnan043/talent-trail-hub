@@ -58,10 +58,20 @@ function prefixLines({value, start, end}: Edit, kind: keyof typeof PREFIXES): Ed
   const lines = value.slice(from, to).split('\n');
   const {test, make} = PREFIXES[kind];
   const filled = lines.filter(line => line.trim());
-  const remove = filled.length > 0 && filled.every(line => test.test(line));
+  // Only blank lines (a fresh line, an empty editor): the marker goes in, the caret after it.
+  if (!filled.length) {
+    const marker = make(0);
+    const at = from + lines[0]!.length;
+    return {value: value.slice(0, at) + marker + value.slice(at), start: at + marker.length, end: at + marker.length};
+  }
+  const remove = filled.every(line => test.test(line));
   let n = 0;
   const next = lines.map(line => {
-    if (!line.trim()) return line;
+    // A blank line ends a list on the page (src/lib/markdown.ts): numbering starts again after it.
+    if (!line.trim()) {
+      n = 0;
+      return line;
+    }
     // Any other list / heading marker is swapped, not stacked (`- 1. item`).
     const bare = line.replace(PREFIXES.heading.test, '').replace(PREFIXES.bullets.test, '').replace(PREFIXES.numbers.test, '');
     return remove ? bare : make(n++) + bare;
@@ -77,16 +87,20 @@ function prefixLines({value, start, end}: Edit, kind: keyof typeof PREFIXES): Ed
 
 /** `[selection](https://)` with the URL selected; with no selection, the label is selected. */
 function link({value, start, end}: Edit): Edit {
-  const selected = value.slice(start, end).trim();
+  const raw = value.slice(start, end);
+  // A label is one line (the page reads no link across lines); spaces around it stay outside.
+  const selected = raw.trim().replace(/\s*\n\s*/g, ' ');
+  const from = selected ? start + (raw.length - raw.trimStart().length) : start;
+  const to = selected ? end - (raw.length - raw.trimEnd().length) : end;
   const label = selected || 'link text';
   const url = 'https://';
   const text = `[${label}](${url})`;
-  const next = value.slice(0, start) + text + value.slice(end);
+  const next = value.slice(0, from) + text + value.slice(to);
   if (selected) {
-    const at = start + label.length + 3;
+    const at = from + label.length + 3;
     return {value: next, start: at, end: at + url.length};
   }
-  return {value: next, start: start + 1, end: start + 1 + label.length};
+  return {value: next, start: from + 1, end: from + 1 + label.length};
 }
 
 export function applyMarkdown(action: MarkdownAction, edit: Edit): Edit {

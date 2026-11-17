@@ -14,8 +14,8 @@ topic docs). Feature numbers like "F12" come from the old app's `docs/SPEC.md` a
 
 ## 1. The big picture
 
-Talent Trail Hub is a job board. Employers pay to post jobs. Candidates apply without an
-account. Admins check jobs and run the board.
+Talent Trail Hub is a job board. Employers pay to post jobs. Candidates apply with a job
+seeker account. Admins check jobs and run the board.
 
 Everything is **one Astro project** running on **one Cloudflare Worker** (a small server
 program run by the platform). It has these layers:
@@ -58,8 +58,9 @@ comes from their **roles**, and roles hold **permissions** (named "codenames").
 
 | Who | How they get there | What they can do |
 |---|---|---|
-| **Guest / candidate** | No account needed | Browse and search jobs and companies, save jobs in this browser, apply with a resume. Limit: 5 applications per IP address per hour; one application per email per job (409 `already_applied`). |
-| **Employer** | Any signed-in user with a **verified email** (`requireVerified`) | The employer area: post and pay, own jobs (edit, close, renew, duplicate), own applicants, company profile and logo, billing and receipts. One user owns at most ONE company (`companies.owner_user_id` is unique). Other companies' data answers **404**. |
+| **Guest** | No account needed | Browse and search jobs and companies, save jobs in this browser. Cannot apply. |
+| **Job seeker (applicant)** | A signed-in user with a **verified email** and an `applicant_profiles` row. An account is a job seeker OR a company, not both | My profile (photo, CV, details) and My applications in the dashboard; apply to on-site jobs once the profile has a photo and a CV. Limit: 5 applications per IP address per hour; one application per account per job (409 `already_applied`). |
+| **Employer** | Any signed-in user with a **verified email** (`requireVerified`) that is not a job seeker | The employer area: post and pay, own jobs (edit, close, renew, duplicate), own applicants, company profile and logo, billing and receipts. One user owns at most ONE company (`companies.owner_user_id` is unique). Other companies' data answers **404**. |
 | **Admin** | The `admin` role, which holds the board's codenames | The board's admin screens under `/dashboard/manage/...` |
 | **Owner** | Made on the first "View as admin" click in the platform dashboard, with the `owner` role (`*`, every permission); no email or password on the site | Everything, plus users and roles. Signs in only in one click from the platform dashboard ("View as admin" / "Open live portal"). |
 
@@ -120,7 +121,7 @@ The platform gives the site these services. Their code is in `src/platform/` (de
   rules: `src/server/auth-settings.ts`. Actions are written with `audit()` and shown at `/dashboard/activity`.
 - **Files** (`src/platform/files.ts`). The browser uploads straight to storage (never through the
   Worker): the route asks `createUpload()`, the browser PUTs the bytes, the route checks with
-  `completeUpload()`. **Resumes are private** (shown via a 10-minute download link,
+  `completeUpload()`. **Resumes and profile photos are private** (shown via a 10-minute download link,
   `LINK_SECONDS = 600`); **logos are public**.
 - **Payments** (`src/platform/payments.ts`, `docs/agent/payments.md`). The platform's checkout.
   Prices live in the platform catalogue, made in the editor with `npm run platform -- prices add …`.
@@ -130,7 +131,7 @@ The platform gives the site these services. Their code is in `src/platform/` (de
 - **Emails, two kinds:**
   - **Account emails** (confirm, reset, sign-in codes) are sent by the platform for the site.
   - **Board emails** (job submitted, approved, rejected, expiring, expired, new applicant,
-    application confirmation, shortlisted, rejected, admin review, order receipt) go through
+    application confirmation, shortlisted, approved, rejected, admin review, order receipt) go through
     `sendBoardEmail` in `src/server/board/email.ts`. They are sent with Resend when the owner adds
     the `RESEND_API_KEY` secret (sender: the `EMAIL_FROM` secret); without it they are only logged
     as `skipped`. Every one writes an `email_logs` row. It never throws, so a failed email never undoes a payment or an application.
@@ -177,18 +178,31 @@ The platform gives the site these services. Their code is in `src/platform/` (de
    publishes directly. While it is set, admins cannot feature or extend the job (409 `needs_review`);
    All jobs shows "Changes in review".
 
-### 5.3 Apply with a resume (F4, F36)
-1. On `/jobs/<slug>/` the apply form (`src/components/apply/`) asks `POST
-   /site-api/applications/resume` for a private upload, the browser PUTs the file, then
-   `POST /resume/complete` confirms it. A `resume_uploads` row with a random token tracks it.
-2. `POST /site-api/applications/jobs/:slug/apply` sends the form with the token and the
-   consent. A filled honeypot field or more than 5 per IP-hour is silently "accepted" and dropped.
-   Jobs that apply by URL or email only count the click (`/click`). An employer cannot apply to their own job.
-3. The candidate gets `application-confirmation`; the employer gets `new-applicant` (on a
+### 5.3 Apply with a job seeker account (F4, F36)
+1. The candidate signs up, confirms the email and picks "job seeker" (`POST
+   /site-api/applicant-profile/start`, refused for a company or staff account). The profile lives
+   in `applicant_profiles` (`src/server/routes/applicant-profile.ts`, `src/server/board/applicant-profile.ts`).
+2. On My profile they add a photo and a CV: `POST /site-api/applicant-profile/photo` (or `/resume`)
+   for a private upload, the browser PUTs the file, then `/complete` confirms it. A
+   `resume_uploads` row with a random token tracks each started upload; one never confirmed is
+   swept after a day. Phone is optional.
+3. On `/jobs/<slug>/` the apply section (`src/components/apply/`) asks `GET
+   /site-api/applications/jobs/:slug/can-apply` which step to show: `sign_in`, `choose_kind`,
+   `incomplete` (photo or CV missing), `applied`, `closed`, `own_job`, `employer_account`, `staff`,
+   or the form.
+4. `POST /site-api/applications/jobs/:slug/apply` sends only the cover note and the consent. Name
+   and email come from the session; CV, phone and profile link from the profile. The application
+   stores `applicant_user_id` (one per account per job, 409 `already_applied`), so it survives an
+   email change. More than 5 per IP-hour answers 429. Jobs that apply by URL or email only count
+   the click (`/click`). An employer cannot apply to their own job.
+5. The candidate gets `application-confirmation`; the employer gets `new-applicant` (on a
    single-company board, or a company without an owner account, the staff with applicant access get it).
-4. Employers see applicants at `/dashboard/employer/jobs/<id>/applicants`, admins at
+   The candidate follows it under My applications (`GET /site-api/my-applications`: the account's
+   applications plus older guest ones sent with its email).
+6. Employers see applicants at `/dashboard/employer/jobs/<id>/applicants`, admins at
    `/dashboard/manage/applicants`: status, notes, CSV export, 10-minute resume links. Moving to
-   shortlisted or rejected emails the candidate once (`status_emailed_at`).
+   shortlisted, approved or rejected emails the candidate at most once each (`status_emailed_at`,
+   `approved_emailed_at`, `rejected_emailed_at`), at the account's current email.
 
 ### 5.4 Expiry and purge (background jobs)
 `background.json` sets two schedules; both call functions in `src/server/board/tasks.ts`, which
@@ -197,8 +211,9 @@ runs at once never send an email twice.
 - **`board-expiry`, every hour** (`runExpiry`): jobs past `expiresAt` become `expired` (email
   `job-expired`), featured flags past `featuredUntil` are removed, and a `job-expiring` reminder
   goes 3 days before (`REMINDER_DAYS`). Public pages also check `expiresAt > now`, so a late run never shows an expired job.
-- **`board-purge`, daily 03:30 UTC** (`runPurge`): resumes older than `RESUME_RETENTION_DAYS`
-  (180) are deleted (file first, then the fields), unattached uploads older than a day are swept, old `board_attempts` rows are removed.
+- **`board-purge`, daily 03:30 UTC** (`runPurge`): application CVs older than `RESUME_RETENTION_DAYS`
+  (180) are deleted (file first, then the fields; a CV the profile still uses is kept until it is
+  replaced or the profile/account is deleted), unattached uploads older than a day are swept, old `board_attempts` rows are removed.
 Runs that changed something are written to the audit log.
 
 ### 5.5 Single-company mode (F39)
@@ -231,8 +246,9 @@ are managed by the template. The board's own tables:
 | `categories` | Job categories | many `jobs` (cannot be deleted while used) |
 | `jobs` | A job: content, location, salary, apply method, `status`, `source`, featured and listing dates, counters, `needs_review` | → `companies`, `categories`, `listing_tiers`; `created_by` → a user (no foreign key) |
 | `tags`, `job_tags` | Up to 5 lower-case tags per job | many-to-many between `jobs` and `tags` |
-| `applications` | A candidate's application, resume file id, status, private notes, consent | → `jobs` (deleted with the job); one per email per job |
-| `resume_uploads` | An upload before / after it is attached | `application_id` (unique) |
+| `applicant_profiles` | A job seeker's profile: phone, details, private photo and CV file ids | `user_id` → a user (primary key, no foreign key); deleted with the account |
+| `applications` | A candidate's application, resume file id (the profile's CV), status, private notes, consent | → `jobs` (deleted with the job); `applicant_user_id` → the account (no foreign key; null for older guest ones); one per email and one per account per job |
+| `resume_uploads` | A profile photo / CV upload until it is confirmed (older guest resume uploads too); unconfirmed rows are swept after a day | `application_id` (unique) |
 | `listing_tiers` | What a post costs and gives: catalogue `price_key`, days, featured | used by `jobs` and `listing_orders`; deactivated, never deleted |
 | `listing_orders` | What an employer bought for a job (`new` or `renew`); copies the tier's terms at order time | → `companies`, `jobs`, `listing_tiers`; `checkout_id` → the platform checkout and the `orders` row |
 | `email_logs` | Every board email: template, recipient, `sent` / `failed` / `skipped` | none |
