@@ -13,7 +13,7 @@ import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
 import {HOME_PREFIX, SITEMAP_KEY} from '../board/public-cache';
 import {cursorHour, cursorWhere, encodeCursor, featuredCount, featuredPinsAndCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
-import {jobDetailSelect, jobSummarySelect, toJobDetail, toJobSummary} from '../board/public-shapes';
+import {jobDetailSelect, jobState, jobSummarySelect, toJobDetail, toJobSummary} from '../board/public-shapes';
 import {isSingleCompany} from '../board/settings';
 
 /**
@@ -37,6 +37,12 @@ const SITEMAP_COMPANIES = 1000;
 const SITEMAP_TTL = 3600;
 /** The plain first page of /jobs/, as the home lists: jobs expire and featured periods end by themselves. */
 const JOBS_FIRST_PAGE_TTL = 180;
+/**
+ * One job's page (the job, similar jobs, more at the company). Cleared by every write that clears the
+ * public lists; expiry and featured periods are applied per request, so the TTL only bounds how long
+ * an expired neighbour can leave a list one row short.
+ */
+const JOB_PAGE_TTL = 600;
 
 const sha256Hex = async (text: string) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -88,24 +94,38 @@ export const jobRoutes = new Hono()
       // No filter (`searchWhere` is the public rule alone) on page 1: the pins and the count read the
       // same rows, so one read serves both.
       const unfiltered = firstPage && Array.isArray(where.AND) && where.AND.length === 1;
+      const scope = isSingleCompany(settings) ? `company-${settings.ownerCompanyId}` : 'all';
       const load = async (): Promise<JobsPage> => {
-        const [pinned, featuredTotal] = unfiltered
-          ? await featuredPinsAndCount(db, settings, now, seedAt).then(r => [r.pinned, r.count] as const)
-          : await Promise.all([
-              search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, seedAt),
-              firstPage ? featuredCount(db, settings, now) : Promise.resolve(0),
-            ]);
-        const shown = firstPage ? pinned : [];
-        const take = LIMITS.pageSize - shown.length;
         const orderBy = orderFor(search.sort);
         // The salary sort's cursor key (a bigint, kept out of the shared select and the JSON).
         const listSelect = {...jobSummarySelect, salarySortCents: true} as const;
-        const restWhere = {AND: [where, ...(pinned.length ? [{id: {notIn: pinned}}] : []), ...(after ? [after] : [])]};
-        const [top, rest] = await Promise.all([
-          shown.length ? db.job.findMany({where: {AND: [where, {id: {in: shown}}]}, orderBy, select: jobSummarySelect}) : [],
-          db.job.findMany({where: restWhere, orderBy, take: take + 1, select: listSelect}),
+        // ONE parallel trip: the pins (ids), the board's featured count and the list itself. The list
+        // can't leave the pins out in SQL before they are known, so it reads `featuredPinCap` rows
+        // more and drops them here (at most that many pins).
+        const [[pinned, featuredTotal], rows] = await Promise.all([
+          unfiltered
+            ? featuredPinsAndCount(db, settings, now, seedAt).then(r => [r.pinned, r.count] as const)
+            : Promise.all([
+                search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, seedAt),
+                firstPage ? boardFeaturedCount(db, settings, now, scope) : Promise.resolve(0),
+              ]),
+          db.job.findMany({
+            where: after ? {AND: [where, after]} : where,
+            orderBy,
+            take: LIMITS.pageSize + LIMITS.featuredPinCap + 1,
+            select: listSelect,
+          }),
         ]);
+        const shown = firstPage ? pinned : [];
+        const take = LIMITS.pageSize - shown.length;
+        const pins = new Set(pinned);
+        const rest = rows.filter(row => !pins.has(row.id));
         const page = rest.slice(0, take);
+        // The pinned rows, in the list's order: from the rows just read when all are there (often, on
+        // a narrow search), else one more read of exactly those.
+        const found = rows.filter(row => shown.includes(row.id));
+        const top =
+          found.length === shown.length ? found : await db.job.findMany({where: {AND: [where, {id: {in: shown}}]}, orderBy, select: listSelect});
         const last = page.at(-1);
         const body: JobsPage = {
           jobs: [...top, ...page].map(row => toJobSummary(row, now, settings.currency)),
@@ -120,7 +140,6 @@ export const jobRoutes = new Hono()
       // kept 3 minutes in the Site Cache under the home lists' prefix, so every job write that
       // clears those (`forgetPublicLists`) clears it too. Per sort and per pin hour (the pins rotate
       // hourly). Filtered and later pages are too many shapes to cache: they read the database.
-      const scope = isSingleCompany(settings) ? `company-${settings.ownerCompanyId}` : 'all';
       const body = unfiltered ? await cache.getOrSet(`${HOME_PREFIX}jobs:${scope}:${search.sort}:${hour}`, JOBS_FIRST_PAGE_TTL, load) : await load();
       c.header('Cache-Control', 'public, max-age=60');
       return c.json(body);
@@ -170,26 +189,19 @@ export const jobRoutes = new Hono()
   .get('/:slug', slugParam, withDb, async c => {
     const db = c.var.db;
     const now = new Date();
+    const {slug} = c.req.valid('param');
     const settings = await cachedBoardSettings(db);
-    const row = await db.job.findFirst({where: {...pageWhere(settings, now), slug: c.req.valid('param').slug}, select: jobDetailSelect});
-    if (!row) return c.json(problem('not_found', 'No such job.'), 404);
-    const open = publicJobWhere(settings, now);
-    const [similar, more] = await Promise.all([
-      db.job.findMany({
-        where: {AND: [open, {categoryId: row.categoryId, id: {not: row.id}, companyId: {not: row.companyId}}]},
-        orderBy: [{isFeatured: 'desc'}, ...NEWEST],
-        take: SIMILAR,
-        select: jobSummarySelect,
-      }),
-      db.job.findMany({
-        where: {AND: [open, {companyId: row.companyId, id: {not: row.id}}]},
-        orderBy: NEWEST,
-        take: MORE_AT_COMPANY,
-        select: jobSummarySelect,
-      }),
-    ]);
-    const map = (rows: typeof similar) => rows.map(r => toJobSummary(r, now, settings.currency));
-    const body: JobDetailResponse = {job: toJobDetail(row, now, settings.currency), similar: map(similar), moreAtCompany: map(more)};
+    // The job and its two lists (3 billed queries in 2 trips) are the same for every visitor: kept in
+    // the Site Cache under the public lists' prefix, so every job, company and settings write that
+    // clears those (`forgetPublicLists`) clears it too. What changes by itself (expiry, a featured
+    // period ending) is worked out below from THIS request's clock, never cached.
+    const scope = isSingleCompany(settings) ? `company-${settings.ownerCompanyId}` : 'all';
+    const cached = await cache.getOrSet(`${HOME_PREFIX}job:${scope}:${slug}`, JOB_PAGE_TTL, () => loadJobPage(db, settings, slug, new Date()));
+    const page = cached ? reviveJobPage(cached) : null;
+    if (!page || !onPageNow(page.row, now)) return c.json(problem('not_found', 'No such job.'), 404);
+    // A listed job that expired since it was cached has left the board: dropped, as a fresh read would.
+    const map = (rows: SummaryRow[]) => rows.filter(r => jobState(r, now) === 'active').map(r => toJobSummary(r, now, settings.currency));
+    const body: JobDetailResponse = {job: toJobDetail(page.row, now, settings.currency), similar: map(page.similar), moreAtCompany: map(page.more)};
     c.header('Cache-Control', 'public, max-age=60');
     return c.json(body);
   })
@@ -202,6 +214,70 @@ export const jobRoutes = new Hono()
     after(c, 'job view', () => countView(c, db, slug));
     return c.json({ok: true});
   });
+
+/**
+ * The whole board's featured count ("See all 12 featured jobs") on a filtered page 1: the same for
+ * every search, so one cached number instead of a read per search. Featured periods end by
+ * themselves, so a short TTL (as the first page's); job writes clear it with the public lists.
+ */
+const boardFeaturedCount = (db: PrismaClient, settings: Parameters<typeof publicJobWhere>[0], now: Date, scope: string) =>
+  cache.getOrSet(`${HOME_PREFIX}featured-count:${scope}`, JOBS_FIRST_PAGE_TTL, () => featuredCount(db, settings, now));
+
+type SummaryRow = Prisma.JobGetPayload<{select: typeof jobSummarySelect}>;
+const jobPageSelect = {...jobDetailSelect, needsReview: true} as const;
+type JobPageRow = Prisma.JobGetPayload<{select: typeof jobPageSelect}>;
+interface JobPageRows {
+  row: JobPageRow;
+  similar: SummaryRow[];
+  more: SummaryRow[];
+}
+
+/** One job's page rows: the job (open, expired or closed: `pageWhere`), then its two short lists. */
+async function loadJobPage(db: PrismaClient, settings: Parameters<typeof publicJobWhere>[0], slug: string, now: Date): Promise<JobPageRows | null> {
+  const row = await db.job.findFirst({where: {...pageWhere(settings, now), slug}, select: jobPageSelect});
+  if (!row) return null;
+  const open = publicJobWhere(settings, now);
+  const [similar, more] = await Promise.all([
+    db.job.findMany({
+      where: {AND: [open, {categoryId: row.categoryId, id: {not: row.id}, companyId: {not: row.companyId}}]},
+      orderBy: [{isFeatured: 'desc'}, ...NEWEST],
+      take: SIMILAR,
+      select: jobSummarySelect,
+    }),
+    db.job.findMany({
+      where: {AND: [open, {companyId: row.companyId, id: {not: row.id}}]},
+      orderBy: NEWEST,
+      take: MORE_AT_COMPANY,
+      select: jobSummarySelect,
+    }),
+  ]);
+  return {row, similar, more};
+}
+
+/** Cached values are JSON: the dates come back as ISO strings. */
+const toDate = (value: Date | string | null): Date | null => (value === null ? null : new Date(value));
+const reviveSummary = <T extends SummaryRow>(r: T): T => ({
+  ...r,
+  featuredUntil: toDate(r.featuredUntil),
+  publishedAt: toDate(r.publishedAt),
+  expiresAt: toDate(r.expiresAt),
+});
+function reviveJobPage(page: JobPageRows): JobPageRows {
+  const row = reviveSummary(page.row);
+  return {
+    row: {...row, updatedAt: new Date(row.updatedAt), company: {...row.company, updatedAt: new Date(row.company.updatedAt)}},
+    similar: page.similar.map(reviveSummary),
+    more: page.more.map(reviveSummary),
+  };
+}
+
+/**
+ * `pageWhere` again with this request's clock, for a cached row (company and board scope are cleared
+ * on write): a live job keeps its page; one past its end only while no edit awaits review.
+ */
+const onPageNow = (row: JobPageRow, now: Date) =>
+  (row.status === 'published' && row.expiresAt !== null && row.expiresAt > now) ||
+  (['published', 'expired', 'closed'].includes(row.status) && !row.needsReview);
 
 /**
  * +1 view, at most once per visitor (keyed IP hash) and job a day: the attempt row's key is the

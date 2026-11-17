@@ -15,16 +15,26 @@ import {isSingleCompany} from './settings';
  * never from an id in the request. The whole area is 404 in single-company mode (F39).
  */
 
-/** After `withDb`: the employer area does not exist on a single-company board. */
-export const employerArea = createMiddleware<{Variables: {db: PrismaClient; viewer: Viewer}}>(async (c, next) => {
+/** What the employer area's handlers read from `c.var`: the viewer's own company is loaded once, by `employerArea`. */
+export type EmployerEnv = {Variables: {db: PrismaClient; viewer: Viewer; employerCompany: EmployerCompanyRow | null}};
+
+/**
+ * After `withDb`: the employer area does not exist on a single-company board. In the same parallel
+ * trip as the job seeker check, the viewer's own company (`ownCompany`, by the session's user id):
+ * every handler starts from it (`c.var.employerCompany`), so none spends a round trip of its own
+ * on it. Read at the start of the request, as each handler's own first read was.
+ */
+export const employerArea = createMiddleware<EmployerEnv>(async (c, next) => {
   const viewerId = c.var.viewer.id;
-  const [settings, applicant] = await Promise.all([
+  const [settings, applicant, company] = await Promise.all([
     cachedBoardSettings(c.var.db),
     viewerId ? c.var.db.applicantProfile.findUnique({where: {userId: viewerId}, select: {userId: true}}) : null,
+    viewerId ? ownCompany(c.var.db, viewerId) : null,
   ]);
   if (isSingleCompany(settings)) return c.json(problem('not_found', 'No such Site API route.'), 404);
   // An account is a job seeker OR a company, never both.
   if (applicant) return c.json(problem('applicant_account', 'This is a job seeker account. Sign up with another email to post jobs.'), 403);
+  c.set('employerCompany', company);
   await next();
 });
 
@@ -59,6 +69,8 @@ export const BLOCKED = problem('company_blocked', 'This company cannot post or c
 
 export const ownCompany = (db: PrismaClient, userId: number) =>
   db.company.findUnique({where: {ownerUserId: userId}, select: companySelect});
+
+export type EmployerCompanyRow = NonNullable<Awaited<ReturnType<typeof ownCompany>>>;
 
 export function socialsOf(value: unknown): CompanySocials {
   const stored = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
