@@ -183,7 +183,7 @@ export function Review() {
                 {label: 'Live', value: history.live},
                 {label: 'Rejected', value: history.rejected},
                 {label: 'Paid orders', value: history.paidOrders},
-                {label: 'Spent', value: money(history.spentCents, item.payment?.currency ?? 'USD')},
+                {label: 'Spent', value: money(history.spentCents, history.spentCurrency)},
               ]}
             />
             {history.recent.length > 0 && (

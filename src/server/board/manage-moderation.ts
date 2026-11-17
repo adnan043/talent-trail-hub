@@ -59,14 +59,15 @@ function toItem(row: ItemRow, now: Date): ModerationItem {
 }
 
 async function history(db: PrismaClient, companyId: number, jobId: number, now: Date) {
-  const [jobs, orders] = await Promise.all([
+  const [jobs, orders, settings] = await Promise.all([
     db.job.findMany({
       where: {companyId, status: {notIn: ['draft', 'pending_payment']}},
       select: {id: true, title: true, status: true, expiresAt: true, createdAt: true},
       orderBy: {id: 'desc'},
       take: HISTORY + 1,
     }),
-    db.listingOrder.findMany({where: {companyId, status: 'paid'}, select: {amountCents: true}, orderBy: {id: 'desc'}, take: HISTORY}),
+    db.listingOrder.findMany({where: {companyId, status: 'paid'}, select: {amountCents: true, currency: true}, orderBy: {id: 'desc'}, take: HISTORY}),
+    cachedBoardSettings(db),
   ]);
   const listed = jobs.slice(0, HISTORY);
   const shown = listed.map(j => effectiveStatus(j, now));
@@ -81,6 +82,8 @@ async function history(db: PrismaClient, companyId: number, jobId: number, now: 
     more: jobs.length > HISTORY,
     paidOrders: orders.length,
     spentCents: orders.reduce((sum, o) => sum + o.amountCents, 0),
+    // The orders' currency (the board's when there are none): never a guess from this job's payment.
+    spentCurrency: orders[0]?.currency ?? settings.currency,
     recent,
   };
 }

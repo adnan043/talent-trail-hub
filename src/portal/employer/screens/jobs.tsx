@@ -222,19 +222,21 @@ function RenewDialog({job, onClose}: {job: EmployerJobRow; onClose: () => void})
     },
   });
   const free = options.data?.freePosting || (tiers.find(t => t.id === chosen)?.priceCents ?? 0) === 0;
+  // A free board with no listing tiers renews with the board's default free listing (no tier to pick).
+  const ready = chosen !== null || (tiers.length === 0 && options.data?.freePosting === true);
   return (
     <Modal
       open
       onClose={onClose}
       dismissible={!renew.isPending}
       title={`Renew “${job.title}”`}
-      description="One more listing period, starting today."
+      description={job.status === 'published' ? 'One more listing period, added to the time it has left.' : 'One more listing period, starting today.'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={renew.isPending}>
             Cancel
           </Button>
-          <Button pending={renew.isPending} pendingLabel={free ? 'Renewing…' : 'Opening checkout…'} disabled={chosen === null || (gateways !== null && !gateway)} onClick={() => renew.mutate()}>
+          <Button pending={renew.isPending} pendingLabel={free ? 'Renewing…' : 'Opening checkout…'} disabled={!ready || (gateways !== null && !gateway)} onClick={() => renew.mutate()}>
             {free ? 'Renew' : 'Pay and renew'}
           </Button>
         </>

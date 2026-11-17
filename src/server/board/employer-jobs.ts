@@ -150,6 +150,7 @@ const detailSelect = {
   tierId: true,
   title: true,
   categoryId: true,
+  category: {select: {name: true}},
   employmentType: true,
   workplaceType: true,
   locationCity: true,
@@ -180,6 +181,7 @@ export function toJobDetail(job: NonNullable<Awaited<ReturnType<typeof findOwnJo
     status,
     tierId: job.tierId,
     salaryCurrency: job.salaryCurrency,
+    category: {id: job.categoryId, name: job.category.name},
     actions: jobActions(status, job.publishedAt),
     values: jobValuesOf({...job, tags: job.tags.map(t => t.tag.name)}),
   };

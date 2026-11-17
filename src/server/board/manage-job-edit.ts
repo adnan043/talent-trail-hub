@@ -59,6 +59,7 @@ const detailSelect = {
   applyTarget: true,
   isFeatured: true,
   featuredUntil: true,
+  publishedAt: true,
   expiresAt: true,
   company: {select: {id: true, name: true}},
   tags: {select: {tag: {select: {name: true}}}, take: LIMITS.tags},
@@ -116,7 +117,7 @@ export const manageJobEditRoutes = new Hono()
       featuredUntil: status === 'published' && featured ? (job.featuredUntil?.toISOString() ?? null) : null,
       expiresAt: job.expiresAt?.toISOString() ?? null,
       salaryCurrency: job.salaryCurrency,
-      actions: actionsFor(status, job.source),
+      actions: actionsFor(status, job.source, job.publishedAt),
       values: jobValuesOf({...job, tags: job.tags.map(t => t.tag.name)}),
     };
     return c.json(body);

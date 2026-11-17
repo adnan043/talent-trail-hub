@@ -139,7 +139,7 @@ export function MyApplications() {
   // The tiles count ALL applications: from the unfiltered list's first page (shared with the dashboard).
   const all = useQuery({
     queryKey: ['my-applications', 'counts'],
-    queryFn: () => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: '', ...NO_MY_FILTER}})),
+    queryFn: () => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: '', ...NO_MY_FILTER, tz: ''}})),
     enabled: verified,
     staleTime: 30_000,
   });
