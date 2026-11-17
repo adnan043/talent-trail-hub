@@ -116,7 +116,7 @@ export interface ProfileUploadGrant {
 }
 
 /** `GET /applications/jobs/:slug/can-apply`. */
-export type CanApplyReason = 'sign_in' | 'own_job' | 'staff' | 'employer_account' | 'choose_kind' | 'incomplete' | 'applied';
+export type CanApplyReason = 'sign_in' | 'own_job' | 'staff' | 'employer_account' | 'choose_kind' | 'incomplete' | 'applied' | 'closed';
 export interface CanApplyAnswer {
   canApply: boolean;
   reason: CanApplyReason | null;

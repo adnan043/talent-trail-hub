@@ -106,7 +106,8 @@ function ProfileSection({viewer}: {viewer: Viewer}) {
     mutationFn: (values: {name: string}) => read(api.auth.me.$patch({json: values})),
     onSuccess: () => {
       toast.success('Saved your name.');
-      return queryClient.invalidateQueries({queryKey: ['me']});
+      // The job seeker screens show the name from the profile answer too.
+      return Promise.all([queryClient.invalidateQueries({queryKey: ['me']}), queryClient.invalidateQueries({queryKey: ['applicant-profile']})]);
     },
     onError: err => err instanceof ApiError && profile.setServerErrors(err.fields),
   });

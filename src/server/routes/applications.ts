@@ -50,6 +50,9 @@ export async function overLimit(db: Db, kind: Kind, ipHash: string, limit: numbe
   return recent.length > limit;
 }
 
+/** The profile lost its CV between the check and the transaction. */
+class ProfileChanged extends Error {}
+
 const noIp = (c: Context) => c.json(problem('auth_not_configured', 'Applying is not set up on this site yet.'), 503);
 
 /** The application form: a cover note and the consent. Everything else comes from the profile. */
@@ -109,6 +112,11 @@ export const applicationRoutes = new Hono<Env>()
     const name = (viewer.name ?? '').trim().slice(0, LIMITS.applicantName) || email;
     try {
       await db.$transaction(async tx => {
+        // The CV as it is NOW, the profile row locked: a CV replaced meanwhile (`/resume/complete`
+        // waits on this lock) never deletes the file this application points at.
+        const [cv] = await tx.$queryRaw<{resume_file_id: string | null; resume_file_name: string | null}[]>`
+          SELECT "resume_file_id", "resume_file_name" FROM "applicant_profiles" WHERE "user_id" = ${viewer.id!} FOR UPDATE`;
+        if (!cv?.resume_file_id) throw new ProfileChanged();
         await tx.application.create({
           data: {
             jobId: job.id,
@@ -119,8 +127,8 @@ export const applicationRoutes = new Hono<Env>()
             profileUrl: profile.profileUrl,
             coverNote: input.coverNote,
             // The profile's CV, shared: the file is deleted only once nothing uses it (applicant-profile.ts).
-            resumeFileId: profile.resumeFileId,
-            resumeFileName: profile.resumeFileName,
+            resumeFileId: cv.resume_file_id,
+            resumeFileName: cv.resume_file_name,
             consentAt: new Date(),
             consentText: DEFAULT_CONSENT_TEXT,
             ipHash,
@@ -131,6 +139,7 @@ export const applicationRoutes = new Hono<Env>()
         await tx.$executeRaw`UPDATE "jobs" SET "application_count" = "application_count" + 1 WHERE "id" = ${job.id}`;
       });
     } catch (err) {
+      if (err instanceof ProfileChanged) return c.json(problem('profile_incomplete', 'Add your CV to your profile first.'), 422);
       // The address is the session's own, so saying so tells nobody anything new.
       if ((err as {code?: string}).code === 'P2002') return c.json(problem('already_applied', 'You have already applied for this job.'), 409);
       throw err;
@@ -153,11 +162,13 @@ export const applicationRoutes = new Hono<Env>()
     if (viewer.state !== 'user' || !viewer.id) return no('sign_in');
     if (!slug) return no(null);
     const [job, kind, profile] = await Promise.all([
-      db.job.findFirst({where: {slug}, select: {id: true, company: {select: {ownerUserId: true}}}}),
+      cachedBoardSettings(db).then(settings => db.job.findFirst({where: {...publicJobWhere(settings), slug}, select: {id: true, company: {select: {ownerUserId: true}}}})),
       accountKind(db, viewer.id),
       db.applicantProfile.findUnique({where: {userId: viewer.id}, select: applyProfileSelect}),
     ]);
-    if (job?.company.ownerUserId === viewer.id) return no('own_job');
+    // A closed, expired or hidden job takes no applications (the POST would answer 404).
+    if (!job) return no('closed');
+    if (job.company.ownerUserId === viewer.id) return no('own_job');
     if (kind === 'employer') return no('employer_account');
     if (kind === 'none') {
       if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, PERMISSIONS.APPLICANT_READ_ALL)) return no('staff');
@@ -171,7 +182,9 @@ export const applicationRoutes = new Hono<Env>()
       resumeFileName: profile?.resumeFileId ? profile.resumeFileName : null,
     };
     const email = viewer.email ? normalizeEmail(viewer.email) : null;
-    if (job && email && (await db.application.findFirst({where: {jobId: job.id, email}, select: {id: true}}))) return no('applied', {profile: summary});
+    // Applied from this account (even under an older email), or a guest application with this address.
+    const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{email}] : [])]};
+    if ((await db.application.findFirst({where: {jobId: job.id, ...mine}, select: {id: true}}))) return no('applied', {profile: summary});
     const missing = profile ? missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId}) : [];
     if (missing.length) return no('incomplete', {missing, profile: summary});
     return c.json<CanApplyAnswer>({canApply: true, reason: null, profile: summary});

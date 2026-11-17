@@ -308,6 +308,28 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect((await admin.get(`/site-api/applications/jobs/${jobA.id}/applicants?status=&before=`)).status).toBe(200);
   });
 
+  it('an application follows the account: after an email change it still counts as applied and the email goes to the new address', async () => {
+    const casey = await applicant('casey@example.test', '198.51.100.21');
+    expect((await apply(casey, jobA.slug)).status).toBe(201);
+    // As if the account changed its address after applying (the row keeps the old one).
+    await db.application.updateMany({data: {email: 'casey-old@example.test'}});
+    expect((await casey.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'applied'});
+    const again = await apply(casey, jobA.slug);
+    expect(again.status).toBe(409);
+    expect(await db.application.count()).toBe(1);
+    const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
+    expect((await ownerA.request('PATCH', `/site-api/applications/${appId}`, {status: 'shortlisted'})).status).toBe(200);
+    expect(await db.emailLog.findMany({where: {templateKey: 'application-shortlisted'}, select: {to: true}})).toEqual([{to: 'casey@example.test'}]);
+  });
+
+  it('a closed job says so before the form, and takes no application', async () => {
+    const casey = await applicant('casey@example.test', '198.51.100.22');
+    await db.job.update({where: {id: jobA.id}, data: {status: 'closed'}});
+    forgetBoardSettings();
+    expect((await casey.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toEqual({canApply: false, reason: 'closed'});
+    expect((await apply(casey, jobA.slug)).status).toBe(404);
+  });
+
   it('each status email goes to the candidate at most once; notes stay private', async () => {
     expect((await apply(await applicant('d@example.test', '198.51.100.6'), jobA.slug)).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;

@@ -15,9 +15,10 @@ import {idOf, isResumeExpired} from '../board/applicants';
  *            `?status=`, `?q=` (job title or company, contains), `?from=` / `?to=` (YYYY-MM-DD, applied
  *            on those days, UTC); with `counts` per status over ALL their applications (first page only)
  *
- * Applying needs no account, so an application belongs to whoever owns its EMAIL: only a signed-in
- * user with a CONFIRMED email sees the ones sent with that address (`requireVerified`), and the
- * email comes from the session, never from the request. Read only: the employer or the admin
+ * An application belongs to the ACCOUNT that sent it (`applicant_user_id`), so it stays theirs when
+ * they change their email. The older guest applications (no account) belong to whoever owns their
+ * EMAIL: only a signed-in user with a CONFIRMED email sees those (`requireVerified`), and the email
+ * comes from the session, never from the request. Read only: the employer or the admin
  * decides the status. The employer's private notes are never selected.
  */
 type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
@@ -54,12 +55,14 @@ export const myApplicationRoutes = new Hono<Env>().get('/', listQuery, withViewe
   c.header('Cache-Control', 'private, no-store');
   // The site's owner signs in from the dashboard with no address here: nothing of theirs to match.
   const email = c.var.viewer.email?.trim().toLowerCase();
-  if (!email) return c.json({items: [], nextBefore: null, counts: null});
+  const userId = c.var.viewer.id;
+  if (!userId) return c.json({items: [], nextBefore: null, counts: null});
   const {before, status, q, from, to} = c.req.valid('query');
-  // On the (email, id) index: one person's applications, the job and company joined in. The
-  // filters only narrow that person's own rows.
+  // On the (applicant_user_id, id) and (email, id) indexes: one person's applications, the job and
+  // company joined in. The filters only narrow that person's own rows.
+  const mine = {OR: [{applicantUserId: userId}, ...(email ? [{applicantUserId: null, email}] : [])]};
   const where = {
-    email,
+    AND: [mine],
     ...(status ? {status} : {}),
     ...(from || to ? {createdAt: {...(from ? {gte: from} : {}), ...(to ? {lt: to} : {})}} : {}),
     ...(q ? {OR: [{job: {title: {contains: q, mode: 'insensitive' as const}}}, {job: {company: {name: {contains: q, mode: 'insensitive' as const}}}}]} : {}),
@@ -72,7 +75,7 @@ export const myApplicationRoutes = new Hono<Env>().get('/', listQuery, withViewe
       take: PAGE + 1,
     }),
     // The tiles: per status, over ALL of this person's applications (unfiltered), on the first page only.
-    before ? null : c.var.db.application.groupBy({by: ['status'], where: {email}, _count: {_all: true}}),
+    before ? null : c.var.db.application.groupBy({by: ['status'], where: mine, _count: {_all: true}}),
   ]);
   const counts = grouped
     ? Object.fromEntries(APPLICATION_STATUSES.map(s => [s, grouped.find(g => g.status === s)?._count._all ?? 0])) as Record<ApplicationStatus, number>

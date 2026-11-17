@@ -23,10 +23,15 @@ export const dropApplicantProfileOnDelete = createMiddleware(async (c, next) => 
   await next();
   const db = getDb();
   if (c.req.method !== 'POST' || c.res.status !== 200 || !db || !Number.isSafeInteger(userId)) return;
-  const gone = await db.applicantProfile.findUnique({where: {userId}, select: {photoFileId: true, resumeFileId: true}});
-  if (!gone) return;
-  await db.applicantProfile.delete({where: {userId}, select: {userId: true}});
-  // Best effort: a file left behind is private and unreachable (nothing points at it any more).
-  if (gone.photoFileId) await deleteFile(c.req.url, gone.photoFileId).catch(() => undefined);
-  await dropProfileFile(db, c.req.url, gone.resumeFileId);
+  // The account is already gone: nothing here may turn the kit's 200 into an error.
+  try {
+    const gone = await db.applicantProfile.findUnique({where: {userId}, select: {photoFileId: true, resumeFileId: true}});
+    // deleteMany: a privacy erase or a second request may have removed the row meanwhile.
+    if (!gone || !(await db.applicantProfile.deleteMany({where: {userId}})).count) return;
+    // Best effort: a file left behind is private and unreachable (nothing points at it any more).
+    if (gone.photoFileId) await deleteFile(c.req.url, gone.photoFileId).catch(() => undefined);
+    await dropProfileFile(db, c.req.url, gone.resumeFileId);
+  } catch (err) {
+    console.warn(`applicant profile not removed on account delete: ${(err as Error).name}`);
+  }
 });

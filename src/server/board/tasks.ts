@@ -220,6 +220,12 @@ export async function runPurge(db: PrismaClient, requestUrl: string, now = new D
       });
       for (const upload of stale) {
         if (Date.now() >= deadline) break;
+        // A profile's photo or CV whose tracking row was left (a confirm cut short): keep the file.
+        const used = await db.applicantProfile.findFirst({where: {OR: [{photoFileId: upload.fileId}, {resumeFileId: upload.fileId}]}, select: {userId: true}});
+        if (used || (await fileInUse(db, upload.fileId))) {
+          await db.resumeUpload.deleteMany({where: {id: upload.id, applicationId: null}});
+          continue;
+        }
         if (!(await removeFile(requestUrl, upload.fileId))) {
           failedUploads.push(upload.id);
           continue;

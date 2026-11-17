@@ -33,14 +33,22 @@ describe('applyMarkdown', () => {
   it('prefixes every selected line, swaps another marker, and toggles off', () => {
     expect(run('bullets', '[one\ntwo]')).toBe('[- one\n- two]');
     expect(run('bullets', '[- one\n- two]')).toBe('[one\ntwo]');
-    expect(run('numbers', '[- one\n\n- two]')).toBe('[1. one\n\n2. two]');
+    // A blank line ends a list on the page, so the numbering starts again after it.
+    expect(run('numbers', '[- one\n\n- two]')).toBe('[1. one\n\n1. two]');
+    expect(run('numbers', '[one\ntwo\n\nthree]')).toBe('[1. one\n2. two\n\n1. three]');
     expect(run('heading', 'intro\nBene|fits')).toBe('intro\n## Bene|fits');
     expect(run('heading', '## Bene|fits')).toBe('Bene|fits');
+    // A fresh line or an empty editor: the marker goes in, ready to type.
+    expect(run('bullets', '|')).toBe('- |');
+    expect(run('numbers', 'intro\n|')).toBe('intro\n1. |');
+    expect(run('heading', 'a\n|\nb')).toBe('a\n## |\nb');
   });
 
   it('makes a link with the URL or the label selected', () => {
     expect(run('link', 'see [docs] now')).toBe('see [docs]([https://]) now');
     expect(run('link', 'see | now')).toBe('see [[link text]](https://) now');
+    expect(run('link', 'see[ docs ]now')).toBe('see [docs]([https://]) now');
+    expect(run('link', '[two\nlines]')).toBe('[two lines]([https://])');
   });
 
   it('writes Markdown the page renders', () => {

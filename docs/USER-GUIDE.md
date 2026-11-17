@@ -1,7 +1,7 @@
 # Talent Trail Hub: User Guide
 
-Talent Trail Hub is a job board. **Employers** pay to post jobs, **candidates** apply without an
-account, and **admins** check jobs and run the board.
+Talent Trail Hub is a job board. **Employers** pay to post jobs, **candidates** apply with a free
+job seeker account, and **admins** check jobs and run the board.
 
 This guide has two parts: [Employer guide](#part-1-employer-guide) and
 [Admin guide](#part-2-admin-guide). Both work in the **dashboard** at `/dashboard`.
@@ -81,10 +81,11 @@ Go to **Hiring → My jobs**. For each job you can:
 
 ### 1.6 Review applicants
 From **My jobs**, open a job's **Applicants**.
-- Each applicant shows name, email, cover note and **resume** (PDF or DOCX, up to 5 MB).
+- Each applicant shows name, email, cover note and **resume** (PDF or DOCX, up to 5 MB), taken from
+  their job seeker profile.
 - Resume links are private and **expire after 10 minutes**; open the resume again to get a fresh link.
-- Set a status: **New → Reviewed → Shortlisted** or **Rejected**. Moving someone to Shortlisted or
-  Rejected **emails the candidate once**.
+- Set a status: **New → Reviewed → Shortlisted → Approved**, or **Rejected**. Moving someone to
+  Shortlisted, Approved or Rejected **emails the candidate** (at most once for each).
 - Add **private notes** (up to 5,000 characters). Candidates never see them.
 - **Export to CSV** to use the list elsewhere.
 
@@ -96,7 +97,8 @@ counted; there are no applicant records.
 board's admin.
 
 ### 1.8 Good to know
-- Candidates can apply to a job **once per email**. You cannot apply to your own job.
+- Candidates can apply to a job **once per account**. You cannot apply to your own job, and a company
+  account cannot apply to jobs at all (an account is either a company or a job seeker).
 - Resumes are **deleted automatically 180 days** after the application.
 - You only ever see your own company's jobs and applicants.
 
@@ -172,8 +174,8 @@ price.
   Trusted companies skip review either way.
 
 ### 2.8 Candidate data (privacy)
-**Candidate data** looks up an email address and can delete that person's applications, resumes and job
-alerts. Use it for erasure requests. **Run purge now** removes resumes older than 180 days; this also
+**Candidate data** looks up an email address and can delete that person's applications, resumes,
+job seeker profile and job alerts. Use it for erasure requests. **Run purge now** removes resumes older than 180 days; this also
 runs daily automatically.
 
 ### 2.9 Email log
@@ -190,8 +192,15 @@ Shows every board email (template, recipient, and `sent` / `failed` / `skipped`)
 ## For candidates (quick reference)
 - Browse and search at **Find jobs** (`/jobs/`); no account is needed.
 - **Save** jobs in your browser and see them at **Saved jobs**.
-- To apply, upload a **PDF or DOCX resume (up to 5 MB)** and accept the consent. You get a confirmation
-  email, and later an email if you are shortlisted or rejected.
+- To apply, **sign up as a job seeker** and confirm your email. An account is either a job seeker or
+  a company, not both.
+- Fill in **My profile** in the dashboard with a **photo** and a **PDF or DOCX CV (up to 5 MB)**; a
+  phone number is optional. Every application uses this profile.
+- On the job page, add an optional cover note and accept the consent. You get a confirmation email,
+  and later an email if you are shortlisted, approved or rejected.
+- **My applications** in the dashboard lists your applications and their status.
+- An application's CV is deleted 180 days after you apply; your profile photo and CV stay until you
+  replace them or delete your profile or account.
 
 ## Troubleshooting
 

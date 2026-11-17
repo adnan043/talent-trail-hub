@@ -4,6 +4,7 @@ import {type AccountKind, type ApplicantProfileView, type Gender, PHOTO_TYPES} f
 import {SiteKeyMissing} from '../../platform/api';
 import {config} from '../../platform/config';
 import {completeUpload, createUpload, deleteFile} from '../files';
+import {randomBytes, toBase64Url} from '../../platform/auth/encoding';
 import {firstBytes, looksLikeResume} from './applicants-resume';
 import {isLogoImage} from './employer-logo';
 
@@ -181,6 +182,17 @@ export async function startProfileUpload(
   } catch (err) {
     return {ok: false, ...unavailable(err)};
   }
+}
+
+/**
+ * Records a started profile upload as an unattached `resume_uploads` row. `/complete` deletes the
+ * row; one left (never confirmed) is swept with its file by the nightly purge after a day.
+ */
+export async function trackProfileUpload(db: PrismaClient, fileId: string, input: {name: string; contentType: string; size: number}): Promise<void> {
+  await db.resumeUpload.createMany({
+    data: [{token: toBase64Url(randomBytes(32)), fileId, name: input.name.slice(0, 200), contentType: input.contentType.slice(0, 127), size: input.size, ready: false}],
+    skipDuplicates: true,
+  });
 }
 
 /** Step 3: confirm, then check what was really stored. A refused file is deleted. */

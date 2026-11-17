@@ -30,6 +30,8 @@ export function Welcome() {
   const queryClient = useQueryClient();
   const kind = me.data?.account.kind;
   const next = search.next;
+  // A single-company board has no employer sign-up: only the job seeker choice.
+  const single = me.data?.board.singleCompany ?? false;
 
   /** Leaves the dashboard for a public page (a job), or moves inside it. */
   const go = (to: string) => {
@@ -57,21 +59,21 @@ export function Welcome() {
     } else if (search.as === 'applicant') {
       auto.current = true;
       start.mutate();
-    } else if (search.as === 'company') {
+    } else if (search.as === 'company' && !single) {
       auto.current = true;
       void navigate({to: '/post-a-job'});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, search.as]);
 
-  if (!kind || (kind === 'none' && search.as && !start.error)) return <div className="app-page"><LoadingBlock rows={3} /></div>;
+  if (!kind || (kind === 'none' && (search.as === 'applicant' || (search.as === 'company' && !single)) && !start.error)) return <div className="app-page"><LoadingBlock rows={3} /></div>;
 
   return (
     <div className="app-page screen-welcome">
       <div className="profile-head">
         <div>
           <h2>What brings you here?</h2>
-          <p className="muted">Pick one. An account is either a job seeker or a company; use another email for the other.</p>
+          <p className="muted">{single ? 'Set up your job seeker profile to apply for jobs here.' : 'Pick one. An account is either a job seeker or a company; use another email for the other.'}</p>
         </div>
       </div>
       {start.error && <ErrorNote error={start.error} title="That did not work" />}
@@ -86,7 +88,7 @@ export function Welcome() {
             Set up my job seeker profile
           </Button>
         </Card>
-        <Card className="welcome-choice">
+        {!single && <Card className="welcome-choice">
           <span className="welcome-icon" aria-hidden="true">
             <Icon name="briefcase" size={32} />
           </span>
@@ -95,7 +97,7 @@ export function Welcome() {
           <Button variant="secondary" onClick={() => void navigate({to: '/post-a-job'})}>
             Post a job
           </Button>
-        </Card>
+        </Card>}
       </div>
     </div>
   );
