@@ -100,3 +100,34 @@ export const RESUME_UPLOAD_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ] as const;
 export const RESUME_ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * One of the signed-in candidate's OWN applications (matched on their confirmed email), as
+ * `GET /site-api/my-applications` returns it. Never the employer's private notes.
+ */
+export interface MyApplicationRow {
+  id: number;
+  status: ApplicationStatus;
+  appliedAt: string;
+  name: string;
+  phone: string | null;
+  profileUrl: string | null;
+  coverNote: string | null;
+  /** The resume's file name, null when there is none or it was deleted after the retention period. */
+  resumeFileName: string | null;
+  job: {title: string; company: string; /** Set only while the job page is live. */ slug: string | null};
+}
+
+/** `GET /site-api/my-applications` (one page, newest first). */
+export interface MyApplicationsPage {
+  items: MyApplicationRow[];
+  nextBefore: number | null;
+}
+
+/** How the candidate sees each status (the employer's words are in APPLICATION_STATUS_LABELS). */
+export const MY_APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  new: 'Submitted',
+  reviewed: 'In review',
+  shortlisted: 'Shortlisted',
+  rejected: 'Not selected',
+};

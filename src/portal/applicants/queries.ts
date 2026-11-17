@@ -1,7 +1,7 @@
 import {infiniteQueryOptions, type QueryClient, queryOptions} from '@tanstack/react-query';
 
 import {APPLICATION_STATUSES, type ApplicationStatus} from '../../lib/board';
-import type {AllApplicantsPage, ApplicantJobOption, ApplicantRow, JobApplicantsPage, ResumeLink} from '../../lib/types-apply';
+import type {AllApplicantsPage, ApplicantJobOption, ApplicantRow, JobApplicantsPage, MyApplicationsPage, ResumeLink} from '../../lib/types-apply';
 import {siteFetch} from '../../platform/browser';
 import {api, ApiError, read} from '../api';
 
@@ -80,3 +80,11 @@ export async function downloadCsv(path: string, fileName: string) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+/** `/dashboard/my-applications`: the signed-in candidate's own applications, newest first. */
+export const myApplicationsQuery = infiniteQueryOptions({
+  queryKey: ['my-applications'],
+  initialPageParam: '',
+  queryFn: ({pageParam}) => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: pageParam}})),
+  getNextPageParam: last => (last.nextBefore ? String(last.nextBefore) : undefined),
+});

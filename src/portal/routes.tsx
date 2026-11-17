@@ -32,6 +32,7 @@ import {ADMIN_NAV, adminRoutes} from './admin/routes';
 import {activityQuery, moderationQuery, overviewQuery} from './admin/queries';
 import {EMPLOYER_NAV, employerRoutes} from './employer/routes';
 import {myJobsQuery} from './employer/queries';
+import {myApplicationsQuery} from './applicants/queries';
 import {useMe, useSite} from './shared';
 import {
   Avatar,
@@ -128,6 +129,11 @@ const NAV_GROUPS: {label: string; items: NavItem[]}[] = [
       {to: '/', label: 'Overview', icon: 'dashboard', exact: true},
       {to: '/account', label: 'Your account', icon: 'user'},
     ],
+  },
+  // The candidate's own applications (staff see every applicant under the admin's group instead).
+  {
+    label: 'Job search',
+    items: [{to: '/my-applications', label: 'My applications', icon: 'file', hideForAbility: 'readApplicants'}],
   },
   // The job board: the employer's area, then the admin's (src/portal/employer/, src/portal/admin/).
   ...EMPLOYER_NAV,
@@ -402,6 +408,17 @@ const accountRoute = createRoute({
     ),
   component: lazyRouteComponent(() => import('./screens/account'), 'Account'),
 });
+const myApplicationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/my-applications',
+  staticData: {title: 'My applications'},
+  loader: async ({context: {queryClient}}) => {
+    // The list only for a confirmed email, as the screen's `enabled` flag decides.
+    const me = await queryClient.ensureQueryData(meQuery).catch(() => null);
+    if (me?.viewer?.emailVerified) await warm(queryClient.ensureInfiniteQueryData(myApplicationsQuery));
+  },
+  component: lazyRouteComponent(() => import('./applicants/MyApplicationsScreen'), 'MyApplications'),
+});
 const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/users',
@@ -448,6 +465,7 @@ const devRoutes = import.meta.env.DEV
 export const routeTree = rootRoute.addChildren([
   overviewRoute,
   accountRoute,
+  myApplicationsRoute,
   ...employerRoutes,
   ...adminRoutes,
   usersRoute,
