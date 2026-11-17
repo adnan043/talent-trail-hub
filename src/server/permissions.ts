@@ -51,7 +51,7 @@ export const CATALOGUE = definePermissions({
   APPLICANT_MANAGE_ALL: {
     codename: 'site:applicant:manage',
     title: 'Update all applicants',
-    description: "Change the status and private notes of any job's applicants (shortlisted and rejected candidates are emailed).",
+    description: "Change the status and private notes of any job's applicants (shortlisted, approved and rejected candidates are emailed).",
     group: 'Applicants',
     ability: 'manageApplicants',
     roles: ['admin'],
@@ -60,7 +60,7 @@ export const CATALOGUE = definePermissions({
   PRIVACY_MANAGE: {
     codename: 'site:privacy:manage',
     title: 'Delete candidate data',
-    description: 'Look up an email and delete its applications, resumes and alerts.',
+    description: 'Look up an email and delete its applications, resumes, job seeker profile and alerts.',
     group: 'Applicants',
     ability: 'managePrivacy',
     roles: ['admin'],

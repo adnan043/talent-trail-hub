@@ -1150,7 +1150,6 @@ hr {
   }
 
   .site-nav,
-  .site-header .theme-menu,
   .site-header .account-menu,
   .site-header .sign-in-link {
     display: none;
@@ -1409,21 +1408,6 @@ hr {
 .mobile-sheet-nav a.active {
   background: var(--secondary);
   color: var(--ink);
-  font-weight: 600;
-}
-
-.mobile-sheet-theme {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
-}
-
-.mobile-sheet-theme p {
-  margin: 0;
-  font-size: 14px;
   font-weight: 600;
 }
 

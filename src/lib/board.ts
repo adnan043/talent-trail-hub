@@ -33,7 +33,7 @@ export const SALARY_PERIODS = ['HOUR', 'DAY', 'WEEK', 'MONTH', 'YEAR'] as const;
 export type SalaryPeriod = (typeof SALARY_PERIODS)[number];
 export const SALARY_PERIOD_LABELS: Record<SalaryPeriod, string> = {HOUR: 'hour', DAY: 'day', WEEK: 'week', MONTH: 'month', YEAR: 'year'};
 
-export const APPLICATION_STATUSES = ['new', 'reviewed', 'shortlisted', 'rejected'] as const;
+export const APPLICATION_STATUSES = ['new', 'reviewed', 'shortlisted', 'approved', 'rejected'] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
 export const MODERATION_MODES = ['all', 'auto'] as const;
@@ -67,6 +67,8 @@ export const LIMITS = {
   resumeMb: 5,
   /** Company logo: PNG / JPG / WebP up to this size (checked by first bytes, never SVG). */
   logoMb: 1,
+  /** Applicant photo: PNG / JPG / WebP up to this size (checked by first bytes, never SVG). */
+  photoMb: 2,
   /** On-site applications per IP per hour. */
   appliesPerIpHour: 5,
   /** Featured jobs pinned on page 1 of /jobs/ and on the home page, rotated per UTC hour. */
@@ -84,8 +86,8 @@ export const RESUME_TYPES = [
 ] as const;
 
 export const DEFAULT_CONSENT_TEXT =
-  `I agree that the employer may process my application and resume to consider me for this job. ` +
-  `My resume is deleted ${RESUME_RETENTION_DAYS} days after I apply.`;
+  `I agree that the employer may see my profile, photo and resume to consider me for this job. ` +
+  `The employer can no longer get my resume ${RESUME_RETENTION_DAYS} days after I apply.`;
 
 /** How a job's status reads to people. */
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {

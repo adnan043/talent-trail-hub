@@ -199,6 +199,8 @@ export interface PrivacyLookup {
   applications: number;
   resumeFiles: number;
   emailLogs: number;
+  /** The address's account has a job seeker profile (details, photo, CV). */
+  profile: boolean;
   items: {id: number; jobTitle: string; companyName: string; createdAt: string; hasResume: boolean}[];
   more: boolean;
 }
@@ -207,6 +209,8 @@ export interface PrivacyDeleted {
   applications: number;
   resumeFiles: number;
   emailLogs: number;
+  /** 1 when the job seeker profile (and its photo and CV) was deleted. */
+  profiles: number;
 }
 
 export type EmailLogStatus = 'sent' | 'failed' | 'skipped';

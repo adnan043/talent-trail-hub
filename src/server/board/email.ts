@@ -13,7 +13,7 @@ import {errorLabel} from '../error-label';
  *
  * Templates (src/server/board/emails/): job-submitted, job-approved, job-rejected,
  * job-expiring, job-expired, new-applicant, application-confirmation,
- * application-shortlisted, application-rejected, admin-job-review, order-receipt.
+ * application-shortlisted, application-approved, application-rejected, admin-job-review, order-receipt.
  *
  * Sending: Resend's HTTP API, when the owner added the `RESEND_API_KEY` secret (live: the
  * production secret; Preview: the staging one). The sender is the `EMAIL_FROM` secret
@@ -30,6 +30,7 @@ export type BoardEmailTemplate =
   | 'new-applicant'
   | 'application-confirmation'
   | 'application-shortlisted'
+  | 'application-approved'
   | 'application-rejected'
   | 'admin-job-review'
   | 'order-receipt';
@@ -83,7 +84,7 @@ async function deliver(apiKey: string, to: string, message: {subject: string; te
  * else's. At most `CANDIDATE_DAILY` of them reach one address a day, so the board's sender can't
  * be used to flood a stranger's inbox (a real candidate applies to far fewer jobs a day).
  */
-const CANDIDATE_TEMPLATES = ['application-confirmation', 'application-shortlisted', 'application-rejected'];
+const CANDIDATE_TEMPLATES = ['application-confirmation', 'application-shortlisted', 'application-approved', 'application-rejected'];
 export const CANDIDATE_DAILY = 20;
 
 /**

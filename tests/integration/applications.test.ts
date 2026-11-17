@@ -8,13 +8,21 @@ import {overLimit} from '../../src/server/routes/applications';
 import {Browser, configureEnv, DATABASE_URL, db, ORIGIN, resetDatabase, signedIn, userId} from './support/harness';
 
 /**
- * Apply + applicants (F4, F16, F36, F39) against a real Postgres: duplicate apply, the per-IP
- * limit and honeypot, no cross-company access, the resume retention guard, status emails once.
- * The platform's file storage is faked below (the harness answers 404 for anything else).
+ * Apply + applicants (F4, F16, F36, F39) against a real Postgres: applying needs a job seeker
+ * account (profile with photo, CV and phone), once per account; the per-IP limit; no cross-company
+ * access; the resume retention guard; status emails once; the shared profile CV is never deleted
+ * while something uses it. The platform's file storage is faked below (the harness answers 404 for
+ * anything else).
  */
 let fileSeq = 0;
-/** What the stored file starts with (the first-bytes check reads it); and the files deleted. */
-let storedBytes = '%PDF-1.7\n';
+/** What each stored file starts with (the first-bytes check reads it); and the files deleted. */
+const PNG = '\x89PNG\r\n\x1a\n0000';
+const PDF = '%PDF-1.7\n';
+const storedBytes = new Map<string, string>();
+/** The next upload's bytes (default: right for its type). */
+let nextBytes: string | null = null;
+const uploads = new Map<string, {name: string; contentType: string; size: number; visibility: string}>();
+let lastFile = '';
 const deleted: string[] = [];
 /** True: storage refuses every delete (an outage). */
 let failDeletes = false;
@@ -27,16 +35,26 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), {status});
   if (path === '/uploads') {
     const id = `file_${String(++fileSeq).padStart(26, '0')}`;
+    const asked = JSON.parse(String(init?.body ?? '{}')) as {name: string; contentType: string; size: number; visibility?: string};
+    uploads.set(id, {name: asked.name, contentType: asked.contentType, size: asked.size, visibility: asked.visibility ?? 'private'});
+    storedBytes.set(id, nextBytes ?? (asked.contentType.startsWith('image/') ? PNG : PDF));
+    nextBytes = null;
     return json(201, {data: {file: {id}, upload: {method: 'PUT', url: `/__platform/files/uploads/${id}`, headers: {}, expiresAt: ''}}});
   }
-  if (path?.endsWith('/complete') && ++completeCalls) return json(200, {data: {file: {id: path.split('/')[1], status: 'ready'}}});
+  if (path?.endsWith('/complete') && ++completeCalls) {
+    const id = path.split('/')[1]!;
+    return json(200, {data: {file: {id, status: 'ready', ...uploads.get(id)}}});
+  }
   if (path?.endsWith('/delete')) {
     if (failDeletes) return json(503, {error: {code: 'E_UNAVAILABLE', message: 'down'}});
     deleted.push(path.split('/')[1]!);
     return json(200, {data: {deleted: true}});
   }
-  if (url.startsWith('https://files.example.test/')) return new Response(storedBytes, {status: 206});
-  if (path?.endsWith('/url')) return json(200, {data: {url: 'https://files.example.test/x?sig=1', expiresAt: new Date().toISOString()}});
+  if (url.startsWith('https://files.example.test/')) return new Response(Buffer.from(storedBytes.get(lastFile) ?? PDF, 'latin1'), {status: 206});
+  if (path?.endsWith('/url')) {
+    lastFile = path.split('/')[1]!;
+    return json(200, {data: {url: `https://files.example.test/${lastFile}?sig=1`, expiresAt: new Date().toISOString()}});
+  }
   return harnessFetch(input, init);
 };
 
@@ -71,20 +89,28 @@ async function makeJob(companyId: number, slug: string) {
   });
 }
 
-/** Upload a resume and apply; returns the apply response. */
-async function apply(browser: Browser, slug: string, email: string, extra: Record<string, unknown> = {}) {
-  const grant = await browser.post('/site-api/applications/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 1000});
+/** Upload one profile file (photo / resume) through the three steps; the `complete` answer. */
+async function uploadFile(browser: Browser, kind: 'photo' | 'resume', bytes?: string) {
+  const type = kind === 'photo' ? 'image/png' : 'application/pdf';
+  if (bytes !== undefined) nextBytes = bytes;
+  const grant = await browser.post(`/site-api/applicant-profile/${kind}`, {name: kind === 'photo' ? 'me.png' : 'cv.pdf', contentType: type, size: 1000});
   expect(grant.status).toBe(201);
-  const token = grant.json.token as string;
-  expect((await browser.post('/site-api/applications/resume/complete', {token})).status).toBe(200);
-  return browser.post(`/site-api/applications/jobs/${slug}/apply`, {
-    name: 'Casey Candidate',
-    email,
-    consent: true,
-    resumeToken: token,
-    ...extra,
-  });
+  return browser.post(`/site-api/applicant-profile/${kind}/complete`, {fileId: grant.json.fileId, token: grant.json.token});
 }
+
+/** A signed-in job seeker with a complete profile (photo, CV, phone). */
+async function applicant(email: string, ip: string) {
+  const browser = await signedIn(app, email, undefined, ip);
+  expect((await browser.post('/site-api/applicant-profile/start')).status).toBe(200);
+  expect((await uploadFile(browser, 'photo')).status).toBe(200);
+  expect((await uploadFile(browser, 'resume')).status).toBe(200);
+  expect((await browser.request('PUT', '/site-api/applicant-profile', {phone: '+1 555 123 4567', headline: 'Engineer'})).status).toBe(200);
+  return browser;
+}
+
+/** Apply from the profile. */
+const apply = (browser: Browser, slug: string, extra: Record<string, unknown> = {}) =>
+  browser.post(`/site-api/applications/jobs/${slug}/apply`, {consent: true, coverNote: 'Hello.', ...extra});
 
 describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () => {
   let ownerA: Browser;
@@ -97,8 +123,8 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
   beforeEach(async () => {
     await resetDatabase();
     forgetBoardSettings();
-    storedBytes = '%PDF-1.7\n';
     deleted.length = 0;
+    nextBytes = null;
     admin = await signedIn(app, ADMIN, undefined, '203.0.113.30');
     ownerA = await signedIn(app, OWNER_A, undefined, '203.0.113.31');
     ownerB = await signedIn(app, OWNER_B, undefined, '203.0.113.32');
@@ -116,50 +142,127 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     jobA = await makeJob(a.id, 'job-a');
   });
 
-  it('applies once per email: a second application answers like the first (no oracle), stored and emailed once', async () => {
+  it('applies once per account, from the profile: a second try is a 409, stored and emailed once', async () => {
     const {updatedAt: updatedBefore} = await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {updatedAt: true}});
-    const guest = new Browser(app, '198.51.100.1');
-    const first = await apply(guest, jobA.slug, 'Casey@Example.test');
+    const casey = await applicant('casey@example.test', '198.51.100.1');
+    const first = await apply(casey, jobA.slug);
     expect(first.status).toBe(201);
-    const again = await apply(guest, jobA.slug, 'casey@example.test');
-    // Same answer as a new application: nobody learns whether this address applied.
-    expect(again.status).toBe(first.status);
-    expect(again.json).toEqual(first.json);
+    const again = await apply(casey, jobA.slug);
+    expect(again.status).toBe(409);
+    expect(again.json.error).toBe('already_applied');
     expect(await db.emailLog.count({where: {templateKey: 'application-confirmation'}})).toBe(1);
     const job = await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {applicationCount: true, updatedAt: true}});
     expect(job.applicationCount).toBe(1);
     // The counter leaves `updated_at` (the sitemap's lastmod) alone.
     expect(job.updatedAt).toEqual(updatedBefore);
-    const row = await db.application.findFirstOrThrow({select: {email: true, resumeFileId: true, consentText: true}});
-    expect(row.email).toBe('casey@example.test');
-    expect(row.resumeFileId).toMatch(/^file_/);
+    const row = await db.application.findFirstOrThrow({select: {email: true, name: true, phone: true, resumeFileId: true, consentText: true, applicantUserId: true}});
+    const profile = await db.applicantProfile.findFirstOrThrow({select: {userId: true, resumeFileId: true}});
+    // Name, email, phone and CV come from the session and the profile, never the request.
+    expect(row).toMatchObject({email: 'casey@example.test', name: 'casey', phone: '+1 555 123 4567', applicantUserId: profile.userId});
+    expect(row.resumeFileId).toBe(profile.resumeFileId);
     expect(row.consentText).toMatch(/180 days/);
     const templates = (await db.emailLog.findMany({select: {templateKey: true, to: true}})).map(e => `${e.templateKey}:${e.to}`);
     expect(templates).toEqual(expect.arrayContaining(['application-confirmation:casey@example.test', `new-applicant:${OWNER_A}`]));
+    // Fields the request sends about the person are ignored.
+    const other = await makeJob((await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}})).id, 'job-other');
+    expect((await apply(casey, other.slug, {email: 'victim@example.test', name: 'Someone else'})).status).toBe(201);
+    expect(await db.application.count({where: {email: 'victim@example.test'}})).toBe(0);
   });
 
-  it('a resume token is used once, and consent is required', async () => {
+  it('guests, accounts without a profile and incomplete profiles cannot apply; consent is required', async () => {
     const guest = new Browser(app, '198.51.100.2');
-    const noConsent = await apply(guest, jobA.slug, 'x@example.test', {consent: false});
+    expect((await apply(guest, jobA.slug)).status).toBe(401);
+    expect((await guest.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toEqual({canApply: false, reason: 'sign_in'});
+
+    const fresh = await signedIn(app, 'fresh@example.test', undefined, '198.51.100.2');
+    expect((await apply(fresh, jobA.slug)).json.error).toBe('not_applicant');
+    expect((await fresh.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toEqual({canApply: false, reason: 'choose_kind'});
+
+    expect((await fresh.post('/site-api/applicant-profile/start')).status).toBe(200);
+    const incomplete = await apply(fresh, jobA.slug);
+    expect(incomplete.status).toBe(422);
+    expect(incomplete.json).toMatchObject({error: 'profile_incomplete', missing: ['photo', 'resume']});
+    expect((await fresh.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'incomplete', missing: ['photo', 'resume']});
+    // A photo and a CV are enough: the email is the account's own, the phone is optional.
+    expect((await uploadFile(fresh, 'photo')).status).toBe(200);
+    expect((await fresh.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({reason: 'incomplete', missing: ['resume']});
+    expect((await uploadFile(fresh, 'resume')).status).toBe(200);
+    expect((await fresh.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: true, profile: {email: 'fresh@example.test', phone: null}});
+    const other = await makeJob((await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}})).id, 'job-no-phone');
+    expect((await apply(fresh, other.slug)).status).toBe(201);
+    expect(await db.application.findFirstOrThrow({where: {jobId: other.id}, select: {email: true, phone: true}})).toEqual({email: 'fresh@example.test', phone: null});
+
+    const ready = await applicant('ready@example.test', '198.51.100.2');
+    expect((await ready.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: true, reason: null, profile: {email: 'ready@example.test', phone: '+1 555 123 4567', resumeFileName: 'cv.pdf'}});
+    const noConsent = await apply(ready, jobA.slug, {consent: false});
     expect(noConsent.status).toBe(422);
     expect((noConsent.json.fields as Record<string, string>).consent).toBeTruthy();
-    const bad = await guest.post(`/site-api/applications/jobs/${jobA.slug}/apply`, {name: 'X', email: 'y@example.test', consent: true, resumeToken: 'a'.repeat(43)});
-    expect(bad.status).toBe(422);
-    expect((bad.json.fields as Record<string, string>).resume).toBeTruthy();
+    expect(await db.application.count({where: {jobId: jobA.id}})).toBe(0);
+    expect((await apply(ready, jobA.slug)).status).toBe(201);
+    expect((await ready.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'applied'});
   });
 
-  it('more than 5 applications per IP an hour, or a filled honeypot, are "accepted" but never saved', async () => {
-    const guest = new Browser(app, '198.51.100.3');
-    for (let i = 0; i < 5; i++) expect((await apply(guest, jobA.slug, `p${i}@example.test`)).status).toBe(201);
-    const sixth = await apply(guest, jobA.slug, 'p6@example.test');
-    expect(sixth.status).toBe(201);
-    const bot = await new Browser(app, '198.51.100.4').post(`/site-api/applications/jobs/${jobA.slug}/apply`, {website: 'spam', name: 'Bot'});
-    expect(bot.status).toBe(201);
+  it('more than 5 applications per IP an hour are refused (429) and never saved', async () => {
+    const companyId = (await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}})).id;
+    const jobs = await Promise.all(Array.from({length: 6}, (_, i) => makeJob(companyId, `burst-${i}`)));
+    const busy = await applicant('busy@example.test', '198.51.100.3');
+    for (let i = 0; i < 5; i++) expect((await apply(busy, jobs[i]!.slug)).status).toBe(201);
+    expect((await apply(busy, jobs[5]!.slug)).status).toBe(429);
     expect(await db.application.count()).toBe(5);
   });
 
+  it('an account is a job seeker or a company, never both', async () => {
+    // A company owner cannot become a job seeker…
+    const start = await ownerA.post('/site-api/applicant-profile/start');
+    expect(start.status).toBe(409);
+    expect(start.json.error).toBe('employer_account');
+    expect((await ownerA.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({reason: 'own_job'});
+    expect((await ownerB.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({reason: 'employer_account'});
+    // …staff neither…
+    expect((await admin.post('/site-api/applicant-profile/start')).json.error).toBe('staff_account');
+    // …and a job seeker never reaches the employer area.
+    const seeker = await applicant('seeker@example.test', '198.51.100.14');
+    const employer = await seeker.get('/site-api/employer/company');
+    expect(employer.status).toBe(403);
+    expect(employer.json.error).toBe('applicant_account');
+    expect((await seeker.post('/site-api/employer/post', {job: {}, tierId: null})).status).toBe(403);
+    expect((await seeker.get('/site-api/applicant-profile')).json).toMatchObject({kind: 'applicant', profile: {email: 'seeker@example.test', hasPhoto: true, resumeFileName: 'cv.pdf'}});
+    expect((await seeker.get('/site-api/me')).json).toMatchObject({account: {kind: 'applicant'}});
+    expect((await ownerA.get('/site-api/me')).json).toMatchObject({account: {kind: 'employer'}});
+  });
+
+  it('the employer sees the applicant’s profile and photo; another company and strangers do not', async () => {
+    const seeker = await applicant('pat@example.test', '198.51.100.15');
+    expect((await seeker.request('PUT', '/site-api/applicant-profile', {phone: '+1 555 123 4567', headline: 'Designer', skills: 'Figma, CSS', experienceYears: 4})).status).toBe(200);
+    expect((await apply(seeker, jobA.slug)).status).toBe(201);
+    const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
+    const seen = await ownerA.get(`/site-api/applications/${appId}/profile`);
+    expect(seen.status).toBe(200);
+    expect(seen.json.profile).toMatchObject({headline: 'Designer', skills: 'Figma, CSS', experienceYears: 4, hasPhoto: true});
+    expect(JSON.stringify(seen.json)).not.toMatch(/file_/);
+    expect((await ownerA.get(`/site-api/applications/${appId}/photo`)).status).toBe(302);
+    expect((await admin.get(`/site-api/applications/${appId}/profile`)).status).toBe(200);
+    for (const other of [ownerB, seeker, new Browser(app)]) {
+      expect([401, 403, 404]).toContain((await other.get(`/site-api/applications/${appId}/profile`)).status);
+      expect([401, 403, 404]).toContain((await other.get(`/site-api/applications/${appId}/photo`)).status);
+    }
+    // The own files: only the owner, and only their own.
+    expect((await seeker.get('/site-api/applicant-profile/photo')).status).toBe(302);
+    expect((await ownerB.get('/site-api/applicant-profile/photo')).status).toBe(404);
+  });
+
+  it('a profile upload is bound to its account: another account cannot claim the file', async () => {
+    const one = await applicant('one@example.test', '198.51.100.16');
+    const two = await applicant('two@example.test', '198.51.100.17');
+    const grant = await one.post('/site-api/applicant-profile/photo', {name: 'me.png', contentType: 'image/png', size: 1000});
+    const stolen = await two.post('/site-api/applicant-profile/photo/complete', {fileId: grant.json.fileId, token: grant.json.token});
+    expect(stolen.status).toBe(422);
+    expect((await one.post('/site-api/applicant-profile/photo', {name: 'me.svg', contentType: 'image/svg+xml', size: 1000})).status).toBe(422);
+    expect((await one.post('/site-api/applicant-profile/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 50 * 1024 * 1024})).status).toBe(422);
+  });
+
   it('employers reach only their own company’s applicants; staff reach all; single-company mode closes the employer side', async () => {
-    expect((await apply(new Browser(app, '198.51.100.5'), jobA.slug, 'c@example.test')).status).toBe(201);
+    expect((await apply(await applicant('c@example.test', '198.51.100.5'), jobA.slug)).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
 
     const own = await ownerA.get(`/site-api/applications/jobs/${jobA.id}/applicants?status=&before=`);
@@ -206,22 +309,25 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
   });
 
   it('each status email goes to the candidate at most once; notes stay private', async () => {
-    expect((await apply(new Browser(app, '198.51.100.6'), jobA.slug, 'd@example.test')).status).toBe(201);
+    expect((await apply(await applicant('d@example.test', '198.51.100.6'), jobA.slug)).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
     const path = `/site-api/applications/${appId}`;
     expect((await ownerA.request('PATCH', path, {status: 'shortlisted', notes: 'Strong.'})).status).toBe(200);
+    expect((await ownerA.request('PATCH', path, {status: 'approved'})).status).toBe(200);
     expect((await ownerA.request('PATCH', path, {status: 'rejected'})).status).toBe(200);
-    // Back and forth: neither email goes out a second time.
+    // Back and forth: no email goes out a second time.
     expect((await ownerA.request('PATCH', path, {status: 'shortlisted'})).status).toBe(200);
+    expect((await ownerA.request('PATCH', path, {status: 'approved'})).status).toBe(200);
     const res = await ownerA.request('PATCH', path, {status: 'rejected'});
     expect((res.json.applicant as {status: string; notes: string}).notes).toBe('Strong.');
     const mails = (key: string) => db.emailLog.count({where: {templateKey: key}});
     expect(await mails('application-shortlisted')).toBe(1);
+    expect(await mails('application-approved')).toBe(1);
     expect(await mails('application-rejected')).toBe(1);
   });
 
   it('a blocked company still reads its applicants but cannot change them (no candidate emails)', async () => {
-    expect((await apply(new Browser(app, '198.51.100.7'), jobA.slug, 'e@example.test')).status).toBe(201);
+    expect((await apply(await applicant('e@example.test', '198.51.100.7'), jobA.slug)).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
     await db.company.update({where: {slug: 'a-co'}, data: {isBlocked: true}});
     expect((await ownerA.request('PATCH', `/site-api/applications/${appId}`, {status: 'shortlisted'})).status).toBe(404);
@@ -230,7 +336,7 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
   });
 
   it('a resume past the retention period answers 410 everywhere, even before the purge', async () => {
-    expect((await apply(new Browser(app, '198.51.100.7'), jobA.slug, 'e@example.test')).status).toBe(201);
+    expect((await apply(await applicant('e@example.test', '198.51.100.7'), jobA.slug)).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
     await db.application.update({where: {id: appId}, data: {createdAt: new Date(Date.now() - 181 * 86_400_000)}});
 
@@ -246,46 +352,64 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(csv.status).toBe(200);
     expect(String(csv.json.text)).toContain('Resume deleted after 180 days (privacy policy)');
   });
-  it('the job’s own employer cannot apply, and the form is hidden for them and for staff', async () => {
-    const res = await apply(ownerA, jobA.slug, OWNER_A);
-    expect(res.status).toBe(403);
-    expect(res.json.error).toBe('own_job');
+  it('staff see a note instead of the form', async () => {
     const path = `/site-api/applications/jobs/${jobA.slug}/can-apply`;
-    expect((await ownerA.get(path)).json).toEqual({canApply: false, reason: 'own_job'});
     expect((await admin.get(path)).json).toEqual({canApply: false, reason: 'staff'});
-    expect((await ownerB.get(path)).json).toEqual({canApply: true, reason: null});
-    expect((await new Browser(app).get(path)).json).toEqual({canApply: true, reason: null});
+    expect((await apply(admin, jobA.slug)).json.error).toBe('not_applicant');
   });
 
   it('a company without an owner account sends the new-applicant email to applicant staff', async () => {
     const orphan = await db.company.create({data: {name: 'Imported Co', slug: 'imported-co'}, select: {id: true}});
     const job = await makeJob(orphan.id, 'job-orphan');
-    expect((await apply(new Browser(app, '198.51.100.8'), job.slug, 'f@example.test')).status).toBe(201);
+    expect((await apply(await applicant('f@example.test', '198.51.100.8'), job.slug)).status).toBe(201);
     const to = (await db.emailLog.findMany({where: {templateKey: 'new-applicant'}, select: {to: true}})).map(e => e.to);
     expect(to).toEqual([ADMIN]);
   });
-  it('a resume whose file storage refuses to delete is handed to the nightly purge, never left behind', async () => {
-    const job = await makeJob((await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}})).id, 'job-gone');
-    expect((await apply(new Browser(app, '198.51.100.9'), job.slug, 'g@example.test')).status).toBe(201);
+  it('deleting a job keeps a CV the profile still uses; a CV nothing uses goes, via the purge when storage fails', async () => {
+    const companyId = (await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}})).id;
+    const job = await makeJob(companyId, 'job-gone');
+    const seeker = await applicant('g@example.test', '198.51.100.9');
+    expect((await apply(seeker, job.slug)).status).toBe(201);
     const {resumeFileId} = await db.application.findFirstOrThrow({where: {jobId: job.id}, select: {resumeFileId: true}});
     expect(resumeFileId).toBeTruthy();
 
+    // 1. The profile still has this CV: the job goes, the file stays.
+    const kept = await admin.delete(`/site-api/manage/jobs/${job.id}`);
+    expect(kept.status).toBe(200);
+    expect(kept.json.filesLeft).toBe(0);
+    expect(deleted).not.toContain(resumeFileId);
+    expect(await db.resumeUpload.count({where: {fileId: resumeFileId!}})).toBe(0);
+
+    // 2. Applied, then replaced the CV: the old file is only the application's now.
+    const job2 = await makeJob(companyId, 'job-gone-2');
+    expect((await apply(seeker, job2.slug)).status).toBe(201);
+    expect((await uploadFile(seeker, 'resume')).status).toBe(200);
+    expect(deleted).not.toContain(resumeFileId);
     failDeletes = true;
     try {
-      const res = await admin.delete(`/site-api/manage/jobs/${job.id}`);
+      const res = await admin.delete(`/site-api/manage/jobs/${job2.id}`);
       expect(res.status).toBe(200);
       expect(res.json.filesLeft).toBe(1);
     } finally {
       failDeletes = false;
     }
-    expect(await db.application.count({where: {jobId: job.id}})).toBe(0);
     // The upload row stays, detached and with nothing personal, until its file is gone.
     const left = await db.resumeUpload.findUniqueOrThrow({where: {fileId: resumeFileId!}, select: {applicationId: true, name: true, ipHash: true}});
     expect(left).toEqual({applicationId: null, name: 'deleted', ipHash: null});
-
     await runPurge(db, ORIGIN);
     expect(deleted).toContain(resumeFileId);
     expect(await db.resumeUpload.count({where: {fileId: resumeFileId!}})).toBe(0);
+  });
+
+  it('the retention purge lets go of a shared CV without deleting it', async () => {
+    const seeker = await applicant('h@example.test', '198.51.100.18');
+    expect((await apply(seeker, jobA.slug)).status).toBe(201);
+    const app1 = await db.application.findFirstOrThrow({select: {id: true, resumeFileId: true}});
+    await db.application.update({where: {id: app1.id}, data: {createdAt: new Date(Date.now() - 181 * 86_400_000)}});
+    await runPurge(db, ORIGIN);
+    expect(await db.application.findUniqueOrThrow({where: {id: app1.id}, select: {resumeFileId: true}})).toEqual({resumeFileId: null});
+    expect(deleted).not.toContain(app1.resumeFileId);
+    expect((await db.applicantProfile.findFirstOrThrow({select: {resumeFileId: true}})).resumeFileId).toBe(app1.resumeFileId);
   });
 
   it('a parallel burst against the per-IP limit lets at most 5 through (insert, then count)', async () => {
@@ -296,43 +420,66 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(over.filter(o => !o).length).toBeLessThanOrEqual(5);
     expect(await overLimit(db, 'apply', ip, 5)).toBe(true);
   });
-  it('a "PDF" whose bytes are not a PDF is refused at complete and deleted', async () => {
-    storedBytes = '<html><script>';
-    const guest = new Browser(app, '198.51.100.10');
-    const grant = await guest.post('/site-api/applications/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 1000});
-    const done = await guest.post('/site-api/applications/resume/complete', {token: grant.json.token});
-    expect(done.status).toBe(422);
-    expect((done.json.fields as Record<string, string>).resume).toMatch(/not a real PDF/);
-    expect(deleted).toHaveLength(1);
-    expect(await db.resumeUpload.count()).toBe(0);
+  it('a photo or CV whose bytes are not what they claim is refused at complete and deleted', async () => {
+    const seeker = await applicant('i@example.test', '198.51.100.10');
+    const before = await db.applicantProfile.findFirstOrThrow({select: {photoFileId: true, resumeFileId: true}});
+    const photo = await uploadFile(seeker, 'photo', '<svg onload=alert(1)>');
+    expect(photo.status).toBe(422);
+    const cv = await uploadFile(seeker, 'resume', '<html><script>');
+    expect(cv.status).toBe(422);
+    expect(deleted).toHaveLength(2);
+    expect(await db.applicantProfile.findFirstOrThrow({select: {photoFileId: true, resumeFileId: true}})).toEqual(before);
   });
 
-  it('confirming an upload again answers the same without calling storage again', async () => {
-    storedBytes = '%PDF-1.7\n';
-    const guest = new Browser(app, '198.51.100.11');
-    const grant = await guest.post('/site-api/applications/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 1000});
+  it('confirming an upload again answers the same without calling storage again; a new photo replaces (and deletes) the old', async () => {
+    const seeker = await applicant('j@example.test', '198.51.100.11');
+    const old = (await db.applicantProfile.findFirstOrThrow({select: {photoFileId: true}})).photoFileId;
+    const grant = await seeker.post('/site-api/applicant-profile/photo', {name: 'me.png', contentType: 'image/png', size: 1000});
     const before = completeCalls;
     for (let i = 0; i < 3; i++) {
-      const done = await guest.post('/site-api/applications/resume/complete', {token: grant.json.token});
+      const done = await seeker.post('/site-api/applicant-profile/photo/complete', {fileId: grant.json.fileId, token: grant.json.token});
       expect(done.status).toBe(200);
-      expect(done.json).toMatchObject({ok: true, fileName: 'cv.pdf'});
+      expect(done.json).toMatchObject({kind: 'applicant', profile: {hasPhoto: true}});
     }
     expect(completeCalls - before).toBe(1);
+    expect(deleted).toEqual([old]);
   });
 
-  it('a name on more than one line is refused (it would add lines to the employer’s email)', async () => {
-    const guest = new Browser(app, '198.51.100.12');
-    const res = await apply(guest, jobA.slug, 'h@example.test', {name: 'Bob\n\nAction required: https://evil.example/login'});
-    expect(res.status).toBe(422);
-    expect(res.json.fields).toMatchObject({name: expect.any(String)});
+  it('deleting the account deletes the job seeker profile, its photo, and a CV no application uses', async () => {
+    const seeker = await applicant('l@example.test', '198.51.100.19');
+    const files = await db.applicantProfile.findFirstOrThrow({select: {photoFileId: true, resumeFileId: true}});
+    const res = await seeker.post('/site-api/auth/delete-account', {password: 'a long test passphrase', confirm: 'DELETE'});
+    expect(res.status).toBe(200);
+    expect(await db.applicantProfile.count()).toBe(0);
+    expect(deleted).toEqual(expect.arrayContaining([files.photoFileId, files.resumeFileId]));
+  });
+
+  it('the privacy tool deletes the job seeker profile with its photo and CV; the account stays', async () => {
+    const seeker = await applicant('m@example.test', '198.51.100.20');
+    expect((await apply(seeker, jobA.slug)).status).toBe(201);
+    const files = await db.applicantProfile.findFirstOrThrow({select: {photoFileId: true, resumeFileId: true}});
+    const role = await db.role.findUniqueOrThrow({where: {slug: 'admin'}, select: {id: true}});
+    const p = await db.permission.upsert({where: {codename: 'site:privacy:manage'}, create: {codename: 'site:privacy:manage', title: 'Delete candidate data'}, update: {}, select: {id: true}});
+    await db.rolePermission.upsert({where: {roleId_permissionId: {roleId: role.id, permissionId: p.id}}, create: {roleId: role.id, permissionId: p.id}, update: {}});
+
+    const seen = await admin.post('/site-api/manage/privacy/lookup', {email: 'm@example.test'});
+    expect(seen.json).toMatchObject({applications: 1, profile: true});
+    const res = await admin.post('/site-api/manage/privacy/delete', {email: 'm@example.test'});
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({deleted: {applications: 1, profiles: 1}, filesLeft: 0});
+    expect(await db.applicantProfile.count()).toBe(0);
     expect(await db.application.count()).toBe(0);
+    expect(deleted).toEqual(expect.arrayContaining([files.photoFileId, files.resumeFileId]));
+    // The account stays: a plain account again, which may set up a profile anew.
+    expect((await seeker.get('/site-api/me')).json).toMatchObject({viewer: {email: 'm@example.test'}, account: {kind: 'none'}});
+    expect((await admin.post('/site-api/manage/privacy/lookup', {email: 'm@example.test'})).json).toMatchObject({applications: 0, profile: false});
   });
 
   it('a job sends at most 20 new-applicant emails an hour; the applications still arrive', async () => {
     // 20 already sent for this job this hour (a burst from many IPs).
     const ipHash = await sha256Hex(`notify-job:${jobA.id}`);
     await db.boardAttempt.createMany({data: Array.from({length: 20}, () => ({kind: 'notify', ipHash}))});
-    expect((await apply(new Browser(app, '198.51.100.13'), jobA.slug, 'i@example.test')).status).toBe(201);
+    expect((await apply(await applicant('k@example.test', '198.51.100.13'), jobA.slug)).status).toBe(201);
     expect(await db.application.count()).toBe(1);
     expect(await db.emailLog.count({where: {templateKey: 'new-applicant'}})).toBe(0);
     // The candidate's own confirmation is not part of it.

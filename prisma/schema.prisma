@@ -646,6 +646,11 @@ model Application {
   statusEmailedAt DateTime? @map("status_emailed_at") @db.Timestamptz(3)
   /// When the rejected email went out (at most once per application).
   rejectedEmailedAt DateTime? @map("rejected_emailed_at") @db.Timestamptz(3)
+  /// When the approved email went out (at most once per application).
+  approvedEmailedAt DateTime? @map("approved_emailed_at") @db.Timestamptz(3)
+  /// The applicant's account (`users.id`) when they applied signed in; null for the older guest
+  /// applications. No foreign key: the application outlives the account (as `companies`).
+  applicantUserId Int?     @map("applicant_user_id")
   consentAt      DateTime  @map("consent_at") @db.Timestamptz(3)
   consentText    String    @map("consent_text") @db.VarChar(1000)
   ipHash         String?   @map("ip_hash") @db.Char(64)
@@ -661,7 +666,45 @@ model Application {
   @@index([status, id(sort: Desc)])
   @@index([email, id])
   @@index([createdAt, id])
+  /// "Is this resume file still used by another application?" (the purge and the privacy tool).
+  @@index([resumeFileId])
   @@map("applications")
+}
+
+/// A job seeker's own profile (one per account): what every application sends, plus the photo and
+/// the CV. Having this row makes the account an APPLICANT account (it can never own a company, and
+/// a company owner can never get one). The name and email are the account's own (`users`).
+model ApplicantProfile {
+  /// `users.id`. No foreign key (as `companies.owner_user_id`): deleting the account leaves it.
+  userId           Int       @id @map("user_id")
+  phone            String?   @db.VarChar(40)
+  dateOfBirth      DateTime? @map("date_of_birth") @db.Date
+  /// `male`, `female` or `other`.
+  gender           String?   @db.VarChar(8)
+  presentAddress   String?   @map("present_address") @db.VarChar(300)
+  permanentAddress String?   @map("permanent_address") @db.VarChar(300)
+  /// The career title the employer sees first ("Senior React developer").
+  headline         String?   @db.VarChar(120)
+  careerSummary    String?   @map("career_summary") @db.VarChar(2000)
+  experienceYears  Int?      @map("experience_years")
+  expectedSalary   String?   @map("expected_salary") @db.VarChar(60)
+  /// The highest degree, where, and when.
+  degree           String?   @db.VarChar(150)
+  institute        String?   @db.VarChar(150)
+  passingYear      Int?      @map("passing_year")
+  skills           String?   @db.VarChar(500)
+  profileUrl       String?   @map("profile_url") @db.VarChar(300)
+  /// A PRIVATE image (PNG / JPEG / WebP), shown through an access-checked route.
+  photoFileId      String?   @map("photo_file_id") @db.VarChar(32)
+  /// A PRIVATE PDF / DOCX. Applications point at this same file: it is deleted only once nothing uses it.
+  resumeFileId     String?   @map("resume_file_id") @db.VarChar(32)
+  resumeFileName   String?   @map("resume_file_name") @db.VarChar(200)
+  resumeUpdatedAt  DateTime? @map("resume_updated_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([resumeFileId])
+  @@map("applicant_profiles")
 }
 
 /// A resume upload in progress or done, before / after it is attached to an application.
@@ -773,7 +816,7 @@ model EmailLog {
 /// Rows older than a day are swept by the purge job.
 model BoardAttempt {
   id        BigInt   @id @default(autoincrement())
-  /// `apply`, `upload`, `view`, `click`, `logo`, `post`, `inbox` (candidate emails per inbox, keyed hash), `notify` (new-applicant emails per job).
+  /// `apply`, `upload`, `view`, `click`, `logo`, `post`, `profile-file` (photo / CV uploads per user), `inbox` (candidate emails per inbox, keyed hash), `notify` (new-applicant emails per job).
   kind      String   @db.VarChar(12)
   ipHash    String   @map("ip_hash") @db.Char(64)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -805,4 +848,18 @@ model BoardLogo {
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("board_logo")
+}
+
+/// LOCAL DEVELOPMENT ONLY (`config.localDev`: no Site Key, `astro dev`): the private files
+/// (applicant photo, CV) that file storage keeps on a hosted site, kept here instead so uploads
+/// work on your own machine. Never written or read anywhere else (src/server/files.ts).
+model LocalDevFile {
+  id          String   @id @db.VarChar(40)
+  name        String   @db.VarChar(200)
+  contentType String   @map("content_type") @db.VarChar(120)
+  size        Int
+  data        Bytes?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("local_dev_files")
 }

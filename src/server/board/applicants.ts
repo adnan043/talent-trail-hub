@@ -138,6 +138,7 @@ export function attachment(fileName: string): string {
 /** Candidate emails per status: `new` and `reviewed` send nothing. */
 export const STATUS_TEMPLATES = {
   shortlisted: 'application-shortlisted',
+  approved: 'application-approved',
   rejected: 'application-rejected',
 } as const;
 

@@ -9,6 +9,7 @@ import {syncPermissions} from '../platform/permission-sync';
 import {authEmailGuard} from './auth-email-guard';
 import {authSettings} from './auth-settings';
 import {signOutOthersOnTwoFactor} from './two-factor-signout';
+import {dropApplicantProfileOnDelete} from './applicant-account-delete';
 import {checkoutRoutes, membershipRoutes} from './routes/checkout';
 import {abilitiesFor, CATALOGUE} from './permissions';
 import {applicationRoutes} from './routes/applications';
@@ -18,9 +19,12 @@ import {employerRoutes} from './routes/employer';
 import {jobRoutes} from './routes/jobs';
 import {manageRoutes} from './routes/manage';
 import {myApplicationRoutes} from './routes/my-applications';
+import {applicantProfileRoutes} from './routes/applicant-profile';
+import {accountKind} from './board/applicant-profile';
 import {cachedBoardSettings} from './board/brand';
 import {isSingleCompany} from './board/settings';
 import {getDb} from '../platform/db';
+import {localFileRoutes} from './files';
 import {siteRoutes} from './routes/site';
 
 /**
@@ -39,8 +43,9 @@ import {siteRoutes} from './routes/site';
  *   *    /jobs/...      public jobs: search, detail             routes/jobs.ts
  *   *    /companies/... public companies                         routes/companies.ts
  *   *    /board/...     board settings, brand, categories, tiers routes/board.ts
- *   *    /applications/... apply without an account, resumes   routes/applications.ts
+ *   *    /applications/... apply (signed-in applicants), applicants  routes/applications.ts
  *   GET  /my-applications  the signed-in candidate's own applications  routes/my-applications.ts
+ *   *    /applicant-profile/... the job seeker's own profile, photo and CV  routes/applicant-profile.ts
  *   *    /employer/...  the employer area (own company only)    routes/employer.ts
  *   *    /manage/...    the board's admin (codenames)           routes/manage.ts
  *   *    /checkout/...  start and confirm a payment             routes/checkout.ts
@@ -61,6 +66,9 @@ export const app = new Hono()
   // The Buy button posts here as a plain form too (no JavaScript): BEFORE `csrf`, with its own
   // `formCsrf` (the token, or a same-origin form post). Keep it here (docs/agent/payments.md).
   .route('/checkout', checkoutRoutes)
+  // LOCAL DEVELOPMENT ONLY (404 elsewhere): photo/CV bytes with no file storage; a signed URL,
+  // so before `csrf` and the body limit, as the storage's own upload URL is (src/server/files.ts).
+  .route('/local-files', localFileRoutes)
   .use(csrf)
   // No route here takes a big body; uploads never pass through the Worker.
   .use(bodyLimit({maxSize: 64 * 1024, onError: c => c.json(problem('too_large', 'That request is too large.'), 413)}))
@@ -80,26 +88,31 @@ export const app = new Hono()
   // `abilities` only decides what the UI SHOWS; every guarded route checks again.
   .get('/me', async c => {
     const db = getDb();
-    const [viewer, access, settings] = await Promise.all([
-      getViewer(c.req.raw),
+    const viewerRead = getViewer(c.req.raw);
+    const [viewer, access, settings, kind] = await Promise.all([
+      viewerRead,
       getAccess(c.req.raw),
       // Bounded: a slow database never holds up every portal load (the flag falls back to marketplace).
       db
         ? Promise.race([cachedBoardSettings(db).catch(() => null), new Promise<null>(resolve => setTimeout(resolve, 1500, null))])
         : null,
+      // Applicant, company or neither: which part of the dashboard this account sees.
+      viewerRead.then(v => (db && v.state === 'user' && v.id ? accountKind(db, v.id).catch(() => 'none' as const) : ('none' as const))),
     ]);
     c.header('Cache-Control', 'private, no-store');
     // One flag per catalogue entry with an `ability` (src/server/permissions.ts).
     const abilities = abilitiesFor(new Set(access.permissions));
     // Single-company mode hides the employer area (pages and API answer 404 there too).
     const board = {singleCompany: settings ? isSingleCompany(settings) : false};
-    return c.json({viewer, roles: access.roles, abilities, board});
+    return c.json({viewer, roles: access.roles, abilities, board, account: {kind}});
   })
 
   // Before the auth routes: an `email` shaped like one of the kit's internal limit keys is refused.
   .use('/auth/*', authEmailGuard)
   // Turning on two-step sign-in signs out every other device (after the kit answers).
   .use('/auth/two-factor/enable', signOutOthersOnTwoFactor)
+  // Deleting an account deletes its job seeker profile, photo and CV (after the kit answers).
+  .use('/auth/delete-account', dropApplicantProfileOnDelete)
   .route('/auth', authRoutes(authSettings))
   .route('/admin', adminRoutes)
   .route('/site', siteRoutes)
@@ -108,6 +121,7 @@ export const app = new Hono()
   .route('/board', boardRoutes)
   .route('/applications', applicationRoutes)
   .route('/my-applications', myApplicationRoutes)
+  .route('/applicant-profile', applicantProfileRoutes)
   .route('/employer', employerRoutes)
   .route('/manage', manageRoutes)
   .route('/memberships', membershipRoutes)

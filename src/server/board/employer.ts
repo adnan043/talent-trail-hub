@@ -17,7 +17,14 @@ import {isSingleCompany} from './settings';
 
 /** After `withDb`: the employer area does not exist on a single-company board. */
 export const employerArea = createMiddleware<{Variables: {db: PrismaClient; viewer: Viewer}}>(async (c, next) => {
-  if (isSingleCompany(await cachedBoardSettings(c.var.db))) return c.json(problem('not_found', 'No such Site API route.'), 404);
+  const viewerId = c.var.viewer.id;
+  const [settings, applicant] = await Promise.all([
+    cachedBoardSettings(c.var.db),
+    viewerId ? c.var.db.applicantProfile.findUnique({where: {userId: viewerId}, select: {userId: true}}) : null,
+  ]);
+  if (isSingleCompany(settings)) return c.json(problem('not_found', 'No such Site API route.'), 404);
+  // An account is a job seeker OR a company, never both.
+  if (applicant) return c.json(problem('applicant_account', 'This is a job seeker account. Sign up with another email to post jobs.'), 403);
   await next();
 });
 

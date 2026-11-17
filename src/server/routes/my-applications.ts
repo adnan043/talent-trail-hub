@@ -2,7 +2,7 @@ import {Hono} from 'hono';
 import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
-import {type ApplicationStatus, LIMITS} from '../../lib/board';
+import {APPLICATION_STATUSES, type ApplicationStatus, LIMITS} from '../../lib/board';
 import type {MyApplicationRow} from '../../lib/types-apply';
 import type {Viewer} from '../../lib/types';
 import {requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
@@ -11,7 +11,9 @@ import {idOf, isResumeExpired} from '../board/applicants';
 /**
  * The candidate's own applications (mounted at `/site-api/my-applications`).
  *
- *   GET /    the signed-in user's applications, newest first (keyset page, `?before=<id>`)
+ *   GET /    the signed-in user's applications, newest first (keyset page, `?before=<id>`), filtered by
+ *            `?status=`, `?q=` (job title or company, contains), `?from=` / `?to=` (YYYY-MM-DD, applied
+ *            on those days, UTC); with `counts` per status over ALL their applications (first page only)
  *
  * Applying needs no account, so an application belongs to whoever owns its EMAIL: only a signed-in
  * user with a CONFIRMED email sees the ones sent with that address (`requireVerified`), and the
@@ -21,7 +23,20 @@ import {idOf, isResumeExpired} from '../board/applicants';
 type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
 const PAGE = LIMITS.pageSize;
 
-const listQuery = validator('query', v => ({before: idOf(typeof v.before === 'string' ? v.before : undefined)}));
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dayOf = (v: unknown): Date | null => {
+  if (typeof v !== 'string' || !DAY_RE.test(v)) return null;
+  const d = new Date(`${v}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? null : d;
+};
+
+const listQuery = validator('query', v => {
+  const status = (APPLICATION_STATUSES as readonly unknown[]).includes(v.status) ? (v.status as ApplicationStatus) : null;
+  const q = typeof v.q === 'string' ? v.q.trim().slice(0, 100) : '';
+  const from = dayOf(v.from);
+  const to = dayOf(v.to);
+  return {before: idOf(typeof v.before === 'string' ? v.before : undefined), status, q, from, to: to ? new Date(to.getTime() + 86_400_000) : null};
+});
 
 const select = {
   id: true,
@@ -39,15 +54,29 @@ export const myApplicationRoutes = new Hono<Env>().get('/', listQuery, withViewe
   c.header('Cache-Control', 'private, no-store');
   // The site's owner signs in from the dashboard with no address here: nothing of theirs to match.
   const email = c.var.viewer.email?.trim().toLowerCase();
-  if (!email) return c.json({items: [], nextBefore: null});
-  const {before} = c.req.valid('query');
-  // ONE query on the (email, id) index, the job and company joined in.
-  const rows = await c.var.db.application.findMany({
-    where: {email, ...(before ? {id: {lt: before}} : {})},
-    select,
-    orderBy: {id: 'desc'},
-    take: PAGE + 1,
-  });
+  if (!email) return c.json({items: [], nextBefore: null, counts: null});
+  const {before, status, q, from, to} = c.req.valid('query');
+  // On the (email, id) index: one person's applications, the job and company joined in. The
+  // filters only narrow that person's own rows.
+  const where = {
+    email,
+    ...(status ? {status} : {}),
+    ...(from || to ? {createdAt: {...(from ? {gte: from} : {}), ...(to ? {lt: to} : {})}} : {}),
+    ...(q ? {OR: [{job: {title: {contains: q, mode: 'insensitive' as const}}}, {job: {company: {name: {contains: q, mode: 'insensitive' as const}}}}]} : {}),
+  };
+  const [rows, grouped] = await Promise.all([
+    c.var.db.application.findMany({
+      where: {...where, ...(before ? {id: {lt: before}} : {})},
+      select,
+      orderBy: {id: 'desc'},
+      take: PAGE + 1,
+    }),
+    // The tiles: per status, over ALL of this person's applications (unfiltered), on the first page only.
+    before ? null : c.var.db.application.groupBy({by: ['status'], where: {email}, _count: {_all: true}}),
+  ]);
+  const counts = grouped
+    ? Object.fromEntries(APPLICATION_STATUSES.map(s => [s, grouped.find(g => g.status === s)?._count._all ?? 0])) as Record<ApplicationStatus, number>
+    : null;
   const now = new Date();
   const items: MyApplicationRow[] = rows.slice(0, PAGE).map(r => ({
     id: r.id,
@@ -60,5 +89,5 @@ export const myApplicationRoutes = new Hono<Env>().get('/', listQuery, withViewe
     resumeFileName: isResumeExpired(r.createdAt, now) ? null : r.resumeFileName,
     job: {title: r.job.title, company: r.job.company.name, slug: r.job.status === 'published' ? r.job.slug : null},
   }));
-  return c.json({items, nextBefore: rows.length > PAGE ? items.at(-1)!.id : null});
+  return c.json({items, nextBefore: rows.length > PAGE ? items.at(-1)!.id : null, counts});
 });

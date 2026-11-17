@@ -63,7 +63,7 @@ export function Privacy() {
     let filesLeft = 0;
     const ok = await confirm({
       title: `Delete everything for ${email}?`,
-      body: `${data.applications}${data.more ? '+' : ''} applications, ${data.resumeFiles} resumes and ${data.emailLogs} email log rows are deleted for good.`,
+      body: `${data.applications}${data.more ? '+' : ''} applications, ${data.resumeFiles} resumes and ${data.emailLogs} email log rows${data.profile ? ', and the job seeker profile with its photo and CV,' : ''} are deleted for good.${data.profile ? ' The account itself stays.' : ''}`,
       confirmLabel: 'Delete everything',
       pendingLabel: 'Deleting…',
       action: async () => {
@@ -71,7 +71,7 @@ export function Privacy() {
       },
     });
     if (ok) {
-      toast.success(filesLeft ? 'Deleted. A few resume files could not be removed yet; the nightly clean-up removes them.' : 'Everything for this email is deleted.');
+      toast.success(filesLeft ? 'Deleted. A few files could not be removed yet; the nightly clean-up removes them.' : 'Everything for this email is deleted.');
       again(email);
     }
   };
@@ -101,7 +101,7 @@ export function Privacy() {
     <div className="app-page screen-privacy">
       <PageHeader
         title="Candidate data"
-        description={`Find and delete what the board keeps for an email: applications, resumes and the email log. Payment records (orders) keep their email: they are money records. Resumes are deleted ${RESUME_RETENTION_DAYS} days after applying in any case.`}
+        description={`Find and delete what the board keeps for an email: applications, resumes, the job seeker profile (with its photo and CV) and the email log. Payment records (orders) keep their email: they are money records. Resumes are deleted ${RESUME_RETENTION_DAYS} days after applying in any case.`}
         actions={
           <Button variant="secondary" icon="refresh" pending={purge.isPending} pendingLabel="Running…" onClick={() => purge.mutate()}>
             Run purge now
@@ -123,7 +123,7 @@ export function Privacy() {
         <Card
           title={result.email}
           description="What the board keeps for this address."
-          actions={<Button variant="danger" icon="trash" onClick={() => void askAll()} disabled={!result.data.applications && !result.data.emailLogs}>Delete everything</Button>}
+          actions={<Button variant="danger" icon="trash" onClick={() => void askAll()} disabled={!result.data.applications && !result.data.emailLogs && !result.data.profile}>Delete everything</Button>}
           footer={<Link className={buttonClass({variant: 'link'})} to="/activity">See the audit log</Link>}>
           <div className="form-stack">
             <DefinitionList
@@ -131,6 +131,7 @@ export function Privacy() {
                 {label: 'Applications', value: `${result.data.applications}${result.data.more ? '+' : ''}`},
                 {label: 'Resume files', value: result.data.resumeFiles},
                 {label: 'Email log rows', value: result.data.emailLogs},
+                {label: 'Job seeker profile', value: result.data.profile ? 'Yes (details, photo and CV)' : 'None'},
               ]}
             />
             <DataTable

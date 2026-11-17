@@ -1,52 +1,16 @@
 /**
- * BROWSER: the apply form on the job page (./ApplySection.astro). Three steps, then the
- * application: ask `/site-api/applications/resume` for an upload URL, PUT the file there
- * (`putFile`, the bytes never pass through the Site API), confirm it, then apply with the
- * resume's token. A token stays usable after a failed apply (wrong field, already applied), so
- * fixing a field does not upload the same file again.
+ * BROWSER: the apply section on the job page (./ApplySection.astro). Applying needs a job seeker
+ * account, so the section first asks `/site-api/applications/jobs/:slug/can-apply` and shows ONE
+ * step: sign in, set up the profile, finish it (photo, CV, phone), or the one-click form. The form
+ * sends only the cover note and the consent: the name, email, phone and CV come from the profile,
+ * on the server. Everything about the visitor is written with `textContent`, never as HTML.
  */
 import {replaceWithMessage} from '../../lib/account';
 import {LIMITS} from '../../lib/board';
-import {bindForm, postJson, type SubmitResult} from '../../lib/form';
-import {rules, type Rule} from '../../lib/rules';
-import {RESUME_UPLOAD_TYPES} from '../../lib/types-apply';
+import {bindForm, postJson} from '../../lib/form';
+import {rules} from '../../lib/rules';
+import {type CanApplyAnswer, REQUIREMENT_LABELS} from '../../lib/types-profile';
 import {siteFetch} from '../../platform/browser';
-import {putFile, type UploadGrant} from '../../platform/files-browser';
-
-const PHONE_RE = /^[+\d][\d\s().-]{4,39}$/;
-const MAX_BYTES = LIMITS.resumeMb * 1024 * 1024;
-
-const httpsLink: Rule = value => {
-  const v = value.trim();
-  if (!v) return null;
-  try {
-    return v.length <= 300 && new URL(v).protocol === 'https:' ? null : 'Enter a link that starts with https://, up to 300 characters.';
-  } catch {
-    return 'Enter a link that starts with https://, up to 300 characters.';
-  }
-};
-
-function resumeRule(input: HTMLInputElement): Rule {
-  return () => {
-    const file = input.files?.[0];
-    if (!file) return 'Add your resume.';
-    if (!(RESUME_UPLOAD_TYPES as readonly string[]).includes(file.type)) return 'Upload a PDF or DOCX file.';
-    if (file.size < 1 || file.size > MAX_BYTES) return `Your resume must be ${LIMITS.resumeMb} MB or smaller.`;
-    return null;
-  };
-}
-
-/** Upload one file; the token the application sends back, or a field error. */
-async function uploadResume(file: File): Promise<{token: string} | SubmitResult> {
-  const asked = await postJson(siteFetch, '/site-api/applications/resume', {name: file.name, contentType: file.type, size: file.size});
-  if (!asked.result.ok) return asked.result;
-  const grant = asked.data as {token: string; upload: UploadGrant['upload']};
-  const put = await putFile(grant.upload, file);
-  if (!put.ok) return {ok: false, fields: {resume: put.message}};
-  const done = await postJson(siteFetch, '/site-api/applications/resume/complete', {token: grant.token});
-  if (!done.result.ok) return done.result;
-  return {token: grant.token};
-}
 
 function bindClicks(section: HTMLElement, slug: string) {
   section.querySelectorAll<HTMLAnchorElement>('[data-apply-click]').forEach(link => {
@@ -62,59 +26,20 @@ function bindClicks(section: HTMLElement, slug: string) {
 }
 
 function bindApplyForm(form: HTMLFormElement, slug: string) {
-  const resume = form.elements.namedItem('resume') as HTMLInputElement;
   const consent = form.elements.namedItem('consent') as HTMLInputElement;
-  let uploaded: {file: File; token: string} | null = null;
-  const progress = form.querySelector<HTMLElement>('[data-upload-progress]');
-  const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-  /** Says which step runs: in the line under the resume field and on the (pending) button. */
-  const step = (line: string | null, label?: string) => {
-    if (progress) {
-      progress.textContent = line ?? '';
-      progress.hidden = !line;
-    }
-    const text = button?.lastChild;
-    if (label && button?.getAttribute('aria-busy') === 'true' && text?.nodeType === Node.TEXT_NODE) text.textContent = label;
-  };
-
   bindForm(form, {
     rules: {
-      name: [rules.required('Enter your name.'), rules.maxLength(LIMITS.applicantName)],
-      email: [rules.required('Enter your email address.'), rules.email(), rules.maxLength(254)],
-      phone: [rules.maxLength(40), rules.pattern(PHONE_RE, 'Enter a phone number with digits only, like +1 555 123 4567.')],
-      profileUrl: [httpsLink],
-      resume: [resumeRule(resume)],
       coverNote: [rules.maxLength(LIMITS.coverNote)],
       consent: [() => (consent.checked ? null : 'Tick the box to agree before you apply.')],
     },
     pendingLabel: 'Sending application…',
     async submit(values) {
-      const file = resume.files![0]!;
-      if (uploaded?.file !== file) {
-        const mb = (file.size / 1024 / 1024).toFixed(1);
-        step(`Uploading ${file.name} (${mb} MB)…`, 'Uploading resume…');
-        const result = await uploadResume(file);
-        if (!('token' in result)) {
-          step(null);
-          return result;
-        }
-        uploaded = {file, token: result.token};
-        step('Resume uploaded.', 'Sending application…');
-      }
       const {res, result} = await postJson(siteFetch, `/site-api/applications/jobs/${encodeURIComponent(slug)}/apply`, {
-        name: values.name,
-        email: values.email,
-        phone: values.phone,
-        profileUrl: values.profileUrl,
         coverNote: values.coverNote,
-        website: values.website,
         consent: consent.checked,
-        resumeToken: uploaded.token,
       });
-      // The resume was refused (used, expired): the next submit uploads it again.
-      if (!result.ok && result.fields?.resume) uploaded = null;
       if (res?.status === 201) {
-        replaceWithMessage(form, result.message ?? 'Application sent. Check your inbox for a confirmation.');
+        replaceWithMessage(form, result.message ?? 'Application sent. Follow it under My applications in your dashboard.');
         return {ok: true};
       }
       return result;
@@ -122,26 +47,54 @@ function bindApplyForm(form: HTMLFormElement, slug: string) {
   });
 }
 
-const BLOCKED_NOTES = {
+const BLOCKED_NOTES: Partial<Record<NonNullable<CanApplyAnswer['reason']>, string>> = {
   own_job: 'This is your company’s job, so you cannot apply to it. Its applicants are in your dashboard.',
-  staff: 'You are signed in as board staff, so the apply form is hidden. Applicants are in the dashboard.',
-} as const;
+  staff: 'You are signed in as board staff. To apply for jobs, sign up with another email as a job seeker.',
+  employer_account: 'You are signed in with a company account. To apply for jobs, sign up with another email as a job seeker.',
+  applied: 'You have already applied for this job. Follow its status under My applications in your dashboard.',
+};
 
-/** The job's own employer and staff see a note instead of the form (the server refuses the owner too). */
-async function hideForEmployerAndStaff(section: HTMLElement, form: HTMLFormElement, slug: string) {
-  let answer: {canApply?: boolean; reason?: keyof typeof BLOCKED_NOTES | null} | null = null;
+async function ask(slug: string): Promise<CanApplyAnswer | null> {
   try {
     const res = await siteFetch(`/site-api/applications/jobs/${encodeURIComponent(slug)}/can-apply`);
-    answer = res.ok ? await res.json() : null;
+    return res.ok ? ((await res.json()) as CanApplyAnswer) : null;
   } catch {
-    answer = null;
+    return null;
   }
-  if (!answer || answer.canApply !== false || !answer.reason || !(answer.reason in BLOCKED_NOTES)) return;
-  const note = section.querySelector<HTMLElement>('[data-apply-blocked]');
-  if (!note) return;
-  note.textContent = BLOCKED_NOTES[answer.reason];
-  note.hidden = false;
-  form.hidden = true;
+}
+
+/** Shows the one step that fits this visitor. */
+async function showStep(section: HTMLElement, form: HTMLFormElement, slug: string) {
+  const answer = await ask(slug);
+  const pick = (name: string) => section.querySelector<HTMLElement>(`[data-${name}]`);
+  pick('apply-loading')?.setAttribute('hidden', '');
+  const show = (name: string) => pick(name)?.removeAttribute('hidden');
+
+  if (!answer || answer.reason === 'sign_in') return show('apply-signin');
+  if (answer.canApply && answer.profile) {
+    const set = (field: string, value: string | null) => {
+      const node = form.querySelector<HTMLElement>(`[data-profile-${field}]`);
+      if (node) node.textContent = value || '—';
+    };
+    set('name', answer.profile.name);
+    set('email', answer.profile.email);
+    set('phone', answer.profile.phone);
+    set('resume', answer.profile.resumeFileName);
+    form.hidden = false;
+    return;
+  }
+  if (answer.reason === 'choose_kind') return show('apply-choose');
+  if (answer.reason === 'incomplete') {
+    const line = pick('apply-missing');
+    if (line) line.textContent = `Almost there: add ${(answer.missing ?? []).map(m => REQUIREMENT_LABELS[m]).join(', ')} to your profile, then come back to apply.`;
+    return show('apply-incomplete');
+  }
+  const note = pick('apply-blocked');
+  const text = answer.reason ? BLOCKED_NOTES[answer.reason] : null;
+  if (note && text) {
+    note.textContent = text;
+    note.hidden = false;
+  }
 }
 
 /** Wires every apply section on the page (runs on each `astro:page-load`). */
@@ -154,6 +107,6 @@ export function bindApplySections() {
     const form = section.querySelector<HTMLFormElement>('[data-apply-form]');
     if (!form) return;
     bindApplyForm(form, slug);
-    void hideForEmployerAndStaff(section, form, slug);
+    void showStep(section, form, slug);
   });
 }

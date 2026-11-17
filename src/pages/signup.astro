@@ -8,7 +8,7 @@ import Base from '../layouts/Base.astro';
 import {boardPage} from '../server/board/public-page';
 
 const {site, viewer, board} = await boardPage(Astro.request, Astro.response);
-if (!board?.singleCompany) return Astro.redirect(`/account/register/?next=${encodeURIComponent('/dashboard/post-a-job')}`, 302);
+if (!board?.singleCompany) return Astro.redirect('/account/register/?as=company', 302);
 Astro.response.status = 404;
 ---
 

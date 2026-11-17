@@ -1,6 +1,6 @@
 ---
 /**
- * Below 768px: the menu button opening the main nav, the theme choice and Sign in / Sign out in a
+ * Below 768px: the menu button opening the main nav and Sign in / Sign out in a
  * side sheet (a native modal <dialog>: focus stays inside, the page behind is inert). Closes on
  * Esc, the close button, a click on the scrim or a link. No inline handlers (CSP).
  */
@@ -63,17 +63,6 @@ const email = !hydrate && user ? (viewer.email ?? viewer.name ?? '') : '';
       ))}
     </ul>
   </nav>
-  <div class="mobile-sheet-theme">
-    <p id="mobile-theme-label">Theme</p>
-    <div class="segmented" role="radiogroup" aria-labelledby="mobile-theme-label">
-      {['light', 'dark', 'system'].map(value => (
-        <label class="segmented-option">
-          <input type="radio" name="mobile-theme" value={value} checked={value === 'system'} data-theme-radio />
-          <span>{value === 'light' ? 'Light' : value === 'dark' ? 'Dark' : 'System'}</span>
-        </label>
-      ))}
-    </div>
-  </div>
   <div class="mobile-sheet-foot">
     <div data-user-only hidden={!user} class="mobile-sheet-account">
       <p class="mobile-sheet-email" data-account-email>{email}</p>

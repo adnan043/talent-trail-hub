@@ -1,19 +1,15 @@
 import {type Context, Hono} from 'hono';
-import type {ContentfulStatusCode} from 'hono/utils/http-status';
 import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
 import {DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
-import {RESUME_UPLOAD_TYPES} from '../../lib/types-apply';
-import {SiteKeyMissing} from '../../platform/api';
+import {type CanApplyAnswer, missingToApply, REQUIREMENT_LABELS} from '../../lib/types-profile';
 import {normalizeEmail} from '../../platform/auth';
-import {randomBytes, toBase64Url} from '../../platform/auth/encoding';
-import {completeUpload, createUpload, type FileResult} from '../../platform/files';
-import {can, problem, withDb, withViewer} from '../../platform/guards';
+import {can, problem, requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
 import {PERMISSIONS} from '../permissions';
 import {notifyNewApplication} from '../board/applicants';
-import {checkStoredResume} from '../board/applicants-resume';
+import {accountKind} from '../board/applicant-profile';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
 import {after} from '../board/after';
@@ -22,29 +18,23 @@ import {isSingleCompany} from '../board/settings';
 import {applicantRoutes} from './applications-manage';
 
 /**
- * F4 apply without an account (+ F35 basics, F36 consent), mounted at `/site-api/applications`:
+ * F4 apply, mounted at `/site-api/applications`. Applying needs a signed-in APPLICANT account with a
+ * confirmed email and a profile holding a photo and a CV
+ * (`src/server/routes/applicant-profile.ts`): the application is made from that profile, so the
+ * name and email come from the session, never from the request.
  *
- *   POST /resume                 a one-time upload URL for the resume (private file)
- *   POST /resume/complete        confirm the browser's PUT
- *   POST /jobs/:slug/apply       the application (honeypot / > 5 per IP-hour: silently "accepted")
+ *   POST /jobs/:slug/apply       {coverNote?, consent: true}
+ *   GET  /jobs/:slug/can-apply   what the job page shows this visitor (sign in, finish the profile, apply)
  *   POST /jobs/:slug/click       count a click on a url / email apply button
  *   …                            the applicants API (./applications-manage.ts)
  */
 const HOUR_MS = 3600_000;
-const UPLOAD_LIMIT = 20;
 const CLICK_LIMIT = 120;
 const SLUG_RE = /^[a-z0-9-]{1,120}$/;
-const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-const PHONE_RE = /^[+\d][\d\s().-]{4,39}$/;
 
 type Db = PrismaClient;
 type Kind = 'apply' | 'upload' | 'click';
-
-/** The stored form of a resume token: SHA-256, base64url (43 chars). The raw token is never kept. */
-export async function tokenHash(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
-  return toBase64Url(new Uint8Array(digest));
-}
+type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
 
 /**
  * Records this attempt FIRST, then counts the hour's attempts (itself included): true over `limit`.
@@ -60,181 +50,77 @@ export async function overLimit(db: Db, kind: Kind, ipHash: string, limit: numbe
   return recent.length > limit;
 }
 
-/** A storage call, with "no Site Key on this machine" as a clean 503. */
-async function storage<T>(work: () => Promise<FileResult<T>>): Promise<FileResult<T>> {
-  try {
-    return await work();
-  } catch (err) {
-    if (err instanceof SiteKeyMissing) {
-      return {ok: false, status: 503, code: 'E_STORAGE_UNAVAILABLE', message: "Resume uploads aren't available yet. Please try again later."};
-    }
-    throw err;
-  }
-}
-
-const storageStatus = (status: number): ContentfulStatusCode => (status === 402 ? 402 : status === 503 || status === 0 ? 503 : 400);
-
-const fieldError = (c: Context, field: string, message: string) =>
-  c.json({...problem('invalid_input', message), fields: {[field]: message}}, 422);
-
 const noIp = (c: Context) => c.json(problem('auth_not_configured', 'Applying is not set up on this site yet.'), 503);
 
-const uploadBody = validator('json', (value, c) => {
-  const v = (value ?? {}) as Record<string, unknown>;
-  const name = typeof v.name === 'string' ? v.name.split(/[\\/]/).pop()!.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(-200) : '';
-  const contentType = typeof v.contentType === 'string' ? v.contentType : '';
-  const size = typeof v.size === 'number' && Number.isSafeInteger(v.size) ? v.size : 0;
-  if (!name || !(RESUME_UPLOAD_TYPES as readonly string[]).includes(contentType)) return fieldError(c, 'resume', 'Upload a PDF or DOCX file.');
-  if (size < 1 || size > LIMITS.resumeMb * 1024 * 1024) return fieldError(c, 'resume', `Your resume must be ${LIMITS.resumeMb} MB or smaller.`);
-  return {name, contentType, size};
-});
-
-const tokenBody = validator('json', (value, c) => {
-  const token = (value as {token?: unknown})?.token;
-  if (typeof token !== 'string' || !TOKEN_RE.test(token)) return fieldError(c, 'resume', 'Upload your resume again.');
-  return {token};
-});
-
-const optional = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max + 1) : '');
-
-/** The application form. A filled honeypot (`website`) skips every check: it is answered "accepted". */
+/** The application form: a cover note and the consent. Everything else comes from the profile. */
 const applyBody = validator('json', (value, c) => {
   const v = (value ?? {}) as Record<string, unknown>;
-  if (typeof v.website === 'string' && v.website.trim()) return {honeypot: true as const};
-  const name = optional(v.name, LIMITS.applicantName);
-  const typed = optional(v.email, 254);
-  // The platform's own check (as sign-up and the privacy tool use): every stored address is one
-  // the privacy tool can look up, and `x@y.com.` is no second copy of `x@y.com`.
-  const email = (typed && normalizeEmail(typed)) || '';
-  const phone = optional(v.phone, 40);
-  const profileUrl = optional(v.profileUrl, 300);
-  const coverNote = optional(v.coverNote, LIMITS.coverNote);
-  const resumeToken = typeof v.resumeToken === 'string' ? v.resumeToken : '';
+  const coverNote = typeof v.coverNote === 'string' ? v.coverNote.trim() : '';
   const fields: Record<string, string> = {};
-  if (!name) fields.name = 'Enter your name.';
-  else if (name.length > LIMITS.applicantName) fields.name = `Use at most ${LIMITS.applicantName} characters.`;
-  // One line: the name goes into the employer's email and the CSV export as typed.
-  else if (/[\u0000-\u001f\u007f\u2028\u2029]/.test(name)) fields.name = 'Enter your name on one line.';
-  if (!typed) fields.email = 'Enter your email address.';
-  else if (!email) fields.email = 'Enter a valid email address, like name@example.com.';
-  if (phone && !PHONE_RE.test(phone)) fields.phone = 'Enter a phone number with digits only, like +1 555 123 4567.';
-  if (profileUrl) {
-    let ok = false;
-    try {
-      ok = profileUrl.length <= 300 && new URL(profileUrl).protocol === 'https:';
-    } catch {
-      ok = false;
-    }
-    if (!ok) fields.profileUrl = 'Enter a link that starts with https://, up to 300 characters.';
-  }
   if (coverNote.length > LIMITS.coverNote) fields.coverNote = `Use at most ${LIMITS.coverNote} characters.`;
-  if (!TOKEN_RE.test(resumeToken)) fields.resume = 'Add your resume.';
   if (v.consent !== true) fields.consent = 'Tick the box to agree before you apply.';
   if (Object.keys(fields).length) {
     return c.json({...problem('invalid_input', 'Check the highlighted fields.'), fields}, 422);
   }
-  return {honeypot: false as const, name, email, phone: phone || null, profileUrl: profileUrl || null, coverNote: coverNote || null, resumeToken};
+  return {coverNote: coverNote || null};
 });
-
-const accepted = (c: Context) => c.json({ok: true, message: 'Application sent. Check your inbox for a confirmation.'}, 201);
 
 const slugOf = (c: Context) => {
   const slug = c.req.param('slug') ?? '';
   return SLUG_RE.test(slug) ? slug : null;
 };
 
-export const applicationRoutes = new Hono()
-  // 1. A one-time upload URL. Guests may apply, so this is limited per IP hash instead.
-  .post('/resume', uploadBody, withDb, async c => {
+const applyProfileSelect = {phone: true, profileUrl: true, headline: true, photoFileId: true, resumeFileId: true, resumeFileName: true} as const;
+
+export const applicationRoutes = new Hono<Env>()
+  .post('/jobs/:slug/apply', applyBody, withViewer, requireAuth, requireVerified, withDb, async c => {
+    const input = c.req.valid('json');
     const db = c.var.db;
+    const viewer = c.var.viewer;
+    const email = viewer.email ? normalizeEmail(viewer.email) : null;
+    // The site's owner signs in from the dashboard with no address: nothing to apply with.
+    if (!email) return c.json(problem('no_email', 'This account has no email address to apply with.'), 409);
     const ipHash = await ipHashOf(c);
     if (!ipHash) return noIp(c);
-    if (await overLimit(db, 'upload', ipHash, UPLOAD_LIMIT)) {
-      return c.json(problem('rate_limited', 'Too many uploads from here. Try again in an hour.'), 429);
+    if (await overLimit(db, 'apply', ipHash, LIMITS.appliesPerIpHour)) {
+      return c.json(problem('rate_limited', 'Too many applications from here in the last hour. Try again later.'), 429);
     }
-    const input = c.req.valid('json');
-    const grant = await storage(() => createUpload(c.req.url, {...input, visibility: 'private'}));
-    if (!grant.ok) return c.json(problem(grant.code, grant.message), storageStatus(grant.status));
-    const token = toBase64Url(randomBytes(32));
-    await db.resumeUpload.create({
-      data: {token: await tokenHash(token), fileId: grant.data.file.id, ...input, ipHash},
-      select: {id: true},
-    });
-    return c.json({token, upload: grant.data.upload}, 201);
-  })
-
-  // 2. (the browser PUTs the bytes) 3. confirm before the application may point at it.
-  .post('/resume/complete', tokenBody, withDb, async c => {
-    const db = c.var.db;
-    const upload = await db.resumeUpload.findUnique({
-      where: {token: await tokenHash(c.req.valid('json').token)},
-      select: {id: true, fileId: true, name: true, contentType: true, applicationId: true, createdAt: true, ready: true},
-    });
-    if (!upload || upload.applicationId !== null || upload.createdAt.getTime() < Date.now() - HOUR_MS) {
-      return fieldError(c, 'resume', 'Upload your resume again.');
-    }
-    // Already confirmed: the same answer, without calling storage again (a repeated call costs nothing).
-    if (upload.ready) return c.json({ok: true, fileName: upload.name});
-    const done = await storage(() => completeUpload(c.req.url, upload.fileId));
-    if (!done.ok) return c.json({...problem(done.code, done.message), fields: {resume: done.message}}, storageStatus(done.status));
-    // The stored bytes must really be a PDF / DOCX; otherwise the file and its row go.
-    if (!(await checkStoredResume(c.req.url, upload.fileId, upload.contentType))) {
-      await db.resumeUpload.delete({where: {id: upload.id}, select: {id: true}});
-      return fieldError(c, 'resume', 'That file is not a real PDF or DOCX. Upload your resume as a PDF or DOCX file.');
-    }
-    await db.resumeUpload.update({where: {id: upload.id}, data: {ready: true}, select: {id: true}});
-    return c.json({ok: true, fileName: upload.name});
-  })
-
-  .post('/jobs/:slug/apply', applyBody, withViewer, withDb, async c => {
-    const input = c.req.valid('json');
-    if (input.honeypot) return accepted(c); // only bots fill the hidden field
-    const db = c.var.db;
-    const ipHash = await ipHashOf(c);
-    if (!ipHash) return noIp(c);
-    if (await overLimit(db, 'apply', ipHash, LIMITS.appliesPerIpHour)) return accepted(c); // silently dropped
 
     const slug = slugOf(c);
-    // The job (it needs the settings) and the resume upload, in parallel.
-    const [{settings, job}, upload] = await Promise.all([
-      cachedBoardSettings(db).then(async settings => ({
-        settings,
-        job: slug
-          ? await db.job.findFirst({
-              where: {...publicJobWhere(settings), slug},
-              select: {id: true, title: true, slug: true, applyMethod: true, company: {select: {name: true, ownerUserId: true}}},
-            })
-          : null,
-      })),
-      tokenHash(input.resumeToken).then(token =>
-        db.resumeUpload.findUnique({
-          where: {token},
-          select: {id: true, fileId: true, name: true, ready: true, applicationId: true, createdAt: true},
-        })
-      ),
+    const [settings, profile] = await Promise.all([
+      cachedBoardSettings(db),
+      db.applicantProfile.findUnique({where: {userId: viewer.id!}, select: applyProfileSelect}),
     ]);
+    if (!profile) return c.json(problem('not_applicant', 'Set up your job seeker profile to apply.'), 409);
+    const missing = missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId});
+    if (missing.length) {
+      return c.json({...problem('profile_incomplete', `Add ${missing.map(m => REQUIREMENT_LABELS[m]).join(', ')} to your profile first.`), missing}, 422);
+    }
+    const job = slug
+      ? await db.job.findFirst({
+          where: {...publicJobWhere(settings), slug},
+          select: {id: true, title: true, slug: true, applyMethod: true, company: {select: {name: true, ownerUserId: true}}},
+        })
+      : null;
     if (!job) return c.json(problem('not_found', 'This job is no longer taking applications.'), 404);
     if (job.applyMethod !== 'onsite') return c.json(problem('apply_elsewhere', 'This job takes applications on the company’s own site.'), 400);
-    // The job's own employer cannot apply to it.
-    if (c.var.viewer.state === 'user' && job.company.ownerUserId === c.var.viewer.id) {
-      return c.json(problem('own_job', 'This is your company’s job: you cannot apply to it.'), 403);
-    }
-    if (!upload || !upload.ready || upload.applicationId !== null || upload.createdAt.getTime() < Date.now() - HOUR_MS) {
-      return fieldError(c, 'resume', 'Upload your resume again.');
-    }
+    if (job.company.ownerUserId === viewer.id) return c.json(problem('own_job', 'This is your company’s job: you cannot apply to it.'), 403);
 
+    const name = (viewer.name ?? '').trim().slice(0, LIMITS.applicantName) || email;
     try {
       await db.$transaction(async tx => {
-        const created = await tx.application.create({
+        await tx.application.create({
           data: {
             jobId: job.id,
-            name: input.name,
-            email: input.email,
-            phone: input.phone,
-            profileUrl: input.profileUrl,
+            applicantUserId: viewer.id!,
+            name,
+            email,
+            phone: profile.phone,
+            profileUrl: profile.profileUrl,
             coverNote: input.coverNote,
-            resumeFileId: upload.fileId,
-            resumeFileName: upload.name,
+            // The profile's CV, shared: the file is deleted only once nothing uses it (applicant-profile.ts).
+            resumeFileId: profile.resumeFileId,
+            resumeFileName: profile.resumeFileName,
             consentAt: new Date(),
             consentText: DEFAULT_CONSENT_TEXT,
             ipHash,
@@ -243,38 +129,52 @@ export const applicationRoutes = new Hono()
         });
         // Raw so the counter leaves `updated_at` (the sitemap's lastmod) alone, like the view and click counters.
         await tx.$executeRaw`UPDATE "jobs" SET "application_count" = "application_count" + 1 WHERE "id" = ${job.id}`;
-        const attached = await tx.resumeUpload.updateMany({where: {id: upload.id, applicationId: null}, data: {applicationId: created.id}});
-        if (attached.count !== 1) throw new ResumeTaken();
-        return created.id;
       });
     } catch (err) {
-      if (err instanceof ResumeTaken) return fieldError(c, 'resume', 'Upload your resume again.');
-      // Already applied with this address: the same answer as a new application, so nobody can
-      // learn whether a named person applied here. Nothing is stored or sent a second time.
-      if ((err as {code?: string}).code === 'P2002') return accepted(c);
+      // The address is the session's own, so saying so tells nobody anything new.
+      if ((err as {code?: string}).code === 'P2002') return c.json(problem('already_applied', 'You have already applied for this job.'), 409);
       throw err;
     }
 
-    // The candidate's confirmation and the employer's alert go AFTER the answer: the candidate
-    // never waits for the mail service, and a failed send never fails the application (it is logged).
-    const candidate = {name: input.name, email: input.email};
+    // The confirmation and the employer's alert go AFTER the answer (a failed send is logged, never fails this).
+    const candidate = {name, email};
     after(c, `apply emails for job ${job.id}`, () => notifyNewApplication(c, db, {job, candidate, boardName: settings.name, singleCompany: isSingleCompany(settings), settings}));
-    return accepted(c);
+    return c.json({ok: true, message: 'Application sent. Follow it under My applications in your dashboard.'}, 201);
   })
 
-  /** Should the job page show the form to this visitor? Guests: yes. The job's employer and staff: a note. */
+  /** What the job page shows: sign in, pick an account kind, finish the profile, or the apply form. */
   .get('/jobs/:slug/can-apply', withViewer, withDb, async c => {
     const viewer = c.var.viewer;
+    const db = c.var.db;
     const slug = slugOf(c);
     // An expired access token: 401 makes `siteFetch` refresh once and ask again.
     if (viewer.state === 'returning') return c.json(problem('token_expired', 'Your session needs refreshing.'), 401);
-    if (viewer.state !== 'user' || !slug) return c.json({canApply: true, reason: null});
-    const job = await c.var.db.job.findFirst({where: {slug}, select: {company: {select: {ownerUserId: true}}}});
-    if (job?.company.ownerUserId === viewer.id) return c.json({canApply: false, reason: 'own_job' as const});
-    if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, PERMISSIONS.APPLICANT_READ_ALL)) {
-      return c.json({canApply: false, reason: 'staff' as const});
+    const no = (reason: CanApplyAnswer['reason'], more: Partial<CanApplyAnswer> = {}) => c.json<CanApplyAnswer>({canApply: false, reason, ...more});
+    if (viewer.state !== 'user' || !viewer.id) return no('sign_in');
+    if (!slug) return no(null);
+    const [job, kind, profile] = await Promise.all([
+      db.job.findFirst({where: {slug}, select: {id: true, company: {select: {ownerUserId: true}}}}),
+      accountKind(db, viewer.id),
+      db.applicantProfile.findUnique({where: {userId: viewer.id}, select: applyProfileSelect}),
+    ]);
+    if (job?.company.ownerUserId === viewer.id) return no('own_job');
+    if (kind === 'employer') return no('employer_account');
+    if (kind === 'none') {
+      if (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, PERMISSIONS.APPLICANT_READ_ALL)) return no('staff');
+      return no('choose_kind');
     }
-    return c.json({canApply: true, reason: null});
+    const summary = {
+      name: viewer.name ?? '',
+      email: viewer.email ?? '',
+      phone: profile?.phone ?? null,
+      headline: profile?.headline ?? null,
+      resumeFileName: profile?.resumeFileId ? profile.resumeFileName : null,
+    };
+    const email = viewer.email ? normalizeEmail(viewer.email) : null;
+    if (job && email && (await db.application.findFirst({where: {jobId: job.id, email}, select: {id: true}}))) return no('applied', {profile: summary});
+    const missing = profile ? missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId}) : [];
+    if (missing.length) return no('incomplete', {missing, profile: summary});
+    return c.json<CanApplyAnswer>({canApply: true, reason: null, profile: summary});
   })
 
   /** F4: url / email apply opens the target in the browser; this counts the click (quietly capped). */
@@ -287,8 +187,6 @@ export const applicationRoutes = new Hono()
   })
 
   .route('/', applicantRoutes);
-
-class ResumeTaken extends Error {}
 
 /** +1 apply click on a public url / email job, at most CLICK_LIMIT per IP hash an hour. */
 async function countClick(c: Context, db: Db, slug: string): Promise<void> {

@@ -5,7 +5,7 @@ import {EMPLOYER_SOURCES, type JobStatus} from '../../lib/board';
 import type {AdminJobActions} from '../../lib/types-manage';
 import {SiteKeyMissing} from '../../platform/api';
 import {randomBytes, toBase64Url} from '../../platform/auth/encoding';
-import {deleteFile} from '../../platform/files';
+import {deleteFile} from '../files';
 import {problem} from '../../platform/guards';
 import type {Viewer} from '../../platform/types';
 import {ipHashOf} from './ip';
@@ -120,16 +120,37 @@ const LONG_AGO = new Date(0);
  * fails. Each upload row is detached (no application, no file name, no IP) and dated long ago; a
  * file with no row gets one. So a file this request cannot delete (storage down, the time budget
  * spent) is never left behind, although the application pointing at it is gone.
+ *
+ * A CV still used elsewhere (the applicant's profile, or another application made with the same
+ * profile CV) is NOT handed over. Answers the files that were: only those may be deleted now.
  */
-export async function handFilesToPurge(t: PrismaClient, applicationIds: number[], fileIds: string[]): Promise<void> {
-  if (!applicationIds.length) return;
+export async function handFilesToPurge(t: PrismaClient, applicationIds: number[], fileIds: string[]): Promise<string[]> {
+  if (!applicationIds.length) return [];
   await t.resumeUpload.updateMany({
     where: {applicationId: {in: applicationIds}},
     data: {applicationId: null, name: 'deleted', ipHash: null, createdAt: LONG_AGO},
   });
-  if (!fileIds.length) return;
+  if (!fileIds.length) return [];
+  const unique = [...new Set(fileIds)];
+  // ONE query per table on the `resume_file_id` indexes: which of these files something else still uses.
+  const [apps, profiles] = await Promise.all([
+    t.application.findMany({where: {resumeFileId: {in: unique}, id: {notIn: applicationIds}}, select: {resumeFileId: true}, distinct: ['resumeFileId']}),
+    t.applicantProfile.findMany({where: {resumeFileId: {in: unique}}, select: {resumeFileId: true}}),
+  ]);
+  const used = new Set([...apps, ...profiles].map(r => r.resumeFileId));
+  const free = unique.filter(id => !used.has(id));
+  await queueFilesForPurge(t, free);
+  return free;
+}
+
+/**
+ * A detached upload row per file, dated long ago: the nightly purge deletes each file (and retries
+ * when storage fails) unless something deletes it sooner (`deleteStoredFiles`).
+ */
+export async function queueFilesForPurge(t: PrismaClient, free: string[]): Promise<void> {
+  if (!free.length) return;
   await t.resumeUpload.createMany({
-    data: fileIds.map(fileId => ({
+    data: free.map(fileId => ({
       token: toBase64Url(randomBytes(32)),
       fileId,
       name: 'deleted',

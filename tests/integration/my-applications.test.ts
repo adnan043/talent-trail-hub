@@ -52,7 +52,7 @@ describe.skipIf(!DATABASE_URL)('my applications (integration, real Postgres)', (
     casey = await signedIn(app, CASEY, undefined, '203.0.113.41');
     dana = await signedIn(app, DANA, undefined, '203.0.113.42');
     const company = await db.company.create({data: {name: 'Acme', slug: 'acme'}, select: {id: true}});
-    const category = await db.category.create({data: {name: 'Mine test', slug: 'mine-test'}, select: {id: true}});
+    const category = await db.category.upsert({where: {slug: 'mine-test'}, create: {name: 'Mine test', slug: 'mine-test'}, update: {}, select: {id: true}});
     const open = await makeJob(company.id, category.id, 'open-job');
     const closed = await makeJob(company.id, category.id, 'closed-job', 'closed');
     const a = await db.application.create({
@@ -91,6 +91,25 @@ describe.skipIf(!DATABASE_URL)('my applications (integration, real Postgres)', (
     const res = await casey.get(`/site-api/my-applications?before=${caseyIds[0]}`);
     expect((res.json.items as {id: number}[]).map(i => i.id)).toEqual([caseyIds[1]]);
     expect(res.json.nextBefore).toBeNull();
+  });
+
+  it('filters by status, keyword and date, and counts every status over all of them', async () => {
+    const first = await casey.get('/site-api/my-applications');
+    expect(first.json.counts).toEqual({new: 0, reviewed: 0, shortlisted: 1, approved: 0, rejected: 1});
+    const byStatus = await casey.get('/site-api/my-applications?status=rejected');
+    expect((byStatus.json.items as {id: number}[]).map(i => i.id)).toEqual([caseyIds[0]]);
+    // The tiles never change with the filter.
+    expect(byStatus.json.counts).toEqual(first.json.counts);
+    const byWord = await casey.get('/site-api/my-applications?q=OPEN-job');
+    expect((byWord.json.items as {id: number}[]).map(i => i.id)).toEqual([caseyIds[1]]);
+    const byCompany = await casey.get('/site-api/my-applications?q=acme');
+    expect(byCompany.json.items).toHaveLength(2);
+    const today = new Date().toISOString().slice(0, 10);
+    expect((await casey.get(`/site-api/my-applications?from=${today}&to=${today}`)).json.items).toHaveLength(2);
+    expect((await casey.get('/site-api/my-applications?to=2000-01-01')).json.items).toHaveLength(0);
+    // A bad value is no filter, never a 500; and the filters never reach another person's rows.
+    expect((await casey.get('/site-api/my-applications?status=hired&from=2026-13-45')).json.items).toHaveLength(2);
+    expect((await dana.get('/site-api/my-applications?q=acme')).json.items).toHaveLength(1);
   });
 
   it('refuses a signed-out visitor', async () => {

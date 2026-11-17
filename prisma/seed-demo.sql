@@ -1,10 +1,12 @@
 -- Demo data for the LOCAL / Preview database: makes the board look like a live site.
 -- Run: npx prisma db execute --file prisma/seed-demo.sql   (after `npx prisma db seed`).
 -- Idempotent (skips rows that exist). Every board row has is_seed = true. Dates are relative to
--- now(). Fake people use example.com; the two demo accounts use @gmail.com.
---   admin@gmail.com    role admin    (the real owner account is made by the platform)
---   company@gmail.com  role member, owns the company "Harbor & Pine"
---   Both password: Talent#Trail2026
+-- now(). Fake people use example.com; the three demo accounts use @gmail.com.
+--   admin@gmail.com      role admin    (the real owner account is made by the platform)
+--   company@gmail.com    role member, owns the company "Harbor & Pine"
+--   applicant@gmail.com  role member, a job seeker with a profile and four applications
+--                        (no photo or CV: files cannot be seeded, so upload them to apply)
+--   All three password: Talent#Trail2026
 BEGIN;
 
 INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
@@ -559,6 +561,24 @@ JOIN "listing_tiers" t ON t."name" = CASE WHEN j."is_featured" THEN 'Featured' E
 WHERE j."status" IN ('published','expired') AND NOT EXISTS (SELECT 1 FROM "listing_orders" o WHERE o."checkout_id"='pcs_demo_' || j."slug");
 
 INSERT INTO "email_logs" ("template_key","to_address","status","error","created_at","updated_at") SELECT v.*, now() FROM (VALUES ('job-approved','ines.walker@example.com','sent',NULL,now() - make_interval(hours => 8)),('application-confirmation','rosa.kim@example.com','skipped',NULL,now() - make_interval(hours => 264)),('job-submitted','olga.alvarez@example.com','sent',NULL,now() - make_interval(hours => 222)),('job-expired','rosa.chen@example.com','sent',NULL,now() - make_interval(hours => 260)),('job-approved','hiro.iyer@example.com','sent',NULL,now() - make_interval(hours => 102)),('job-rejected','mei.murphy@example.com','sent',NULL,now() - make_interval(hours => 28)),('job-rejected','aisha.rossi@example.com','sent',NULL,now() - make_interval(hours => 131)),('job-submitted','ben.rossi@example.com','sent',NULL,now() - make_interval(hours => 196)),('job-rejected','victor.berg@example.com','skipped',NULL,now() - make_interval(hours => 125)),('job-expired','ben.petrova@example.com','sent',NULL,now() - make_interval(hours => 95)),('new-applicant','olga.khan@example.com','sent',NULL,now() - make_interval(hours => 135)),('job-approved','rosa.iyer@example.com','sent',NULL,now() - make_interval(hours => 126)),('application-confirmation','grace.murphy@example.com','sent',NULL,now() - make_interval(hours => 94)),('application-confirmation','mei.rossi@example.com','sent',NULL,now() - make_interval(hours => 244)),('job-approved','uma.kim@example.com','skipped',NULL,now() - make_interval(hours => 128)),('order-receipt','carla.costa@example.com','sent',NULL,now() - make_interval(hours => 46)),('new-applicant','sven.walker@example.com','sent',NULL,now() - make_interval(hours => 202)),('application-confirmation','jonas.rao@example.com','sent',NULL,now() - make_interval(hours => 120)),('application-confirmation','quinn.hart@example.com','failed','Mail service timed out.',now() - make_interval(hours => 80)),('job-expired','mei.hart@example.com','failed','Mail service timed out.',now() - make_interval(hours => 167)),('job-expired','emma.berg@example.com','sent',NULL,now() - make_interval(hours => 75)),('application-confirmation','uma.brooks@example.com','skipped',NULL,now() - make_interval(hours => 259)),('new-applicant','zane.reed@example.com','skipped',NULL,now() - make_interval(hours => 292)),('job-rejected','victor.larsen@example.com','sent',NULL,now() - make_interval(hours => 118)),('application-confirmation','ben.novak@example.com','sent',NULL,now() - make_interval(hours => 185)),('application-confirmation','olga.mendes@example.com','sent',NULL,now() - make_interval(hours => 26)),('job-expired','uma.mendes@example.com','sent',NULL,now() - make_interval(hours => 126)),('job-submitted','aisha.petrova@example.com','sent',NULL,now() - make_interval(hours => 36)),('job-expired','rosa.rossi@example.com','skipped',NULL,now() - make_interval(hours => 270)),('application-confirmation','ines.rossi@example.com','sent',NULL,now() - make_interval(hours => 136))) AS v(t,a,s,e,c) WHERE (SELECT count(*) FROM "email_logs") < 10;
+
+-- The demo job seeker: a profile, and applications in each status the employer can set.
+INSERT INTO "users" ("email","password_hash","name","status","email_verified_at","last_login_at","updated_at")
+VALUES ('applicant@gmail.com', 'pbkdf2-sha256$v1$600000$tOFH0WiyTkRMMd4qiKx8pw$6cJvYj1RJEJQNH-fRDZiuIzqNefNws1TT9buVEIKplk', 'Rahim Uddin', 'active', now() - interval '20 days', now() - interval '1 days', now())
+ON CONFLICT ("email") DO NOTHING;
+INSERT INTO "user_roles" ("user_id","role_id")
+SELECT u."id", r."id" FROM "users" u, "roles" r WHERE u."email" = 'applicant@gmail.com' AND r."slug" = 'member'
+ON CONFLICT DO NOTHING;
+INSERT INTO "applicant_profiles" ("user_id","phone","date_of_birth","gender","present_address","headline","career_summary","experience_years","expected_salary","degree","institute","passing_year","skills","profile_url","updated_at")
+SELECT u."id",'+880 1700 000000','1996-04-12','male','Mirpur 10, Dhaka 1216','Frontend developer','Frontend developer with four years of React and TypeScript, building accessible dashboards for SaaS products.',4,'BDT 90,000 a month','BSc in Computer Science and Engineering','University of Dhaka',2019,'React, TypeScript, CSS, Figma, Accessibility','https://www.linkedin.com/in/example',now()
+FROM "users" u WHERE u."email"='applicant@gmail.com'
+ON CONFLICT ("user_id") DO NOTHING;
+INSERT INTO "applications" ("job_id","applicant_user_id","name","email","phone","cover_note","status","consent_at","consent_text","is_seed","created_at","updated_at")
+SELECT j."id",u."id",'Rahim Uddin','applicant@gmail.com','+880 1700 000000',v.note,v.status,now() - make_interval(hours => v.h),'I agree that the employer may see my profile, photo and resume to consider me for this job. The employer can no longer get my resume 180 days after I apply.',true,now() - make_interval(hours => v.h),now()
+FROM (VALUES ('frontend-engineer-education-cedar-co','approved',200,'I build accessible React interfaces and would love to work on education.'),('senior-full-stack-engineer-kestrel-logistics','shortlisted',90,NULL),('shopify-developer-harbor-pine','new',20,'I have shipped two Shopify themes in TypeScript.'),('design-systems-designer-quillstack','rejected',300,NULL)) AS v(job,status,h,note)
+JOIN "jobs" j ON j."slug"=v.job
+JOIN "users" u ON u."email"='applicant@gmail.com'
+WHERE NOT EXISTS (SELECT 1 FROM "applications" a WHERE a."job_id"=j."id" AND a."email"='applicant@gmail.com');
 
 UPDATE "jobs" j SET "application_count" = (SELECT count(*)::int FROM "applications" a WHERE a."job_id" = j."id") WHERE j."is_seed";
 UPDATE "companies" c SET "active_job_count" = (SELECT count(*)::int FROM "jobs" j WHERE j."company_id"=c."id" AND j."status"='published' AND j."expires_at" > now()) WHERE c."is_seed";
