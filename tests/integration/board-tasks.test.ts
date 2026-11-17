@@ -122,7 +122,7 @@ describe.skipIf(!DATABASE_URL)('board tasks (integration, real Postgres)', () =>
     });
 
     const first = await runPurge(db, URL_);
-    expect(first.summary).toEqual({resumesPurged: 1, resumesFailed: 1, uploadsSwept: 1, uploadsFailed: 0, attemptsSwept: 1});
+    expect(first.summary).toEqual({resumesPurged: 1, resumesFailed: 1, uploadsSwept: 1, uploadsFailed: 0, attemptsSwept: 1, profilesSwept: 0});
     expect(deleted.sort()).toEqual([fileId(1), fileId(4)]);
 
     const apps = await db.application.findMany({orderBy: {id: 'asc'}, select: {id: true, resumeFileId: true, resumeFileName: true}});
@@ -141,8 +141,42 @@ describe.skipIf(!DATABASE_URL)('board tasks (integration, real Postgres)', () =>
     expect(second.summary).toMatchObject({resumesPurged: 1, uploadsSwept: 0, attemptsSwept: 0});
     expect(deleted).toEqual([fileId(3)]);
     deleted = [];
-    expect((await runPurge(db, URL_)).summary).toEqual({resumesPurged: 0, resumesFailed: 0, uploadsSwept: 0, uploadsFailed: 0, attemptsSwept: 0});
+    expect((await runPurge(db, URL_)).summary).toEqual({resumesPurged: 0, resumesFailed: 0, uploadsSwept: 0, uploadsFailed: 0, attemptsSwept: 0, profilesSwept: 0});
     expect(deleted).toEqual([]);
     expect(await db.application.count()).toBe(3);
+  });
+  it('deletes the job seeker profile and files of an account that is gone, keeping a CV an application uses', async () => {
+    const user = (email: string) => db.user.create({data: {email, passwordHash: 'x', name: 'Seeker'}});
+    const [gone, failing, alive, applied] = await Promise.all([user('gone@example.com'), user('fail@example.com'), user('alive@example.com'), user('applied@example.com')]);
+    await db.applicantProfile.createMany({
+      data: [
+        {userId: gone.id, photoFileId: fileId(10), resumeFileId: fileId(11), resumeFileName: 'cv.pdf'},
+        {userId: failing.id, photoFileId: fileId(12)},
+        {userId: alive.id, photoFileId: fileId(13)},
+        {userId: applied.id, resumeFileId: fileId(14), resumeFileName: 'cv.pdf'},
+      ],
+    });
+    const co = await company();
+    const j = await job(co.id, {expiresAt: new Date(Date.now() + DAY)});
+    await db.application.create({
+      data: {jobId: j.id, applicantUserId: applied.id, name: 'Seeker', email: 'applied@example.com', consentAt: new Date(), consentText: 'ok', resumeFileId: fileId(14), resumeFileName: 'cv.pdf'},
+    });
+    // The account-delete hook never ran for these (no foreign key: the profiles stay behind).
+    await db.user.deleteMany({where: {id: {in: [gone.id, failing.id, applied.id]}}});
+    failDelete.add(fileId(12));
+
+    const first = await runPurge(db, URL_);
+    expect(first.summary.profilesSwept).toBe(3);
+    expect(deleted.sort()).toEqual([fileId(10), fileId(11)]);
+    expect((await db.applicantProfile.findMany({select: {userId: true}})).map(p => p.userId)).toEqual([alive.id]);
+    // The photo storage refused waits for the next run; the CV the application uses is kept.
+    expect((await db.resumeUpload.findMany({select: {fileId: true}})).map(u => u.fileId)).toEqual([fileId(12)]);
+
+    failDelete.clear();
+    deleted = [];
+    expect((await runPurge(db, URL_)).summary).toMatchObject({profilesSwept: 0, uploadsSwept: 1});
+    expect(deleted).toEqual([fileId(12)]);
+    expect(await db.resumeUpload.count()).toBe(0);
+    expect((await db.application.findFirstOrThrow({select: {resumeFileId: true}})).resumeFileId).toBe(fileId(14));
   });
 });
