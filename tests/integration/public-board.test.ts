@@ -129,6 +129,17 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect(await slugs('Remote')).toEqual(['remote-job']);
   });
 
+  it('a typed % or _ is a plain character in the keyword and the location, not a wildcard', async () => {
+    const acme = await company('Acme');
+    await job(acme.id, 'plain-job', {title: 'Plain Job'});
+    await job(acme.id, 'percent-job', {title: '100% Remote Writer'});
+    const slugs = async (query: string) => ((await browser.get(`/site-api/jobs?${query}`)).json.jobs as {slug: string}[]).map(j => j.slug).sort();
+    expect(await slugs('q=%25')).toEqual(['percent-job']);
+    expect(await slugs('q=_')).toEqual([]);
+    expect(await slugs('q=100%25')).toEqual(['percent-job']);
+    expect(await slugs('location=%25%25%25')).toEqual([]);
+  });
+
   it('"Highest salary" compares yearly pay, using the minimum when there is no maximum', async () => {
     const acme = await company('Acme');
     const yearly = (min: number | null, max: number | null, period: string) => ({salaryMinCents: min, salaryMaxCents: max, salaryCurrency: 'USD', salaryPeriod: period});

@@ -77,6 +77,12 @@ export const REQUIRED_TO_APPLY = ['photo', 'resume'] as const;
 export type ApplyRequirement = (typeof REQUIRED_TO_APPLY)[number];
 export const REQUIREMENT_LABELS: Record<ApplyRequirement, string> = {photo: 'a photo', resume: 'your CV'};
 
+/** What is still missing, as words: "a photo and your CV" (never "a photo, your CV"). */
+export function missingLabel(missing: readonly ApplyRequirement[]): string {
+  const words = missing.map(m => REQUIREMENT_LABELS[m]);
+  return words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
+
 export function missingToApply(p: Pick<ApplicantProfileView, 'hasPhoto' | 'resumeFileName'>): ApplyRequirement[] {
   const missing: ApplyRequirement[] = [];
   if (!p.hasPhoto) missing.push('photo');

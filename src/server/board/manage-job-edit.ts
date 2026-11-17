@@ -11,6 +11,7 @@ import {jobData, setJobTags, validateJob} from './employer-jobs';
 import {actionsFor, actorOf, asObject, DAY_MS, effectiveStatus, idParam, invalid, isEmployerJob, notFound, refreshActiveJobCount, str} from './manage-shared';
 import {getBoardSettings, isSingleCompany} from './settings';
 import {createWithUniqueSlug} from './slug';
+import {likeLiteral} from './public-search';
 
 /**
  * F21 admin job create and edit, with the employer's form rules (src/lib/job-input.ts, shared with
@@ -77,7 +78,7 @@ export const manageJobEditRoutes = new Hono()
     }
     const {q} = c.req.valid('query');
     const companies = await db.company.findMany({
-      where: {isBlocked: false, ...(q ? {name: {contains: q, mode: 'insensitive'}} : {})},
+      where: {isBlocked: false, ...(q ? {name: {contains: likeLiteral(q), mode: 'insensitive'}} : {})},
       orderBy: [{name: 'asc'}, {id: 'asc'}],
       select: {id: true, name: true},
       take: COMPANIES,

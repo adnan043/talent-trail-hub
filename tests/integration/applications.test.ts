@@ -211,6 +211,23 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(await db.application.count()).toBe(5);
   });
 
+  it('refused tries (profile not finished, job gone) do not use up the hour: the real application still goes through', async () => {
+    const seeker = await signedIn(app, 'eager@example.test', undefined, '198.51.100.4');
+    expect((await seeker.post('/site-api/applicant-profile/start')).status).toBe(200);
+    for (let i = 0; i < 4; i++) {
+      const early = await apply(seeker, jobA.slug);
+      expect(early.status).toBe(422);
+      // In words, not a comma list.
+      expect(early.json.message).toBe('Add a photo and your CV to your profile first.');
+    }
+    expect((await apply(seeker, 'no-such-job')).status).toBe(422);
+    expect((await uploadFile(seeker, 'photo')).status).toBe(200);
+    expect((await uploadFile(seeker, 'resume')).status).toBe(200);
+    for (let i = 0; i < 3; i++) expect((await apply(seeker, 'no-such-job')).status).toBe(404);
+    expect((await apply(seeker, jobA.slug)).status).toBe(201);
+    expect(await db.boardAttempt.count({where: {kind: 'apply'}})).toBe(1);
+  });
+
   it('an account is a job seeker or a company, never both', async () => {
     // A company owner cannot become a job seeker…
     const start = await ownerA.post('/site-api/applicant-profile/start');

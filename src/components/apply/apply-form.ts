@@ -9,7 +9,7 @@ import {replaceWithMessage} from '../../lib/account';
 import {LIMITS} from '../../lib/board';
 import {bindForm, postJson} from '../../lib/form';
 import {rules} from '../../lib/rules';
-import {type CanApplyAnswer, REQUIREMENT_LABELS} from '../../lib/types-profile';
+import {type CanApplyAnswer, missingLabel} from '../../lib/types-profile';
 import {siteFetch} from '../../platform/browser';
 
 function bindClicks(section: HTMLElement, slug: string) {
@@ -91,7 +91,7 @@ async function showStep(section: HTMLElement, form: HTMLFormElement, slug: strin
   if (answer?.reason === 'choose_kind') return show('apply-choose');
   if (answer?.reason === 'incomplete') {
     const line = pick('apply-missing');
-    if (line) line.textContent = `Almost there: add ${(answer.missing ?? []).map(m => REQUIREMENT_LABELS[m]).join(', ')} to your profile, then come back to apply.`;
+    if (line) line.textContent = `Almost there: add ${missingLabel(answer.missing ?? [])} to your profile, then come back to apply.`;
     return show('apply-incomplete');
   }
   const note = pick('apply-blocked');

@@ -10,6 +10,7 @@ import {audit} from '../../platform/auth';
 import {problem, requireAuth, requirePermission, withDb, withViewer} from '../../platform/guards';
 import {PERMISSIONS} from '../permissions';
 import {featuredWhere} from './public';
+import {likeLiteral} from './public-search';
 import {manageJobEditRoutes} from './manage-job-edit';
 import {actionsFor, actorOf, asObject, DAY_MS, effectiveStatus, deleteStoredFiles, handFilesToPurge, idParam, invalid, isFeaturedNow, notFound, refreshActiveJobCount} from './manage-shared';
 import {runExpiry} from './tasks';
@@ -60,7 +61,7 @@ function listWhere(f: {status: string; category?: number; featured: string; sour
   if (f.featured === 'yes') and.push(featuredWhere(now));
   if (f.featured === 'no') and.push({OR: [{isFeatured: false}, {featuredUntil: {lte: now}}]});
   if (f.source) and.push({source: f.source});
-  if (f.q) and.push({title: {contains: f.q, mode: 'insensitive'}});
+  if (f.q) and.push({title: {contains: likeLiteral(f.q), mode: 'insensitive'}});
   return {AND: and};
 }
 

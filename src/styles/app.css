@@ -476,6 +476,8 @@
 
 .app-page {
   display: grid;
+  /* One column no wider than the screen: a wide child (a filter row, a table) scrolls in itself. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
   align-content: start;
 }
@@ -1884,9 +1886,15 @@
   border: 0;
   border-radius: var(--r-menu);
   background: var(--hover);
+  /* Six status filters are wider than a phone: the control scrolls sideways, never the page. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .segment {
+  flex-shrink: 0;
+  white-space: nowrap;
   min-height: 36px;
   padding: 0 0.875rem;
   border: 0;

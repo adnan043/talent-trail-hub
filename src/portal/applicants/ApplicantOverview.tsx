@@ -3,7 +3,7 @@ import {Link} from '@tanstack/react-router';
 
 import type {ApplicationStatus} from '../../lib/board';
 import {MY_APPLICATION_STATUS_LABELS} from '../../lib/types-apply';
-import {missingToApply, profileCompletion, REQUIREMENT_LABELS} from '../../lib/types-profile';
+import {missingToApply, profileCompletion, missingLabel} from '../../lib/types-profile';
 import {ago} from '../shared';
 import {buttonClass, Card, EmptyState, ErrorNote, Icon, type IconName, LoadingBlock, Notice, Stat, StatusBadge} from '../ui';
 import {STATUS_TONES} from './ApplicantDrawer';
@@ -66,7 +66,7 @@ export function ApplicantOverview() {
               Add them now
             </Link>
           }>
-          Still missing: {missing.map(m => REQUIREMENT_LABELS[m]).join(', ')}.
+          Still missing: {missingLabel(missing)}.
         </Notice>
       )}
 

@@ -110,6 +110,9 @@ describe.skipIf(!DATABASE_URL)('my applications (integration, real Postgres)', (
     // A bad value is no filter, never a 500; and the filters never reach another person's rows.
     expect((await casey.get('/site-api/my-applications?status=hired&from=2026-13-45')).json.items).toHaveLength(2);
     expect((await dana.get('/site-api/my-applications?q=acme')).json.items).toHaveLength(1);
+    // `%` and `_` are plain characters, not wildcards matching every application.
+    expect((await casey.get('/site-api/my-applications?q=%25')).json.items).toHaveLength(0);
+    expect((await casey.get('/site-api/my-applications?q=_')).json.items).toHaveLength(0);
   });
 
   it('date filters use the browser\'s days (?tz=): an application at 02:00 in Dhaka is on that Dhaka day', async () => {
