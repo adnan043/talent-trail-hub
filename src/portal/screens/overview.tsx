@@ -127,7 +127,8 @@ function GeneralOverview() {
 
       {/* The job board: the admin's numbers and queue, or the employer's jobs (their own files). */}
       {abilities?.readBoardReports || abilities?.moderateJobs ? <AdminOverviewPanel /> : null}
-      {me.data && !me.data.board.singleCompany ? <EmployerOverviewPanel /> : null}
+      {/* Not for staff who manage jobs: they post from All jobs, not the employer flow. */}
+      {me.data && !me.data.board.singleCompany && !abilities?.manageJobs ? <EmployerOverviewPanel /> : null}
 
       <div className="grid-main-side">
         {abilities?.readAudit ? (

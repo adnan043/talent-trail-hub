@@ -92,13 +92,15 @@ const postJobRoute = createRoute({
 
 export const employerRoutes = [jobsRoute, editJobRoute, applicantsRoute, companyRoute, billingRoute, receiptRoute, postJobRoute] as const;
 
+// Staff who can manage jobs post through All jobs → New job (free, live at once), so the
+// employer's own posting flow is hidden from them; Billing stays hidden for report readers.
 export const EMPLOYER_NAV: {label: string; items: NavItem[]}[] = [
   {
     label: 'Hiring',
     items: [
-      {to: '/employer/jobs', label: 'My jobs', icon: 'briefcase', employer: true},
-      {to: '/post-a-job', label: 'Post a job', icon: 'plus', employer: true},
-      {to: '/employer/company', label: 'Company profile', icon: 'globe', employer: true},
+      {to: '/employer/jobs', label: 'My jobs', icon: 'briefcase', employer: true, hideForAbility: 'manageJobs'},
+      {to: '/post-a-job', label: 'Post a job', icon: 'plus', employer: true, hideForAbility: 'manageJobs'},
+      {to: '/employer/company', label: 'Company profile', icon: 'globe', employer: true, hideForAbility: 'manageJobs'},
       {to: '/employer/billing', label: 'Billing', icon: 'file', employer: true, hideForAbility: 'readBoardReports'},
     ],
   },
