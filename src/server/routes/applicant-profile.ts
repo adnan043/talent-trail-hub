@@ -223,7 +223,13 @@ export const applicantProfileRoutes = new Hono<Env>()
       return c.json(problem('staff_account', 'Staff accounts cannot apply for jobs. Sign up with another email.'), 409);
     }
     // Idempotent: a second tab's start finds the row there.
-    await db.applicantProfile.createMany({data: [{userId}], skipDuplicates: true});
+    const {count} = await db.applicantProfile.createMany({data: [{userId}], skipDuplicates: true});
+    // Written, THEN checked: a company created at the same moment (another tab) is seen here or sees
+    // this row (employer.ts), so the account never ends up both. This start lets go of its row.
+    if (count && (await db.company.findUnique({where: {ownerUserId: userId}, select: {id: true}}))) {
+      await db.applicantProfile.deleteMany({where: {userId, photoFileId: null, resumeFileId: null}});
+      return c.json(problem('employer_account', 'This is a company account. Sign up with another email to apply for jobs.'), 409);
+    }
     return c.json(await answer(c));
   })
 

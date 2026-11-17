@@ -232,6 +232,12 @@ export const employerRoutes = new Hono<Env>()
           async slug => (await db.company.findUnique({where: {slug}, select: {id: true}})) !== null,
           slug => db.company.create({data: {name, slug, ownerUserId: viewer.id!, source: 'employer', ...profileColumns(profile)}, select: {id: true, name: true}})
         );
+        // Created, THEN checked: a job seeker profile started at the same moment (another tab) is
+        // seen here or sees this company (applicant-profile.ts), so the account never ends up both.
+        if (await db.applicantProfile.findUnique({where: {userId: viewer.id!}, select: {userId: true}})) {
+          await db.company.deleteMany({where: {id: company.id, ownerUserId: viewer.id!}});
+          return c.json(problem('applicant_account', 'This is a job seeker account. Sign up with another email to post jobs.'), 403);
+        }
         await audit(db, {actorUserId: viewer.id, action: 'company.create', target: ['company', company.id], ipHash: await ipHashOf(c)});
       } catch (err) {
         // A second tab created it a moment ago: use that one.

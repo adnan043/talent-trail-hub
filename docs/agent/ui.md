@@ -45,7 +45,6 @@ piece live. Read its code (`src/portal/screens/components.tsx`) for usage.
 | Actions | `Button variant size icon pending pendingLabel`, `IconButton label`, `buttonClass()` for a `<Link>` | primary / secondary / ghost / link / danger |
 | Row actions | `Menu label items` | main action on the row, the rest (and destructive ones) in ⋯ |
 | Fields | `Field` + `<input {...form.field('x')}>`, `useForm`, `rules` | label, hint, error in place; client rules = server rules |
-| Markdown text | `MarkdownEditor` + `{...form.field('x')}` in a `Field` | job description, company about: toolbar + Preview, stays the board's simple Markdown |
 | Choices | `RadioCards` (2–5 options), `Select` (long lists), `Checkbox`, `Switch` (applies at once) | never a native `<select>` styled by hand |
 | Passwords | `PasswordInput`, `PasswordChecks` | every password field has show / hide |
 | Search / filter | `SearchInput`, `SegmentedControl` in a `.toolbar` | the filter is in the query key |
