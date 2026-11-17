@@ -709,6 +709,8 @@ model ApplicantProfile {
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([resumeFileId])
+  /// The nightly sweep: "is this left-over upload a profile's photo?" (tasks.ts).
+  @@index([photoFileId])
   @@map("applicant_profiles")
 }
 
