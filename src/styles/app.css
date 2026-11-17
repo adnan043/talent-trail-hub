@@ -3737,41 +3737,6 @@ html:root .app-shell[data-side='light'] .app-sidebar {
   gap: 1.25rem;
   padding: 1.25rem 1.5rem 1.75rem;
 }
-.applied-filters {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 1rem;
-  padding: 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-.applied-filters .field {
-  margin: 0;
-}
-.applied-dates {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-}
-.applied-filter-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-@media (max-width: 1100px) {
-  .applied-filters {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-}
-@media (max-width: 640px) {
-  .applied-filters {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .applied-filter-actions .button {
-    flex: 1;
-  }
-}
 .applied-tiles {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
@@ -3930,9 +3895,6 @@ html:root .app-shell[data-side='light'] .app-sidebar {
   .applied-body {
     padding: 1rem;
   }
-  .applied-filters {
-    padding: 1rem;
-  }
   /* Tiles: three outcomes in a row of small boxes, no side borders squeezing them. */
   .applied-tile-group {
     display: grid;
@@ -3964,11 +3926,8 @@ html:root .app-shell[data-side='light'] .app-sidebar {
     text-align: center;
   }
 }
-/* The dates: one per line when the screen is very narrow. */
+/* Very narrow screens. */
 @media (max-width: 380px) {
-  .applied-dates {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .applied-tile-label {
     font-size: 0.75rem;
   }
