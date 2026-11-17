@@ -23,6 +23,7 @@ import {
   STATUS_TEMPLATES,
   toApplicantRow,
 } from '../board/applicants';
+import {after} from '../board/after';
 import {sendBoardEmail} from '../board/email';
 import {ipHashOf} from '../board/ip';
 import {cachedBoardSettings} from '../board/brand';
@@ -197,20 +198,23 @@ export const applicantRoutes = new Hono<Env>()
     // never sends a second one.
     const mark = status === 'rejected' ? 'rejectedEmailedAt' : status === 'approved' ? 'approvedEmailedAt' : 'statusEmailedAt';
     if (template && (await db.application.updateMany({where: {id: found.id, [mark]: null}, data: {[mark]: new Date()}})).count === 1) {
-      const [job, settings, account] = await Promise.all([
-        db.job.findUnique({where: {id: found.jobId}, select: {title: true, company: {select: {name: true}}}}),
-        cachedBoardSettings(db),
-        // The account's CURRENT address: it may have changed since they applied.
-        found.applicantUserId ? db.user.findUnique({where: {id: found.applicantUserId}, select: {email: true}}) : null,
-      ]);
-      const to = account?.email ?? found.email;
-      if (job && to) {
-        await sendBoardEmail(db, c.req.url, {
+      // The candidate's email after the answer: the employer never waits for the mail service.
+      const requestUrl = c.req.url;
+      after(c, `applicant ${status} email for application ${found.id}`, async () => {
+        const [job, settings, account] = await Promise.all([
+          db.job.findUnique({where: {id: found.jobId}, select: {title: true, company: {select: {name: true}}}}),
+          cachedBoardSettings(db),
+          // The account's CURRENT address: it may have changed since they applied.
+          found.applicantUserId ? db.user.findUnique({where: {id: found.applicantUserId}, select: {email: true}}) : null,
+        ]);
+        const to = account?.email ?? found.email;
+        if (!job || !to) return;
+        await sendBoardEmail(db, requestUrl, {
           template,
           to,
           vars: {boardName: settings.name, jobTitle: job.title, companyName: job.company.name},
         });
-      }
+      });
     }
     return c.json({applicant: toApplicantRow(row)});
   })

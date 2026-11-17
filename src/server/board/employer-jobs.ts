@@ -66,8 +66,9 @@ export function jobData(columns: JobColumns, html: string, currency: string) {
  * The upsert (`DO UPDATE`, not `DO NOTHING`) returns the id of a tag that already existed, also
  * one another request added a moment ago, so no tag is ever dropped.
  */
-export async function setJobTags(db: PrismaClient, jobId: number, names: string[]): Promise<void> {
-  await db.jobTag.deleteMany({where: {jobId}});
+export async function setJobTags(db: PrismaClient, jobId: number, names: string[], opts: {newJob?: boolean} = {}): Promise<void> {
+  // A job created in this request has no tags yet: nothing to clear.
+  if (!opts.newJob) await db.jobTag.deleteMany({where: {jobId}});
   const unique = [...new Set(names)].slice(0, 10);
   if (!unique.length) return;
   await db.$executeRaw`

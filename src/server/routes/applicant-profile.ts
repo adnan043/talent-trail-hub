@@ -197,7 +197,11 @@ function fileRoutes(kind: ProfileFileKind) {
       if (!fileId) return c.json(problem('not_found', 'Nothing uploaded yet.'), 404);
       const link = await fileUrl(c.req.url, fileId, {expiresIn: 300, download: kind === 'resume'}).catch(() => null);
       if (!link?.ok) return c.json(problem('storage_unavailable', 'The file cannot be shown right now.'), 503);
-      c.header('Cache-Control', 'private, no-store');
+      // The photo's `?v=` (the file id's tail, `ownPhotoUrl`) names this very file: the browser may
+      // keep that redirect for 4 minutes (the link lives 5), so the sidebar photo on every dashboard
+      // page is not a Worker call and a storage link each time. A new photo is a new `v`.
+      const versioned = kind === 'photo' && c.req.query('v') === fileId.slice(-8);
+      c.header('Cache-Control', versioned ? 'private, max-age=240' : 'private, no-store');
       return c.redirect(link.data.url, 302);
     });
 }

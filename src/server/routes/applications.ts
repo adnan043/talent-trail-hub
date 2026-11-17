@@ -161,10 +161,15 @@ export const applicationRoutes = new Hono<Env>()
     const no = (reason: CanApplyAnswer['reason'], more: Partial<CanApplyAnswer> = {}) => c.json<CanApplyAnswer>({canApply: false, reason, ...more});
     if (viewer.state !== 'user' || !viewer.id) return no('sign_in');
     if (!slug) return no(null);
-    const [job, kind, profile] = await Promise.all([
+    const email = viewer.email ? normalizeEmail(viewer.email) : null;
+    // Applied from this account (even under an older email), or a guest application with this address.
+    const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{email}] : [])]};
+    // One parallel trip: "already applied?" goes by the job's unique slug, not after the job read.
+    const [job, kind, profile, applied] = await Promise.all([
       cachedBoardSettings(db).then(settings => db.job.findFirst({where: {...publicJobWhere(settings), slug}, select: {id: true, company: {select: {ownerUserId: true}}}})),
       accountKind(db, viewer.id),
       db.applicantProfile.findUnique({where: {userId: viewer.id}, select: applyProfileSelect}),
+      db.application.findFirst({where: {...mine, job: {slug}}, select: {id: true}}),
     ]);
     // A closed, expired or hidden job takes no applications (the POST would answer 404).
     if (!job) return no('closed');
@@ -181,10 +186,7 @@ export const applicationRoutes = new Hono<Env>()
       headline: profile?.headline ?? null,
       resumeFileName: profile?.resumeFileId ? profile.resumeFileName : null,
     };
-    const email = viewer.email ? normalizeEmail(viewer.email) : null;
-    // Applied from this account (even under an older email), or a guest application with this address.
-    const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{email}] : [])]};
-    if ((await db.application.findFirst({where: {jobId: job.id, ...mine}, select: {id: true}}))) return no('applied', {profile: summary});
+    if (applied) return no('applied', {profile: summary});
     const missing = profile ? missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId}) : [];
     if (missing.length) return no('incomplete', {missing, profile: summary});
     return c.json<CanApplyAnswer>({canApply: true, reason: null, profile: summary});

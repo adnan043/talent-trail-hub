@@ -209,11 +209,10 @@ export const employerRoutes = new Hono<Env>()
     }
     const input = c.req.valid('json');
     // From the database, never the Site Cache: it decides free vs paid (and the currency charged).
-    const settings = await getBoardSettings(db);
-    const [checked, existing, chosen] = await Promise.all([
+    const [checked, existing, {settings, chosen}] = await Promise.all([
       validateJob(db, input.job),
       ownCompany(db, viewer.id!),
-      chooseTier(db, settings, input.tierId),
+      getBoardSettings(db).then(async settings => ({settings, chosen: await chooseTier(db, settings, input.tierId)})),
     ]);
     const fields: Record<string, string> = 'fields' in checked ? {...checked.fields} : {};
     const newCompany = existing ? null : readNewCompany(input.company);
@@ -271,7 +270,7 @@ export const employerRoutes = new Hono<Env>()
     const jobId = reuse
       ? reuse.id
       : (await createJob(db, {companyId: company.id, companyName: company.name, userId: viewer.id!, data, status: 'pending_payment'})).id;
-    await setJobTags(db, jobId, checked.columns.tags);
+    await setJobTags(db, jobId, checked.columns.tags, {newJob: !reuse});
 
     const answer = await startListing(db, c.req.url, {
       companyId: company.id,
