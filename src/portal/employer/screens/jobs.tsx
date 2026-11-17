@@ -11,10 +11,12 @@ import {confirmCheckout, openListingCheckout} from '../checkout';
 import {clearDraft, emptyDraft, loadDraft, saveDraft} from '../draft';
 import {employerOptionsQuery, myJobsQuery} from '../queries';
 import {GatewayChoice, tierSummary} from './post-job-steps';
+import {useMe} from '../../shared';
 
 /** `/dashboard/employer/jobs` (F15): the company's jobs with their numbers and actions. */
 export function EmployerJobs() {
   const jobs = useInfiniteQuery(myJobsQuery);
+  const me = useMe();
   const rows = jobs.data?.pages.flatMap(page => page.items);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -33,7 +35,7 @@ export function EmployerJobs() {
         // The draft is done with only when ITS job was paid (a renewal, or another job's
         // checkout, leaves an unrelated draft alone). Unpaid still: the server answers a repost
         // of it with `already_paid` once the payment lands, never a second charge.
-        const draftJobId = loadDraft().jobId;
+        const draftJobId = loadDraft(me.data?.viewer.id).jobId;
         if (draftJobId !== null) {
           const own = await read<{job: EmployerJobDetail}>(api.employer.jobs[':id'].$get({param: {id: String(draftJobId)}})).catch(() => null);
           if (own && own.job.status !== 'pending_payment' && own.job.status !== 'draft') clearDraft();
@@ -60,7 +62,7 @@ export function EmployerJobs() {
 
   const duplicate = async (job: EmployerJobRow) => {
     // An unfinished post-a-job draft is only replaced when the employer says so.
-    const unfinished = loadDraft();
+    const unfinished = loadDraft(me.data?.viewer.id);
     if (unfinished.job.title.trim() || unfinished.job.descriptionMd.trim()) {
       const ok = await confirm({
         title: 'Replace your unfinished draft?',
@@ -73,7 +75,7 @@ export function EmployerJobs() {
     setBusy(job.id);
     try {
       const {job: detail} = await read<{job: EmployerJobDetail}>(api.employer.jobs[':id'].$get({param: {id: String(job.id)}}));
-      saveDraft({...emptyDraft(), job: {...detail.values}, tierId: detail.tierId});
+      saveDraft(me.data?.viewer.id, {...emptyDraft(), job: {...detail.values}, tierId: detail.tierId});
       void navigate({to: '/post-a-job', search: {step: 1}});
     } catch (err) {
       toast.danger(err instanceof Error ? err.message : 'That did not work. Try again.');

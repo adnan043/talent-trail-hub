@@ -7,6 +7,10 @@ import {rules} from '../ui';
  * The post-a-job wizard's draft, kept in THIS browser only (localStorage, F10): the job, the new
  * company, the tier, the step, and the unpaid job's id after a closed checkout (so posting again
  * reuses it). Never trusted by the server: it checks everything again.
+ *
+ * Stored with the account it belongs to (`{owner, draft}`): on a browser people share, another
+ * account signing in starts empty instead of seeing (and posting) someone else's draft. No account
+ * (`owner` null): nothing is read or saved.
  */
 
 export interface PostDraft {
@@ -21,9 +25,15 @@ const KEY = 'board:post-a-job';
 export const EMPTY_COMPANY: NewCompanyValues = {companyName: '', website: '', location: '', about: ''};
 export const emptyDraft = (): PostDraft => ({step: 1, job: {...EMPTY_JOB_VALUES}, company: {...EMPTY_COMPANY}, tierId: null, jobId: null});
 
-export function loadDraft(): PostDraft {
+type Owner = number | null | undefined;
+
+export function loadDraft(owner: Owner): PostDraft {
+  if (owner == null) return emptyDraft();
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<PostDraft> | null;
+    const stored = JSON.parse(localStorage.getItem(KEY) ?? 'null') as {owner?: unknown; draft?: Partial<PostDraft>} | null;
+    // Another account's draft (or one saved before drafts had an owner): not this account's.
+    if (!stored || typeof stored !== 'object' || stored.owner !== owner) return emptyDraft();
+    const raw = stored.draft;
     if (!raw || typeof raw !== 'object') return emptyDraft();
     const company = (raw.company ?? {}) as Record<string, unknown>;
     const text = (key: string) => (typeof company[key] === 'string' ? (company[key] as string) : '');
@@ -39,9 +49,10 @@ export function loadDraft(): PostDraft {
   }
 }
 
-export function saveDraft(draft: PostDraft): void {
+export function saveDraft(owner: Owner, draft: PostDraft): void {
+  if (owner == null) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify(draft));
+    localStorage.setItem(KEY, JSON.stringify({owner, draft}));
   } catch {
     // Storage blocked or full: the draft lasts until the tab closes.
   }

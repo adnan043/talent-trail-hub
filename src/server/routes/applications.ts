@@ -113,8 +113,8 @@ export const applicationRoutes = new Hono<Env>()
     // ONE statement, so one implicit transaction and one round trip (an interactive transaction
     // opens its own connection and takes five). It locks the profile row and reads the CV as it is
     // NOW: a CV replaced meanwhile (`/resume/complete` waits on this lock) never deletes the file this
-    // application points at. A second application from this account or address inserts nothing
-    // (ON CONFLICT on the per-job unique keys) and leaves the counter alone. The counter is raw so
+    // application points at. A second application from this account inserts nothing
+    // (ON CONFLICT on the per-job unique key) and leaves the counter alone. The counter is raw so
     // it leaves `updated_at` (the sitemap's lastmod) alone, like the view and click counters.
     const [result] = await db.$queryRaw<{has_cv: boolean; inserted: boolean}[]>`
       WITH cv AS (
@@ -155,8 +155,9 @@ export const applicationRoutes = new Hono<Env>()
     if (viewer.state !== 'user' || !viewer.id) return no('sign_in');
     if (!slug) return no(null);
     const email = viewer.email ? normalizeEmail(viewer.email) : null;
-    // Applied from this account (even under an older email), or a guest application with this address.
-    const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{email}] : [])]};
+    // Applied from this account (even under an older email), or an old GUEST application with this
+    // address. Another account's application never counts: an address can pass to a new account.
+    const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{applicantUserId: null, email}] : [])]};
     // One parallel trip: "already applied?" goes by the job's unique slug, not after the job read.
     const [job, kind, profile, applied] = await Promise.all([
       cachedBoardSettings(db).then(settings => db.job.findFirst({where: {...publicJobWhere(settings), slug}, select: {id: true, company: {select: {ownerUserId: true}}}})),

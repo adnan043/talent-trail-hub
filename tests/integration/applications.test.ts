@@ -322,6 +322,27 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(await db.emailLog.findMany({where: {templateKey: 'application-shortlisted'}, select: {to: true}})).toEqual([{to: 'casey@example.test'}]);
   });
 
+  it('an address that passed to a new account does not carry the old account\'s applications', async () => {
+    const casey = await applicant('casey@example.test', '198.51.100.23');
+    expect((await apply(casey, jobA.slug)).status).toBe(201);
+    // Casey applied under the address dana@ has now (Casey changed address, Dana signed up with it).
+    await db.application.updateMany({data: {email: 'dana@example.test'}});
+    const dana = await applicant('dana@example.test', '198.51.100.24');
+    expect((await dana.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: true});
+    expect((await apply(dana, jobA.slug)).status).toBe(201);
+    expect(await db.application.count({where: {jobId: jobA.id}})).toBe(2);
+    expect((await db.job.findUniqueOrThrow({where: {id: jobA.id}, select: {applicationCount: true}})).applicationCount).toBe(2);
+    // Casey's own application still counts for Casey.
+    expect((await casey.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'applied'});
+
+    // An old GUEST application (no account) with an address still counts for that address, once per job.
+    await db.application.deleteMany({where: {email: 'dana@example.test', applicantUserId: {not: null}}});
+    const guestRow = {jobId: jobA.id, name: 'Dana', email: 'dana@example.test', consentAt: new Date(), consentText: 'x'};
+    await db.application.create({data: guestRow});
+    expect((await dana.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'applied'});
+    await expect(db.application.create({data: guestRow})).rejects.toThrow();
+  });
+
   it('a closed job says so before the form, and takes no application', async () => {
     const casey = await applicant('casey@example.test', '198.51.100.22');
     await db.job.update({where: {id: jobA.id}, data: {status: 'closed'}});

@@ -38,11 +38,22 @@ const select = {
   ownerCompanyId: true,
 } as const;
 
-/** Reads the settings row; creates it with the defaults when missing (one row, `id = 1`). */
+/**
+ * Makes sure the settings row exists (one row, `id = 1`, the defaults). ON CONFLICT DO NOTHING in
+ * one statement: two first requests at once on a new database both pass, neither hits the key
+ * (Prisma's `upsert` reads first, then inserts, so the second one failed with a 500).
+ */
+export async function ensureBoardSettingsRow(db: Pick<PrismaClient, '$executeRaw'>): Promise<void> {
+  await db.$executeRaw`INSERT INTO "board_settings" ("id", "updated_at") VALUES (1, now()) ON CONFLICT ("id") DO NOTHING`;
+}
+
+/** Reads the settings row; creates it with the defaults when missing. */
 export async function getBoardSettings(db: PrismaClient): Promise<BoardSettings> {
-  const row =
-    (await db.boardSettings.findUnique({where: {id: 1}, select})) ??
-    (await db.boardSettings.upsert({where: {id: 1}, create: {id: 1}, update: {}, select}));
+  let row = await db.boardSettings.findUnique({where: {id: 1}, select});
+  if (!row) {
+    await ensureBoardSettingsRow(db);
+    row = await db.boardSettings.findUniqueOrThrow({where: {id: 1}, select});
+  }
   // Checked on read too (the row is JSON and text): a bad value falls back, it never reaches a page.
   const links = (Array.isArray(row.footerLinks) ? row.footerLinks : [])
     .filter(

@@ -34,7 +34,13 @@ export function Moderation() {
       width: 'shrink',
       cell: item => (
         <span className="badges">
-          {item.liveUntil ? <Badge tone="info">Edit of a live job</Badge> : <Badge>New</Badge>}
+          {item.liveUntil ? (
+            <Badge tone="info">Edit of a live job</Badge>
+          ) : item.periodEnded ? (
+            <Badge tone="warning">Edit, period ended</Badge>
+          ) : (
+            <Badge>New</Badge>
+          )}
           {item.flagged && <Badge tone="danger">Flagged</Badge>}
         </span>
       ),
