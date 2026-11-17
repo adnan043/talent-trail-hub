@@ -45,7 +45,10 @@ const email = !hydrate && user ? (viewer.email ?? viewer.name ?? '') : '';
   <nav class="mobile-sheet-nav" aria-label="Main">
     <ul>
       {nav.map(item => (
-        <li data-marketplace-only={item.marketplaceOnly ? '' : undefined} hidden={item.marketplaceOnly && single ? true : undefined}>
+        <li
+          data-marketplace-only={item.marketplaceOnly ? '' : undefined}
+          data-applicant-only={item.applicantOnly ? '' : undefined}
+          hidden={(item.marketplaceOnly && single) || item.applicantOnly ? true : undefined}>
           <a href={item.href} class:list={{active: active(item.href)}} aria-current={active(item.href) ? 'page' : undefined}>
             {item.label}
             {item.href === '/saved/' && <span class="nav-count" data-saved-count aria-hidden="true" hidden />}
