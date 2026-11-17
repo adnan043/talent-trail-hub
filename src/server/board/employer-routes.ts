@@ -5,9 +5,8 @@ import type {PrismaClient} from '../../generated/prisma/client';
 import {LIMITS, isDbId} from '../../lib/board';
 import {readJobValues} from '../../lib/job-input';
 import type {EmployerReceipt} from '../../lib/types-employer';
-import type {Viewer} from '../../lib/types';
 import {problem} from '../../platform/guards';
-import {BLOCKED, ownCompany, refreshActiveJobCount} from './employer';
+import {BLOCKED, type EmployerEnv, refreshActiveJobCount} from './employer';
 import {effectiveStatus, findOwnJob, isEditable, jobData, RENEWABLE, setJobTags, listOwnJobs, toJobDetail, validateJob} from './employer-jobs';
 import {RENEW_AHEAD_MAX_DAYS} from './employer-settle';
 import {chooseTier, findOwnOrder, listOwnOrders, startListing, toOrderRow} from './employer-orders';
@@ -34,7 +33,7 @@ import {POSTS_PER_HOUR, userAttemptAllowed} from './employer-logo';
  *   GET  /orders/:id            a printable receipt
  */
 
-type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
+type Env = EmployerEnv;
 
 /** How far ahead a renewal may push a listing's end date (twice the longest listing option). */
 const NOT_FOUND = problem('not_found', 'No such job.');
@@ -60,18 +59,15 @@ const renewBody = validator('json', (value, c) => {
   return {tierId, gateway};
 });
 
-/** The viewer's company id, or null (no company yet: nothing of theirs exists). */
-const companyOf = async (db: PrismaClient, viewer: Viewer) => (await ownCompany(db, viewer.id!)) ?? null;
-
 export const employerJobRoutes = new Hono<Env>()
   .get('/jobs', page, async c => {
-    const company = await companyOf(c.var.db, c.var.viewer);
+    const company = c.var.employerCompany;
     if (!company) return c.json({items: [], nextBefore: null});
     return c.json(await listOwnJobs(c.var.db, company.id, cursor(c.req.valid('query').before), LIMITS.pageSize));
   })
 
   .get('/jobs/:id', async c => {
-    const company = await companyOf(c.var.db, c.var.viewer);
+    const company = c.var.employerCompany;
     const job = company ? await findOwnJob(c.var.db, company.id, Number(c.req.param('id'))) : null;
     if (!job) return c.json(NOT_FOUND, 404);
     return c.json({job: toJobDetail(job)});
@@ -79,7 +75,7 @@ export const employerJobRoutes = new Hono<Env>()
 
   .put('/jobs/:id', jobBody, async c => {
     const db = c.var.db;
-    const company = await companyOf(db, c.var.viewer);
+    const company = c.var.employerCompany;
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);
     if (company.isBlocked) return c.json(BLOCKED, 403);
@@ -134,7 +130,7 @@ export const employerJobRoutes = new Hono<Env>()
 
   .post('/jobs/:id/close', async c => {
     const db = c.var.db;
-    const company = await companyOf(db, c.var.viewer);
+    const company = c.var.employerCompany;
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);
     // A live job past its end date is expired (before the sweep ran): not closed here, so its
@@ -161,7 +157,7 @@ export const employerJobRoutes = new Hono<Env>()
     if (!(await userAttemptAllowed(db, 'post', c.var.viewer.id!, POSTS_PER_HOUR))) {
       return c.json(problem('rate_limited', 'Too many jobs posted or renewed in the last hour. Try again later.'), 429);
     }
-    const company = await companyOf(db, c.var.viewer);
+    const company = c.var.employerCompany;
     const job = company ? await findOwnJob(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !job) return c.json(NOT_FOUND, 404);
     if (company.isBlocked) return c.json(BLOCKED, 403);
@@ -201,14 +197,14 @@ export const employerJobRoutes = new Hono<Env>()
   })
 
   .get('/orders', page, async c => {
-    const company = await companyOf(c.var.db, c.var.viewer);
+    const company = c.var.employerCompany;
     if (!company) return c.json({items: [], nextBefore: null});
     return c.json(await listOwnOrders(c.var.db, company.id, cursor(c.req.valid('query').before), LIMITS.pageSize));
   })
 
   .get('/orders/:id', async c => {
     const db = c.var.db;
-    const company = await companyOf(db, c.var.viewer);
+    const company = c.var.employerCompany;
     const order = company ? await findOwnOrder(db, company.id, Number(c.req.param('id'))) : null;
     if (!company || !order) return c.json(NO_ORDER, 404);
     const [settings, buyer] = await Promise.all([

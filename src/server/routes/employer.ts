@@ -2,7 +2,6 @@ import {config} from '../../platform/config';
 import {Hono} from 'hono';
 import {validator} from 'hono/validator';
 
-import type {PrismaClient} from '../../generated/prisma/client';
 import {readJobValues} from '../../lib/job-input';
 import {isDbId} from '../../lib/board';
 import type {EmployerOptions} from '../../lib/types-employer';
@@ -15,6 +14,7 @@ import {
   BLOCKED,
   changedFields,
   companySelect,
+  type EmployerEnv,
   employerArea,
   ownCompany,
   profileColumns,
@@ -46,7 +46,7 @@ import {createWithUniqueSlug, isUniqueViolation} from '../board/slug';
  *   …      /jobs, /orders             src/server/board/employer-routes.ts
  */
 
-type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
+type Env = EmployerEnv;
 
 const invalid = (fields: Record<string, string>) => ({...problem('invalid_input', Object.values(fields)[0] ?? 'Check the highlighted fields.'), fields});
 
@@ -95,10 +95,10 @@ export const employerRoutes = new Hono<Env>()
   .get('/options', async c => {
     const db = c.var.db;
     const settings = await cachedBoardSettings(db);
-    const [categories, tiers, company] = await Promise.all([
+    const company = c.var.employerCompany;
+    const [categories, tiers] = await Promise.all([
       db.category.findMany({where: {isActive: true}, orderBy: [{sortOrder: 'asc'}, {name: 'asc'}], take: 100, select: {id: true, name: true}}),
       activeTiers(db, settings),
-      ownCompany(db, c.var.viewer.id!),
     ]);
     const options: EmployerOptions = {
       categories,
@@ -111,7 +111,7 @@ export const employerRoutes = new Hono<Env>()
   })
 
   .get('/company', async c => {
-    const company = await ownCompany(c.var.db, c.var.viewer.id!);
+    const company = c.var.employerCompany;
     // With file storage (a Site Key) the logo goes there; without one, to `/company/logo/local`.
     return c.json({company: company ? toEmployerCompany(company) : null, logoUploads: Boolean(config.siteKey)});
   })
@@ -120,7 +120,7 @@ export const employerRoutes = new Hono<Env>()
     const read = readCompanyProfile(c.req.valid('json'));
     if ('fields' in read) return c.json(invalid(read.fields), 422);
     const db = c.var.db;
-    const row = await ownCompany(db, c.var.viewer.id!);
+    const row = c.var.employerCompany;
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
     if (row.isBlocked) return c.json(BLOCKED, 403);
     const next = profileColumns(read.value);
@@ -132,7 +132,7 @@ export const employerRoutes = new Hono<Env>()
   })
 
   .post('/company/logo', logoBody, async c => {
-    const row = await ownCompany(c.var.db, c.var.viewer.id!);
+    const row = c.var.employerCompany;
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
     if (row.isBlocked) return c.json(BLOCKED, 403);
     if (!(await logoAttemptAllowed(c.var.db, c.var.viewer.id!))) {
@@ -147,7 +147,7 @@ export const employerRoutes = new Hono<Env>()
   .post('/company/logo/local', logoLocal, async c => {
     if (config.siteKey) return c.json(problem('use_storage', 'Upload the logo to file storage.'), 409);
     const db = c.var.db;
-    const row = await ownCompany(db, c.var.viewer.id!);
+    const row = c.var.employerCompany;
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
     if (row.isBlocked) return c.json(BLOCKED, 403);
     if (!(await logoAttemptAllowed(db, c.var.viewer.id!))) {
@@ -176,7 +176,7 @@ export const employerRoutes = new Hono<Env>()
 
   .post('/company/logo/complete', logoDone, async c => {
     const db = c.var.db;
-    const row = await ownCompany(db, c.var.viewer.id!);
+    const row = c.var.employerCompany;
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
     if (row.isBlocked) return c.json(BLOCKED, 403);
     const {fileId, token} = c.req.valid('json');
@@ -190,7 +190,7 @@ export const employerRoutes = new Hono<Env>()
 
   .delete('/company/logo', async c => {
     const db = c.var.db;
-    const row = await ownCompany(db, c.var.viewer.id!);
+    const row = c.var.employerCompany;
     if (!row) return c.json(problem('no_company', 'Post your first job to create your company profile.'), 404);
     if (!row.logoUrl && !row.logoFileId) return c.json({company: toEmployerCompany(row)});
     const updated = await db.company.update({where: {id: row.id}, data: {logoFileId: null, logoUrl: null}, select: companySelect});
@@ -209,9 +209,9 @@ export const employerRoutes = new Hono<Env>()
     }
     const input = c.req.valid('json');
     // From the database, never the Site Cache: it decides free vs paid (and the currency charged).
-    const [checked, existing, {settings, chosen}] = await Promise.all([
+    const existing = c.var.employerCompany;
+    const [checked, {settings, chosen}] = await Promise.all([
       validateJob(db, input.job),
-      ownCompany(db, viewer.id!),
       getBoardSettings(db).then(async settings => ({settings, chosen: await chooseTier(db, settings, input.tierId)})),
     ]);
     const fields: Record<string, string> = 'fields' in checked ? {...checked.fields} : {};

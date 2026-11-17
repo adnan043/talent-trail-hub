@@ -53,6 +53,8 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
   beforeEach(async () => {
     await resetDatabase();
     forgetBoardSettings();
+    // Job pages and first pages are kept in the Site Cache (module memory here): each test starts empty.
+    await forgetPublicLists();
     categoryId = (await db.category.upsert({where: {slug: 'design'}, create: {name: 'Design', slug: 'design'}, update: {}, select: {id: true}})).id;
     browser = new Browser(app, '203.0.113.50');
   });
@@ -77,6 +79,8 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect(((await browser.get('/site-api/jobs/closed-job')).json.job as {state: string}).state).toBe('closed');
     // The employer's apply address is only handed out while the job is open.
     await db.job.updateMany({where: {slug: {in: ['live-job', 'late-expiry', 'closed-job']}}, data: {applyMethod: 'email', applyTarget: 'jobs@acme.example'}});
+    // A real edit goes through a route that clears the cached job pages; this one is direct.
+    await forgetPublicLists();
     const target = async (slug: string) => ((await browser.get(`/site-api/jobs/${slug}`)).json.job as {applyTarget: string | null}).applyTarget;
     expect(await target('live-job')).toBe('jobs@acme.example');
     expect(await target('late-expiry')).toBeNull();
@@ -174,6 +178,41 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     const featured = await browser.get('/site-api/jobs?q=&category=&type=&workplace=&location=&minSalary=&posted=&sort=&featured=1&before=');
     expect(featured.json.pinned).toBe(0);
     expect((featured.json.jobs as unknown[]).length).toBe(7);
+  });
+
+  it('a filtered search pins featured matches on page 1 and pages through the rest exactly once', async () => {
+    const acme = await company('Acme');
+    for (let i = 0; i < 7; i++) await job(acme.id, `designer-featured-${i}`, {isFeatured: true, publishedAt: new Date(Date.now() - (i + 1) * 60_000)});
+    for (let i = 0; i < 23; i++) await job(acme.id, `designer-plain-${i}`, {publishedAt: new Date(Date.now() - (i + 10) * 60_000)});
+    await job(acme.id, 'writer-other');
+    const first = await browser.get('/site-api/jobs?q=designer');
+    const firstJobs = first.json.jobs as {slug: string; featured: boolean}[];
+    expect(first.json.pinned).toBe(5);
+    expect(firstJobs).toHaveLength(20);
+    expect(firstJobs.slice(0, 5).every(j => j.featured)).toBe(true);
+    expect(first.json.featuredCount).toBe(7);
+    const second = await browser.get(`/site-api/jobs?q=designer&before=${encodeURIComponent(first.json.nextBefore as string)}`);
+    const secondJobs = second.json.jobs as {slug: string}[];
+    expect(second.json.nextBefore).toBeNull();
+    const all = [...firstJobs, ...secondJobs].map(j => j.slug);
+    expect(new Set(all).size).toBe(all.length);
+    expect(all).toHaveLength(30);
+    expect(all).not.toContain('writer-other');
+  });
+
+  it('a cached job page still follows the clock: past its end it reads expired, without the apply address', async () => {
+    const acme = await company('Acme');
+    await job(acme.id, 'ending-soon', {expiresAt: new Date(Date.now() + 1500), applyMethod: 'email', applyTarget: 'jobs@acme.example'});
+    const before = (await browser.get('/site-api/jobs/ending-soon')).json.job as {state: string; applyTarget: string | null};
+    expect(before).toMatchObject({state: 'active', applyTarget: 'jobs@acme.example'});
+    // A direct write skips the clear, so the next read shows whether it came from the cache.
+    await db.job.updateMany({where: {slug: 'ending-soon'}, data: {title: 'changed directly'}});
+    await new Promise(resolve => setTimeout(resolve, 1600));
+    const after = (await browser.get('/site-api/jobs/ending-soon')).json.job as {title: string; state: string; applyTarget: string | null};
+    expect(after).toMatchObject({title: 'ending soon', state: 'expired', applyTarget: null});
+    // Once cleared (as every job route does after a write), the page is read again.
+    await forgetPublicLists();
+    expect(((await browser.get('/site-api/jobs/ending-soon')).json.job as {title: string}).title).toBe('changed directly');
   });
 
   it('a company gets a public page only once one of its jobs has been live', async () => {

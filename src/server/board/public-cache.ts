@@ -8,6 +8,9 @@ import {cache} from '../../platform/cache';
  * expires, a featured period ends), so their TTLs are short; the writes we control also clear them.
  *
  *   board:home:<any|remote|onsite|hybrid>   GET /board/home            3 min
+ *   board:home:jobs:<scope>:<sort>:<hour>  GET /jobs, the plain first page   3 min
+ *   board:home:featured-count:<scope>      the board's featured count on a filtered page 1   3 min
+ *   board:home:job:<scope>:<slug>          GET /jobs/:slug, the job page's rows (expiry applied per request)   10 min
  *   stats:category-counts:<all|company-N>  the categories' open-job counts   10 min
  *   seo:sitemap                            GET /jobs/sitemap          1 h
  *   board:tiers                            GET /board/tiers (/pricing/)  1 day (every admin write clears it)
