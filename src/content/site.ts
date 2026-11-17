@@ -34,13 +34,15 @@ export interface NavItem {
   marketplaceOnly?: true;
   /** The footer's wording, when it differs from the header's. */
   footerLabel?: string;
+  /** Shown only to a signed-in job seeker (`data-applicant-only`, unhidden by src/lib/account-fill.ts). */
+  applicantOnly?: true;
 }
 
 /** Top navigation (header, mobile menu; the footer's "Job seekers" column with `footerLabel`). Every href is a page of THIS site: plain links. */
 export const NAV: NavItem[] = [
   {label: 'Find jobs', footerLabel: 'Browse jobs', href: '/jobs/', prefetch: false},
   {label: 'Companies', href: '/companies/', prefetch: false, marketplaceOnly: true},
-  {label: 'Saved jobs', href: '/saved/'},
+  {label: 'Saved jobs', href: '/saved/', applicantOnly: true},
   {label: 'Pricing', href: '/pricing/', prefetch: false, marketplaceOnly: true},
 ];
 
