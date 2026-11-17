@@ -27,10 +27,14 @@ export const applicantProfileQuery = queryOptions({
   staleTime: 60_000,
 });
 
-/** After a change: the profile, and `me` (its account kind decides the sidebar). */
+/**
+ * After a change: the profile, and `me` only when the account kind changed (it decides the sidebar).
+ * A details save or a new photo / CV leaves the kind as it was: no `/me` refetch for those.
+ */
 export function storeProfile(queryClient: QueryClient, answer: ApplicantProfileAnswer) {
+  const before = queryClient.getQueryData(applicantProfileQuery.queryKey)?.kind;
   queryClient.setQueryData(applicantProfileQuery.queryKey, answer);
-  void queryClient.invalidateQueries({queryKey: meQuery.queryKey});
+  if (before !== answer.kind) void queryClient.invalidateQueries({queryKey: meQuery.queryKey});
 }
 
 export const startApplicant = () => read<ApplicantProfileAnswer>(siteFetch('/site-api/applicant-profile/start', json('POST')));

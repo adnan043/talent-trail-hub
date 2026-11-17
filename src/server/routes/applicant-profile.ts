@@ -1,5 +1,6 @@
 import {type Context, Hono} from 'hono';
 import type {ContentfulStatusCode} from 'hono/utils/http-status';
+import {createMiddleware} from 'hono/factory';
 import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
@@ -40,7 +41,18 @@ import {trackProfileUpload} from '../board/applicant-profile';
  *   GET    /photo               the own photo (a redirect to a 5-minute link)
  *   GET    /resume              the own CV, downloaded
  */
-type Env = {Variables: {viewer: Viewer; db: PrismaClient}};
+type Env = {Variables: {viewer: Viewer; db: PrismaClient; cacheControl?: string}};
+
+/**
+ * `withViewer` stamps `private, no-store` on every answer AFTER the handler. Registered before it,
+ * this puts back a header a handler chose on purpose (`c.set('cacheControl', …)`): only the own
+ * photo's versioned redirect does. Every other answer keeps `no-store`.
+ */
+const keepChosenCacheControl = createMiddleware<Env>(async (c, next) => {
+  await next();
+  const chosen = c.get('cacheControl');
+  if (chosen) c.header('Cache-Control', chosen);
+});
 
 const invalid = (c: Context, fields: Record<string, string>) =>
   c.json({...problem('invalid_input', Object.values(fields)[0] ?? 'Check the highlighted fields.'), fields}, 422);
@@ -201,13 +213,14 @@ function fileRoutes(kind: ProfileFileKind) {
       // keep that redirect for 4 minutes (the link lives 5), so the sidebar photo on every dashboard
       // page is not a Worker call and a storage link each time. A new photo is a new `v`.
       const versioned = kind === 'photo' && c.req.query('v') === fileId.slice(-8);
-      c.header('Cache-Control', versioned ? 'private, max-age=240' : 'private, no-store');
+      c.header('Cache-Control', 'private, no-store');
+      if (versioned) c.set('cacheControl', 'private, max-age=240');
       return c.redirect(link.data.url, 302);
     });
 }
 
 export const applicantProfileRoutes = new Hono<Env>()
-  .use('*', withViewer, requireAuth, requireVerified, withDb)
+  .use('*', keepChosenCacheControl, withViewer, requireAuth, requireVerified, withDb)
 
   .get('/', async c => c.json(await answer(c)))
 
@@ -236,12 +249,16 @@ export const applicantProfileRoutes = new Hono<Env>()
   .put('/', detailsBody, async c => {
     const db = c.var.db;
     const d = c.req.valid('json');
-    const {count} = await db.applicantProfile.updateMany({
-      where: {userId: c.var.viewer.id!},
+    const viewer = c.var.viewer;
+    // The saved row comes back from the write itself: no second read. A profile row makes the
+    // account an applicant account, so that is its kind.
+    const [row] = await db.applicantProfile.updateManyAndReturn({
+      where: {userId: viewer.id!},
       data: {...d, dateOfBirth: d.dateOfBirth ? new Date(`${d.dateOfBirth}T00:00:00Z`) : null},
+      select: profileSelect,
     });
-    if (!count) return c.json(NOT_APPLICANT, 409);
-    return c.json(await answer(c));
+    if (!row) return c.json(NOT_APPLICANT, 409);
+    return c.json<ApplicantProfileAnswer>({kind: 'applicant', profile: toProfileView(row, {name: viewer.name ?? '', email: viewer.email ?? ''})});
   })
 
   .route('/photo', fileRoutes('photo'))

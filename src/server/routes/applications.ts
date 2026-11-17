@@ -50,9 +50,6 @@ export async function overLimit(db: Db, kind: Kind, ipHash: string, limit: numbe
   return recent.length > limit;
 }
 
-/** The profile lost its CV between the check and the transaction. */
-class ProfileChanged extends Error {}
-
 const noIp = (c: Context) => c.json(problem('auth_not_configured', 'Applying is not set up on this site yet.'), 503);
 
 /** The application form: a cover note and the consent. Everything else comes from the profile. */
@@ -90,8 +87,17 @@ export const applicationRoutes = new Hono<Env>()
     }
 
     const slug = slugOf(c);
-    const [settings, profile] = await Promise.all([
-      cachedBoardSettings(db),
+    // One parallel trip: the profile, and the job (by its unique slug, once the cached settings are in).
+    const [{settings, job}, profile] = await Promise.all([
+      cachedBoardSettings(db).then(async settings => ({
+        settings,
+        job: slug
+          ? await db.job.findFirst({
+              where: {...publicJobWhere(settings), slug},
+              select: {id: true, title: true, slug: true, applyMethod: true, company: {select: {name: true, ownerUserId: true}}},
+            })
+          : null,
+      })),
       db.applicantProfile.findUnique({where: {userId: viewer.id!}, select: applyProfileSelect}),
     ]);
     if (!profile) return c.json(problem('not_applicant', 'Set up your job seeker profile to apply.'), 409);
@@ -99,51 +105,38 @@ export const applicationRoutes = new Hono<Env>()
     if (missing.length) {
       return c.json({...problem('profile_incomplete', `Add ${missing.map(m => REQUIREMENT_LABELS[m]).join(', ')} to your profile first.`), missing}, 422);
     }
-    const job = slug
-      ? await db.job.findFirst({
-          where: {...publicJobWhere(settings), slug},
-          select: {id: true, title: true, slug: true, applyMethod: true, company: {select: {name: true, ownerUserId: true}}},
-        })
-      : null;
     if (!job) return c.json(problem('not_found', 'This job is no longer taking applications.'), 404);
     if (job.applyMethod !== 'onsite') return c.json(problem('apply_elsewhere', 'This job takes applications on the company’s own site.'), 400);
     if (job.company.ownerUserId === viewer.id) return c.json(problem('own_job', 'This is your company’s job: you cannot apply to it.'), 403);
 
     const name = (viewer.name ?? '').trim().slice(0, LIMITS.applicantName) || email;
-    try {
-      await db.$transaction(async tx => {
-        // The CV as it is NOW, the profile row locked: a CV replaced meanwhile (`/resume/complete`
-        // waits on this lock) never deletes the file this application points at.
-        const [cv] = await tx.$queryRaw<{resume_file_id: string | null; resume_file_name: string | null}[]>`
-          SELECT "resume_file_id", "resume_file_name" FROM "applicant_profiles" WHERE "user_id" = ${viewer.id!} FOR UPDATE`;
-        if (!cv?.resume_file_id) throw new ProfileChanged();
-        await tx.application.create({
-          data: {
-            jobId: job.id,
-            applicantUserId: viewer.id!,
-            name,
-            email,
-            phone: profile.phone,
-            profileUrl: profile.profileUrl,
-            coverNote: input.coverNote,
-            // The profile's CV, shared: the file is deleted only once nothing uses it (applicant-profile.ts).
-            resumeFileId: cv.resume_file_id,
-            resumeFileName: cv.resume_file_name,
-            consentAt: new Date(),
-            consentText: DEFAULT_CONSENT_TEXT,
-            ipHash,
-          },
-          select: {id: true},
-        });
-        // Raw so the counter leaves `updated_at` (the sitemap's lastmod) alone, like the view and click counters.
-        await tx.$executeRaw`UPDATE "jobs" SET "application_count" = "application_count" + 1 WHERE "id" = ${job.id}`;
-      });
-    } catch (err) {
-      if (err instanceof ProfileChanged) return c.json(problem('profile_incomplete', 'Add your CV to your profile first.'), 422);
-      // The address is the session's own, so saying so tells nobody anything new.
-      if ((err as {code?: string}).code === 'P2002') return c.json(problem('already_applied', 'You have already applied for this job.'), 409);
-      throw err;
-    }
+    // ONE statement, so one implicit transaction and one round trip (an interactive transaction
+    // opens its own connection and takes five). It locks the profile row and reads the CV as it is
+    // NOW: a CV replaced meanwhile (`/resume/complete` waits on this lock) never deletes the file this
+    // application points at. A second application from this account or address inserts nothing
+    // (ON CONFLICT on the per-job unique keys) and leaves the counter alone. The counter is raw so
+    // it leaves `updated_at` (the sitemap's lastmod) alone, like the view and click counters.
+    const [result] = await db.$queryRaw<{has_cv: boolean; inserted: boolean}[]>`
+      WITH cv AS (
+        SELECT "resume_file_id", "resume_file_name" FROM "applicant_profiles"
+        WHERE "user_id" = ${viewer.id!}::int AND "resume_file_id" IS NOT NULL
+        FOR UPDATE
+      ), ins AS (
+        INSERT INTO "applications" ("job_id", "applicant_user_id", "name", "email", "phone", "profile_url", "cover_note",
+          "resume_file_id", "resume_file_name", "consent_at", "consent_text", "ip_hash", "updated_at")
+        SELECT ${job.id}::int, ${viewer.id!}::int, ${name}::text, ${email}::text, ${profile.phone}::text, ${profile.profileUrl}::text,
+          ${input.coverNote}::text, cv."resume_file_id", cv."resume_file_name", now(), ${DEFAULT_CONSENT_TEXT}::text, ${ipHash}::text, now()
+        FROM cv
+        ON CONFLICT DO NOTHING
+        RETURNING "id"
+      ), counted AS (
+        UPDATE "jobs" SET "application_count" = "application_count" + 1
+        WHERE "id" = ${job.id}::int AND EXISTS (SELECT 1 FROM ins)
+      )
+      SELECT EXISTS (SELECT 1 FROM cv) AS "has_cv", EXISTS (SELECT 1 FROM ins) AS "inserted"`;
+    if (!result?.has_cv) return c.json(problem('profile_incomplete', 'Add your CV to your profile first.'), 422);
+    // The address is the session's own, so saying so tells nobody anything new.
+    if (!result.inserted) return c.json(problem('already_applied', 'You have already applied for this job.'), 409);
 
     // The confirmation and the employer's alert go AFTER the answer (a failed send is logged, never fails this).
     const candidate = {name, email};
