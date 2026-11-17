@@ -4,7 +4,7 @@ import {} from '../../src/platform/auth/code-routes';
 import {fromBase32, stepAt, totpCode} from '../../src/platform/auth/two-factor';
 import {app} from '../../src/server/app';
 import {env} from './support/cloudflare-workers';
-import {Browser, codeFrom, configureEnv, DATABASE_URL, db, emails, OWNER_ID, ownerTickets, resetDatabase, signedIn} from './support/harness';
+import {Browser, codeFrom, configureEnv, DATABASE_URL, db, emails, OWNER_ID, ownerTickets, RawBody, resetDatabase, signedIn} from './support/harness';
 
 /**
  * Sign-in with an emailed 6-digit code, no password (docs/agent/auth.md). It never makes an owner
@@ -155,5 +155,29 @@ describe.skipIf(!DATABASE_URL)('code sign-in and the admin (integration, real Po
     expect(await db.loginAttempt.count()).toBe(before);
     // A real address still goes through.
     expect((await codeSignIn(new Browser(app, '198.51.100.78'), 'ann@example.test')).status).toBe(200);
+  });
+
+  it('the limit-key guard holds for every JSON content type the routes accept, not only `application/json`', async () => {
+    await signedIn(app, 'ann@example.test');
+    const before = await db.loginAttempt.count();
+    // The routes' JSON validator parses `application/<x>+json` in any case: so must the guard.
+    for (const type of ['application/x+json', 'application/vnd.api+json', 'APPLICATION/JSON; charset=utf-8', 'text/plain']) {
+      for (const email of ['ann@example.test|device', 'signup:ann@example.test', 'unconfirmed:ann@example.test']) {
+        const stranger = new Browser(app, '198.51.100.79');
+        const verify = await stranger.request('POST', '/site-api/auth/code/verify', new RawBody(JSON.stringify({email, code: '000000'})), {'content-type': type});
+        expect(verify.status, `${type} ${email}`).toBe(422);
+      }
+    }
+    expect(await db.loginAttempt.count()).toBe(before);
+  });
+
+  it('a body that is not JSON is a 400, never a 500', async () => {
+    const stranger = new Browser(app, '198.51.100.80');
+    const auth = await stranger.request('POST', '/site-api/auth/code/verify', new RawBody('{"email": "ann@'));
+    expect(auth.status).toBe(400);
+    // A Site API route whose validator runs before any sign-in check.
+    const apply = await stranger.request('POST', '/site-api/applications/jobs/any-job/apply', new RawBody('{oops'));
+    expect(apply.status).toBe(400);
+    expect(apply.json).toMatchObject({error: 'invalid_input'});
   });
 });

@@ -13,11 +13,17 @@ import {problem} from '../platform/guards';
  * No real address needs `|` or `:` (`:` only inside a quoted local part, which the kit never
  * accepts anyway), so such an address gets the same answer as any other malformed one.
  * Remove this once the template keeps each key in its own hash domain.
+ *
+ * EVERY write's body is read, whatever its `Content-Type` says: the routes' JSON validator also
+ * parses `application/<anything>+json` (and any letter case), so a guard that looked only for
+ * `application/json` was walked around with `Content-Type: application/x+json`. A body that is not
+ * JSON passes here untouched; the route then answers it as it always does.
  */
 const RESERVED = /[|:]/;
+const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export const authEmailGuard = createMiddleware(async (c, next) => {
-  if (c.req.method === 'POST' && (c.req.header('content-type') ?? '').toLowerCase().includes('application/json')) {
+  if (!SAFE.has(c.req.method)) {
     // Hono keeps the parsed body, so the route's own validator reads the same value after this.
     const body = (await c.req.json().catch(() => null)) as unknown;
     const email = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>).email : undefined;

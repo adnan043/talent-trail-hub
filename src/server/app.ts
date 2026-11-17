@@ -1,5 +1,6 @@
 import {Hono} from 'hono';
 import {bodyLimit} from 'hono/body-limit';
+import {HTTPException} from 'hono/http-exception';
 
 import {isPreview} from '../platform/api';
 import {adminRoutes, authRoutes, getAccess, getViewer} from '../platform/auth';
@@ -128,6 +129,11 @@ export const app = new Hono()
 
   .notFound(c => c.json(problem('not_found', 'No such Site API route.'), 404))
   .onError((err, c) => {
+    // A request Hono itself refused (a JSON body that does not parse): the CLIENT's mistake, a 4xx
+    // like any other bad input. Never a 500 (an error alert) that anyone can trigger at will.
+    if (err instanceof HTTPException && err.status >= 400 && err.status < 500) {
+      return c.json(problem('invalid_input', 'That request could not be read.'), err.status as 400);
+    }
     // Never the message: a Prisma error's message prints the call's arguments (an applicant's
     // name, email, phone). The error's name and code are enough to find it.
     const code = (err as {code?: unknown}).code;
