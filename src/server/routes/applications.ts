@@ -3,7 +3,7 @@ import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
 import {DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
-import {type CanApplyAnswer, missingToApply, REQUIREMENT_LABELS} from '../../lib/types-profile';
+import {type CanApplyAnswer, missingToApply, missingLabel} from '../../lib/types-profile';
 import {normalizeEmail} from '../../platform/auth';
 import {can, problem, requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
@@ -82,9 +82,6 @@ export const applicationRoutes = new Hono<Env>()
     if (!email) return c.json(problem('no_email', 'This account has no email address to apply with.'), 409);
     const ipHash = await ipHashOf(c);
     if (!ipHash) return noIp(c);
-    if (await overLimit(db, 'apply', ipHash, LIMITS.appliesPerIpHour)) {
-      return c.json(problem('rate_limited', 'Too many applications from here in the last hour. Try again later.'), 429);
-    }
 
     const slug = slugOf(c);
     // One parallel trip: the profile, and the job (by its unique slug, once the cached settings are in).
@@ -103,11 +100,16 @@ export const applicationRoutes = new Hono<Env>()
     if (!profile) return c.json(problem('not_applicant', 'Set up your job seeker profile to apply.'), 409);
     const missing = missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId});
     if (missing.length) {
-      return c.json({...problem('profile_incomplete', `Add ${missing.map(m => REQUIREMENT_LABELS[m]).join(', ')} to your profile first.`), missing}, 422);
+      return c.json({...problem('profile_incomplete', `Add ${missingLabel(missing)} to your profile first.`), missing}, 422);
     }
     if (!job) return c.json(problem('not_found', 'This job is no longer taking applications.'), 404);
     if (job.applyMethod !== 'onsite') return c.json(problem('apply_elsewhere', 'This job takes applications on the company’s own site.'), 400);
     if (job.company.ownerUserId === viewer.id) return c.json(problem('own_job', 'This is your company’s job: you cannot apply to it.'), 403);
+    // Counted only now: a refusal above (profile not finished, job closed, own job) sends nothing,
+    // so it never uses up the hour's applications of a job seeker who then fixes it and applies.
+    if (await overLimit(db, 'apply', ipHash, LIMITS.appliesPerIpHour)) {
+      return c.json(problem('rate_limited', 'Too many applications from here in the last hour. Try again later.'), 429);
+    }
 
     const name = (viewer.name ?? '').trim().slice(0, LIMITS.applicantName) || email;
     // ONE statement, so one implicit transaction and one round trip (an interactive transaction

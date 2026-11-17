@@ -10,7 +10,12 @@ import {featuredWhere, publicJobWhere} from './public';
  * featured pin cap (≤ LIMITS.featuredPinCap featured matches pinned on page 1, rotated per UTC hour).
  */
 
-const insensitive = (value: string) => ({contains: value, mode: 'insensitive' as const});
+/**
+ * `contains` becomes `ILIKE '%value%'` and Prisma does not escape the value: a typed `%` or `_`
+ * would be a wildcard ("%" found every job). Escaped with Postgres' default LIKE escape, `\`.
+ */
+export const likeLiteral = (value: string) => value.replace(/[\\%_]/g, '\\$&');
+const insensitive = (value: string) => ({contains: likeLiteral(value), mode: 'insensitive' as const});
 const MAX_TERMS = 5;
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;

@@ -14,7 +14,7 @@ import {
   PROFILE_LIMITS,
   profileCompletion,
   type ProfileDetails,
-  REQUIREMENT_LABELS,
+  missingLabel,
 } from '../../lib/types-profile';
 import {RESUME_ACCEPT} from '../../lib/types-apply';
 import {AUTH_RULES, type Rule} from '../../lib/rules';
@@ -127,7 +127,7 @@ export function Profile() {
 
       {missing.length > 0 && (
         <Notice tone="warning" title="Before you can apply">
-          Add {missing.map(m => REQUIREMENT_LABELS[m]).join(', ')}. Everything else is optional, but a fuller profile stands out.
+          Add {missingLabel(missing)}. Everything else is optional, but a fuller profile stands out.
         </Notice>
       )}
 

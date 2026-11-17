@@ -7,6 +7,7 @@ import type {MyApplicationRow} from '../../lib/types-apply';
 import type {Viewer} from '../../lib/types';
 import {requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
 import {idOf, isResumeExpired} from '../board/applicants';
+import {likeLiteral} from '../board/public-search';
 
 /**
  * The candidate's own applications (mounted at `/site-api/my-applications`).
@@ -82,7 +83,7 @@ export const myApplicationRoutes = new Hono<Env>().get('/', listQuery, withViewe
     AND: [mine],
     ...(status ? {status} : {}),
     ...(from || to ? {createdAt: {...(from ? {gte: from} : {}), ...(to ? {lt: to} : {})}} : {}),
-    ...(q ? {OR: [{job: {title: {contains: q, mode: 'insensitive' as const}}}, {job: {company: {name: {contains: q, mode: 'insensitive' as const}}}}]} : {}),
+    ...(q ? {OR: [{job: {title: {contains: likeLiteral(q), mode: 'insensitive' as const}}}, {job: {company: {name: {contains: likeLiteral(q), mode: 'insensitive' as const}}}}]} : {}),
   };
   const [rows, grouped] = await Promise.all([
     c.var.db.application.findMany({
