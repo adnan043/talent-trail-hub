@@ -209,6 +209,7 @@ function purgeMessage(s: Record<string, number>): string {
   const done: string[] = [];
   if (s.resumesPurged) done.push(n(s.resumesPurged, 'old resume deleted', 'old resumes deleted'));
   if (s.uploadsSwept) done.push(n(s.uploadsSwept, 'unused upload removed', 'unused uploads removed'));
+  if (s.profilesSwept) done.push(n(s.profilesSwept, 'profile of a deleted account removed', 'profiles of deleted accounts removed'));
   if (s.attemptsSwept) done.push(n(s.attemptsSwept, 'old rate-limit record cleared', 'old rate-limit records cleared'));
   const failed = (s.resumesFailed ?? 0) + (s.uploadsFailed ?? 0);
   let msg = done.length ? `Clean-up done: ${done.join(', ')}.` : 'Clean-up done: nothing was due.';

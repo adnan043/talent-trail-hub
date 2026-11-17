@@ -4,8 +4,7 @@ import {config} from '../platform/config';
 import {getDb} from '../platform/db';
 import {ACCESS_COOKIE, cookieName, readCookie} from '../platform/auth/cookies';
 import {verifyAccessToken} from '../platform/auth/jwt';
-import {deleteFile} from './files';
-import {dropProfileFile} from './board/applicant-profile';
+import {eraseApplicantProfile} from './board/applicant-profile';
 
 /**
  * Deleting an account deletes its job seeker profile too: the phone, birth date, address, photo
@@ -13,6 +12,8 @@ import {dropProfileFile} from './board/applicant-profile';
  * (src/platform/auth/) deletes the `users` row only, so this runs on `POST /auth/delete-account`,
  * AFTER the kit has answered 200. The applications already sent stay with the employers, as
  * before (their CV file is kept until the retention purge, while an application still uses it).
+ * The files are handed to the nightly purge in the same transaction, and a profile this hook
+ * misses (the account is gone, the profile is not) is swept there too (`sweepOrphanProfiles`).
  */
 export const dropApplicantProfileOnDelete = createMiddleware(async (c, next) => {
   // Who is asking, read BEFORE the kit clears the session.
@@ -25,12 +26,8 @@ export const dropApplicantProfileOnDelete = createMiddleware(async (c, next) => 
   if (c.req.method !== 'POST' || c.res.status !== 200 || !db || !Number.isSafeInteger(userId)) return;
   // The account is already gone: nothing here may turn the kit's 200 into an error.
   try {
-    const gone = await db.applicantProfile.findUnique({where: {userId}, select: {photoFileId: true, resumeFileId: true}});
-    // deleteMany: a privacy erase or a second request may have removed the row meanwhile.
-    if (!gone || !(await db.applicantProfile.deleteMany({where: {userId}})).count) return;
-    // Best effort: a file left behind is private and unreachable (nothing points at it any more).
-    if (gone.photoFileId) await deleteFile(c.req.url, gone.photoFileId).catch(() => undefined);
-    await dropProfileFile(db, c.req.url, gone.resumeFileId);
+    // A privacy erase or a second request may have removed the row meanwhile: nothing to do then.
+    await eraseApplicantProfile(db, c.req.url, userId);
   } catch (err) {
     console.warn(`applicant profile not removed on account delete: ${(err as Error).name}`);
   }

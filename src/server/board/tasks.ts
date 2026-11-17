@@ -1,6 +1,6 @@
 import type {PrismaClient} from '../../generated/prisma/client';
 import {RESUME_RETENTION_DAYS} from '../../lib/board';
-import {fileInUse} from './applicant-profile';
+import {fileInUse, sweepOrphanProfiles} from './applicant-profile';
 import {SiteKeyMissing} from '../../platform/api';
 import {deleteFile} from '../files';
 import {sendBoardEmail} from './email';
@@ -181,8 +181,13 @@ export async function runPurge(db: PrismaClient, requestUrl: string, now = new D
   const failedUploads: number[] = [];
   let resumesPurged = 0;
   let uploadsSwept = 0;
+  let profilesSwept = 0;
 
   try {
+    // 0. Job seeker profiles of deleted accounts (the delete hook missed them): before step 2,
+    //    which then deletes any of their files storage refused just now.
+    profilesSwept = await sweepOrphanProfiles(db, requestUrl, deadline);
+
     // 1. Resumes past retention: delete the file FIRST, then clear the fields only if they still
     //    point at it (a failed delete is retried next run; a second run finds nothing).
     for (let batch = 0; batch < MAX_BATCHES && Date.now() < deadline; batch++) {
@@ -251,6 +256,6 @@ export async function runPurge(db: PrismaClient, requestUrl: string, now = new D
   }
 
   return {
-    summary: {resumesPurged, resumesFailed: failedApps.length, uploadsSwept, uploadsFailed: failedUploads.length, attemptsSwept},
+    summary: {resumesPurged, resumesFailed: failedApps.length, uploadsSwept, uploadsFailed: failedUploads.length, attemptsSwept, profilesSwept},
   };
 }
