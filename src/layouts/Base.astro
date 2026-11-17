@@ -326,6 +326,7 @@ const structured = indexable
       import {fillAccount} from '../lib/account-fill';
       import {showSavedCount} from '../lib/saved-count';
       import {installPageProgress} from '../lib/page-progress';
+      import {bindMenus} from '../lib/menu-button';
 
       installPageProgress();
       keepBrandStyleAllowed();
@@ -342,6 +343,8 @@ const structured = indexable
 
       // Each page, the first load and every client navigation (ClientRouter): the body is new.
       document.addEventListener('astro:page-load', () => {
+        // The header's account menu (click, arrow keys, Esc, click outside).
+        bindMenus();
         // Back from the payment provider INSIDE the payment window: tell the checkout page, close.
         // Its code (checkout session, idempotency) loads only on such a return (`?checkout=…`).
         if (new URLSearchParams(window.location.search).has('checkout')) {
