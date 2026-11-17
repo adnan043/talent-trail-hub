@@ -1,13 +1,16 @@
 /**
  * BROWSER: fills the header's account menu and the mobile menu for a signed-in visitor: the email
  * (prerendered pages know no visitor) and the Admin item (`[data-account-admin]`, shown only when
- * `/site-api/me` grants an admin ability). `textContent` only. One `/me` read per page load,
+ * `/site-api/me` grants an admin ability), and the job seeker's links (`[data-applicant-only]`, e.g.
+ * Saved jobs, My applications: shown only to an account with a job seeker profile) or the employer's
+ * links (`[data-employer-only]`: Your jobs, Company profile, Billing; every other account). `textContent` only. One `/me` read per page load,
  * kept in memory across client navigations (a sign-out reloads the page).
  */
 import {siteFetch} from '../platform/browser';
 import type {Abilities, Viewer} from './types';
+import type {AccountKind} from './types-profile';
 
-type Me = {viewer: Viewer; abilities?: Partial<Abilities>};
+type Me = {viewer: Viewer; abilities?: Partial<Abilities>; account?: {kind?: AccountKind}};
 
 let me: Promise<Me | null> | null = null;
 
@@ -31,4 +34,7 @@ export async function fillAccount(): Promise<void> {
   }
   const admin = Boolean(answer.abilities?.manageJobs || answer.abilities?.moderateJobs);
   document.querySelectorAll<HTMLElement>('[data-account-admin]').forEach(el => (el.hidden = !admin));
+  const applicant = answer.account?.kind === 'applicant';
+  document.querySelectorAll<HTMLElement>('[data-applicant-only]').forEach(el => (el.hidden = !applicant));
+  document.querySelectorAll<HTMLElement>('[data-employer-only]').forEach(el => (el.hidden = applicant));
 }

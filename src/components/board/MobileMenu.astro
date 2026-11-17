@@ -4,7 +4,7 @@
  * side sheet (a native modal <dialog>: focus stays inside, the page behind is inert). Closes on
  * Esc, the close button, a click on the scrim or a link. No inline handlers (CSP).
  */
-import {EMPLOYER_LINKS, type NavItem} from '../../content/site';
+import {APPLICANT_LINKS, EMPLOYER_LINKS, type NavItem} from '../../content/site';
 import type {Viewer} from '../../lib/types';
 
 interface Props {
@@ -45,7 +45,10 @@ const email = !hydrate && user ? (viewer.email ?? viewer.name ?? '') : '';
   <nav class="mobile-sheet-nav" aria-label="Main">
     <ul>
       {nav.map(item => (
-        <li data-marketplace-only={item.marketplaceOnly ? '' : undefined} hidden={item.marketplaceOnly && single ? true : undefined}>
+        <li
+          data-marketplace-only={item.marketplaceOnly ? '' : undefined}
+          data-applicant-only={item.applicantOnly ? '' : undefined}
+          hidden={(item.marketplaceOnly && single) || item.applicantOnly ? true : undefined}>
           <a href={item.href} class:list={{active: active(item.href)}} aria-current={active(item.href) ? 'page' : undefined}>
             {item.label}
             {item.href === '/saved/' && <span class="nav-count" data-saved-count aria-hidden="true" hidden />}
@@ -56,8 +59,13 @@ const email = !hydrate && user ? (viewer.email ?? viewer.name ?? '') : '';
       <li data-account-admin hidden>
         <a href="/dashboard/">Admin</a>
       </li>
+      {APPLICANT_LINKS.map(link => (
+        <li data-applicant-only hidden>
+          <a href={link.href}>{link.label}</a>
+        </li>
+      ))}
       {EMPLOYER_LINKS.map(link => (
-        <li data-user-only data-marketplace-only hidden={!user || single ? true : undefined}>
+        <li data-employer-only data-marketplace-only hidden>
           <a href={link.href}>{link.label}</a>
         </li>
       ))}
