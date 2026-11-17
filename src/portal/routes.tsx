@@ -117,7 +117,7 @@ export function RouteError({error}: ErrorComponentProps) {
 }
 
 /** `employer`: hidden in single-company mode (the employer area is 404 there). */
-/** `hideForAbility`: hidden for visitors who have it (the admin sees the board's orders instead). */
+/** `hideForAbility`: hidden for visitors who have it (the admin has the board's own screens instead). */
 /** `badge`: a small component beside the label (a waiting count); rendered only when the item shows. */
 export type NavItem = {to: string; label: string; icon: IconName; exact?: boolean; ability?: keyof Abilities; employer?: boolean; hideForAbility?: keyof Abilities; badge?: ComponentType};
 
