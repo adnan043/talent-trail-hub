@@ -1,0 +1,1238 @@
+/*
+ * One job's page in the "Vela" design (docs: ~/Downloads/Job detail-html). Builds on home-vela.css
+ * (tokens `--v-*`, `.v-home` base, `.v-row-icon.cat-*` tiles); every value here is the design's.
+ * No style attributes (CSP). The header and footer are the site chrome (site-chrome.css), not
+ * styled here. The apply band styles ApplySection.astro (`.vd-apply-band`), which only this page uses.
+ */
+
+/* ---------------------------------------------------------------- hero */
+.vd-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--v-border-subtle);
+  background:
+    radial-gradient(38% 60% at 12% 18%, rgba(129, 140, 248, 0.22), transparent 70%),
+    radial-gradient(34% 55% at 88% 12%, rgba(99, 102, 241, 0.16), transparent 70%),
+    radial-gradient(40% 60% at 82% 92%, rgba(165, 180, 252, 0.16), transparent 70%),
+    radial-gradient(42% 60% at 18% 96%, rgba(167, 139, 250, 0.17), transparent 70%),
+    linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+}
+
+.vd-hero-inner {
+  position: relative;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 32px 40px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v-home .vd-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 999px;
+  background: var(--v-surface-card);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--v-text-body);
+  text-decoration: none;
+  transition: all 160ms ease;
+}
+
+.v-home .vd-back:hover {
+  border-color: #a3acfc;
+  color: #4338ca;
+  background: #f7f8ff;
+}
+
+.vd-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.vd-head-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
+
+.vd-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v-home .vd-company-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.v-home .vd-company {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--v-text-body);
+  text-decoration: none;
+}
+
+.v-home .vd-company:hover {
+  color: #4338ca;
+}
+
+.vd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef1ff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: #4338ca;
+}
+
+.vd-badge-muted {
+  background: var(--v-surface-sunken);
+  color: var(--v-text-muted);
+}
+
+.v-home .vd-title {
+  margin: 0;
+  font-size: clamp(34px, 4.2vw, 52px);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  color: var(--v-text-strong);
+  overflow-wrap: anywhere;
+}
+
+/* Save (job seekers only) + Share. */
+.vd-head-actions {
+  position: relative;
+  display: flex;
+  gap: 10px;
+}
+
+.v-home .vd-head-actions .save-job.button,
+.vd-ib {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid var(--v-border-default);
+  background: var(--v-surface-card);
+  color: var(--v-text-body);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.v-home .vd-head-actions .save-job.button:hover,
+.vd-ib:hover,
+.vd-share[open] > .vd-ib {
+  border-color: #a3acfc;
+  color: #4338ca;
+  background: #eef1ff;
+}
+
+.v-home .vd-head-actions .save-job.button[aria-pressed='true'] {
+  border-color: #c6cdff;
+  color: #4f46e5;
+  background: #eef1ff;
+}
+
+.vd-head-actions .save-job-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.vd-ib-icon {
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
+
+.vd-share {
+  position: relative;
+}
+
+.vd-share > summary {
+  list-style: none;
+}
+
+.vd-share > summary::-webkit-details-marker {
+  display: none;
+}
+
+.vd-share-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 14px;
+  background: var(--v-surface-card);
+  box-shadow: var(--v-shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.v-home .vd-share-menu > a,
+.vd-share-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--v-text-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.vd-share-menu > button[hidden] {
+  display: none;
+}
+
+.v-home .vd-share-menu > a:hover,
+.vd-share-menu > button:hover {
+  background: var(--v-surface-hover);
+  color: var(--v-text-strong);
+}
+
+.vd-share-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--v-border-subtle);
+}
+
+.v-home .vd-copy-status {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--v-text-muted);
+  white-space: nowrap;
+}
+
+/* Key facts under the title. */
+.vd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  color: var(--v-text-body);
+}
+
+.vd-chip svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.vd-chip-cat svg {
+  stroke-width: 1.8;
+}
+
+.vd-chip-plain {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font-family: var(--v-figtree);
+  color: var(--v-text-muted);
+}
+
+/* ---------------------------------------------------------------- body */
+.vd-body {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 32px 72px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.vd-main {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.vd-aside {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Expired / closed. */
+.vd-alert {
+  flex: 1 1 100%;
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid #fde68a;
+  border-radius: 16px;
+  background: #fffbeb;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--v-text-body);
+}
+
+.vd-alert > svg {
+  flex: none;
+  margin-top: 1px;
+  color: #b45309;
+}
+
+.v-home .vd-alert-title {
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.vd-card {
+  padding: 36px 40px;
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 20px;
+}
+
+.v-home .vd-link {
+  color: #4338ca;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.v-home .vd-link:hover {
+  color: #4338ca;
+  text-decoration: underline;
+}
+
+/* The description (the employer's rich text). */
+.v-home .vd-prose h2,
+.v-home .vd-rich :where(h2, h3, h4) {
+  margin: 0 0 10px;
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--v-text-strong);
+}
+
+.vd-rich {
+  overflow-wrap: anywhere;
+}
+
+.v-home .vd-rich > * {
+  margin: 0;
+}
+
+.v-home .vd-rich > * + * {
+  margin-top: 16px;
+}
+
+.v-home .vd-rich > * + :where(h2, h3, h4) {
+  margin-top: 32px;
+}
+
+.v-home .vd-rich > :where(h2, h3, h4) + * {
+  margin-top: 10px;
+}
+
+.v-home .vd-rich :where(p) {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--v-text-body);
+}
+
+.v-home .vd-rich ul {
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v-home .vd-rich ol {
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v-home .vd-rich li {
+  position: relative;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--v-text-body);
+}
+
+.v-home .vd-rich ul > li {
+  padding-left: 26px;
+}
+
+.vd-rich ul > li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: #a3acfc;
+}
+
+.vd-rich ol > li::marker {
+  color: var(--v-text-muted);
+}
+
+.v-home .vd-rich a {
+  color: #4338ca;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v-home .vd-rich a:hover {
+  text-decoration: underline;
+}
+
+.vd-rich strong,
+.vd-rich b {
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+/* ---------------------------------------------------------------- apply band (ApplySection) */
+.v-home .vd-apply-band.apply-section {
+  position: relative;
+  overflow: hidden;
+  padding: 32px 40px;
+  border-radius: 20px;
+  background:
+    radial-gradient(60% 80% at 0% 0%, rgba(99, 102, 241, 0.45), transparent 60%),
+    radial-gradient(50% 70% at 100% 20%, rgba(167, 139, 250, 0.35), transparent 60%),
+    radial-gradient(60% 60% at 70% 110%, rgba(34, 211, 238, 0.22), transparent 60%),
+    linear-gradient(160deg, #151922 0%, #1b1a3d 100%);
+  color: #ffffff;
+  display: grid;
+  grid-template-columns: minmax(0, 460px);
+  gap: 8px;
+}
+
+.vd-apply-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 60%);
+  mask-image: linear-gradient(90deg, transparent, #000 60%);
+}
+
+/* The steps lay their lead and buttons straight into the band's grid. */
+.vd-apply-band .apply-onsite,
+.vd-apply-band .apply-step,
+.vd-apply-band .apply-out {
+  display: contents;
+}
+
+.vd-apply-band [hidden] {
+  display: none !important;
+}
+
+.v-home .vd-apply-band .vd-apply-title {
+  position: relative;
+  grid-column: 1;
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.v-home .vd-apply-band .apply-lead {
+  position: relative;
+  grid-column: 1;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #c7cbe0;
+}
+
+.vd-apply-band .apply-actions,
+.vd-apply-band .apply-out > a {
+  position: relative;
+  grid-column: 1;
+  justify-self: start;
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vd-apply-band [data-apply-loading],
+.vd-apply-band [data-apply-blocked],
+.vd-apply-band .notice {
+  position: relative;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.v-home .vd-apply-band [data-apply-loading] {
+  font-size: 15px;
+  color: #c7cbe0;
+}
+
+.v-home .vd-apply,
+.v-home .vd-apply-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 12px;
+  background: #4f46e5;
+  color: #ffffff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.v-home .vd-apply:hover {
+  background: #4338ca;
+  color: #ffffff;
+  box-shadow: 0 12px 24px -10px rgba(79, 70, 229, 0.65);
+}
+
+.vd-apply svg {
+  transition: transform 180ms ease;
+}
+
+.vd-apply:hover svg {
+  transform: translateX(3px);
+}
+
+.v-home .vd-apply-ghost {
+  padding: 0 20px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.v-home .vd-apply-ghost:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+/* A signed-in job seeker's one-click form: a light card. */
+.v-home .vd-apply-band.apply-section:has([data-apply-form]:not([hidden])) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  padding: 36px 40px;
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  color: var(--v-text-body);
+}
+
+.vd-apply-band:has([data-apply-form]:not([hidden])) .vd-apply-grid {
+  display: none;
+}
+
+.v-home .vd-apply-band:has([data-apply-form]:not([hidden])) .vd-apply-title {
+  color: var(--v-text-strong);
+}
+
+.v-home .vd-apply-band .apply-form .apply-lead {
+  color: var(--v-text-body);
+}
+
+.vd-apply-band .apply-form .actions {
+  display: flex;
+}
+
+/* ---------------------------------------------------------------- about the company */
+.vd-co-card {
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.vd-label {
+  font-family: var(--v-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v-text-muted);
+}
+
+.vd-company-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vd-company-id {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.vd-company-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.v-home .vd-company-text h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--v-text-strong);
+}
+
+.vd-company-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--v-text-muted);
+}
+
+.vd-company-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.v-home .vd-sec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--v-border-default);
+  border-radius: 11px;
+  background: var(--v-surface-card);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--v-text-strong);
+  text-decoration: none;
+  transition: all 160ms ease;
+}
+
+.v-home .vd-sec:hover {
+  border-color: #a3acfc;
+  color: #4338ca;
+  background: #f7f8ff;
+}
+
+.vd-about {
+  font-size: 15.5px;
+  line-height: 1.7;
+  color: var(--v-text-body);
+  overflow-wrap: anywhere;
+}
+
+.v-home .vd-about > * {
+  margin: 0;
+}
+
+.v-home .vd-about > * + * {
+  margin-top: 12px;
+}
+
+.v-home .vd-about ul,
+.v-home .vd-about ol {
+  padding-left: 1.25rem;
+}
+
+.vd-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 22px;
+  border-top: 1px solid var(--v-border-subtle);
+}
+
+.v-home .vd-more h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--v-text-strong);
+}
+
+/* ---------------------------------------------------------------- job rows (more at company, similar) */
+.vd-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v-home .vd-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  margin: 0 -16px;
+  border-radius: 14px;
+  text-decoration: none;
+  transition: background-color 140ms ease;
+}
+
+.v-home .vd-row:hover {
+  background: var(--v-surface-page);
+}
+
+.vd-row-icon.v-row-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.vd-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vd-row-title {
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.vd-row:hover .vd-row-title {
+  color: #4338ca;
+}
+
+.vd-row-meta {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--v-text-muted);
+}
+
+.vd-row-pay {
+  flex: none;
+  font-family: var(--v-figtree);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--v-text-strong);
+  white-space: nowrap;
+}
+
+.vd-row-go {
+  flex: none;
+  display: flex;
+  color: #4f46e5;
+  opacity: 0.35;
+  transform: translateX(-3px);
+  transition: all 160ms ease;
+}
+
+.vd-row:hover .vd-row-go {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ---------------------------------------------------------------- aside */
+.vd-pay-card {
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.vd-pay-top {
+  padding: 24px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: linear-gradient(180deg, #eef1ff 0%, #f7f8ff 55%, #ffffff 100%);
+  border-bottom: 1px solid var(--v-border-subtle);
+}
+
+.vd-pay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vd-pay-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--v-text-muted);
+}
+
+.vd-pay-value {
+  font-family: var(--v-figtree);
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--v-text-strong);
+}
+
+.vd-pay-none {
+  font-size: 22px;
+}
+
+.vd-pay-period {
+  font-size: 13.5px;
+  color: var(--v-text-muted);
+}
+
+.vd-deadline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--v-border-subtle);
+}
+
+.vd-deadline-icon {
+  display: flex;
+  color: #4f46e5;
+}
+
+.vd-deadline-text {
+  font-size: 13.5px;
+  color: var(--v-text-body);
+}
+
+.vd-deadline-text b {
+  font-family: var(--v-figtree);
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.vd-deadline-left {
+  margin-left: auto;
+  font-family: var(--v-figtree);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+.v-home .vd-apply-block {
+  height: 50px;
+  font-size: 15.5px;
+}
+
+.vd-free {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--v-text-muted);
+}
+
+.vd-free-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v-success-500);
+}
+
+.vd-facts {
+  margin: 0;
+  padding: 4px 24px 12px;
+}
+
+.vd-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(21, 25, 34, 0.06);
+  font-size: 14px;
+}
+
+.vd-facts dt {
+  color: var(--v-text-muted);
+}
+
+.vd-facts dd {
+  margin: 0;
+  font-weight: 500;
+  color: var(--v-text-strong);
+  text-align: right;
+}
+
+.vd-fig {
+  font-family: var(--v-figtree);
+}
+
+.vd-safe {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 16px;
+  background: var(--v-surface-card);
+}
+
+.vd-safe-icon {
+  flex: none;
+  display: flex;
+  color: #4f46e5;
+}
+
+.v-home .vd-safe p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--v-text-body);
+}
+
+.vd-safe b {
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+/* ---------------------------------------------------------------- similar jobs */
+.vd-similar {
+  border-top: 1px solid var(--v-border-subtle);
+  background: var(--v-surface-card);
+}
+
+.vd-similar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 56px 32px 72px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.vd-similar-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.v-home .vd-similar-head h2 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  color: var(--v-text-strong);
+}
+
+.v-home .vd-similar-head p {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--v-text-muted);
+}
+
+.v-home .vd-similar-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14.5px;
+}
+
+.vd-similar-box {
+  padding: 10px 28px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 20px;
+  background: var(--v-surface-page);
+}
+
+/* ---------------------------------------------------------------- logo tiles */
+.vd-logo {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.vd-logo-72 {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  font-size: 26px;
+}
+
+.vd-logo-56 {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  font-size: 20px;
+}
+
+.vd-logo-img {
+  background: #ffffff;
+  border: 1px solid var(--v-border-subtle);
+}
+
+.v-home .vd-logo-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The design's tile colours (the same as the companies page). */
+.vd-tile-0 { background: #4f46e5; }
+.vd-tile-1 { background: #047857; }
+.vd-tile-2 { background: #232834; }
+.vd-tile-3 { background: #0891b2; }
+.vd-tile-4 { background: #1d4ed8; }
+.vd-tile-5 { background: #b45309; }
+.vd-tile-6 { background: #ca8a04; }
+.vd-tile-7 { background: #0f766e; }
+.vd-tile-8 { background: #16a34a; }
+.vd-tile-9 { background: #7c3aed; }
+.vd-tile-10 { background: #92400e; }
+.vd-tile-11 { background: #db2777; }
+.vd-tile-12 { background: #475569; }
+
+/* ---------------------------------------------------------------- phone Save / Apply bar (below 1024px) */
+.vela .vd-bar {
+  border-top-color: var(--v-border-subtle);
+  background: rgba(247, 248, 250, 0.92);
+}
+
+.v-home .vd-bar .save-job.button {
+  border-radius: 12px;
+  border-color: var(--v-border-default);
+  background: var(--v-surface-card);
+  color: var(--v-text-body);
+}
+
+.v-home .vd-bar .save-job.button[aria-pressed='true'] {
+  border-color: #c6cdff;
+  color: #4f46e5;
+  background: #eef1ff;
+}
+
+.v-home .vd-bar .vd-apply {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- narrower screens */
+/* Once the side card wraps under the content, it moves above it: pay and Apply stay near the top. */
+@media (max-width: 971.98px) {
+  .vd-aside {
+    order: -1;
+  }
+
+  .vd-alert {
+    order: -2;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .vd-hero-inner {
+    padding: 20px 16px 32px;
+    gap: 22px;
+  }
+
+  .vd-body {
+    padding: 24px 16px 56px;
+    gap: 20px;
+  }
+
+  .vd-main {
+    gap: 20px;
+  }
+
+  .vd-card,
+  .vd-co-card,
+  .v-home .vd-apply-band.apply-section,
+  .v-home .vd-apply-band.apply-section:has([data-apply-form]:not([hidden])) {
+    padding: 24px 20px;
+  }
+
+  .v-home .vd-apply-band.apply-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vd-similar-inner {
+    padding: 40px 16px 56px;
+  }
+
+  .vd-similar-box {
+    padding: 6px 20px;
+  }
+
+  .v-home .vd-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    column-gap: 14px;
+  }
+
+  .vd-row-pay {
+    order: 3;
+    flex-basis: 100%;
+    padding-left: 56px;
+  }
+
+  .vd-row-go {
+    display: none;
+  }
+}
+
+/* Phones: a smaller logo and title, the head's Share next to the company line, full-width buttons. */
+@media (max-width: 639.98px) {
+  .vd-head {
+    position: relative;
+    gap: 16px;
+  }
+
+  .vd-head-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding-right: 56px;
+  }
+
+  .vd-logo-72 {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    font-size: 20px;
+  }
+
+  .v-home .vd-title {
+    font-size: clamp(28px, 8.4vw, 34px);
+    line-height: 1.1;
+  }
+
+  /* Save (job seekers) + Share sit in the head's top right corner. */
+  .vd-head-actions {
+    position: absolute;
+    top: 6px;
+    right: 0;
+  }
+
+  .v-home .vd-head-actions .save-job.button {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .vd-head-actions .save-job-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .vd-head-main:has(+ .vd-head-actions .save-job:not([hidden])) {
+    padding-right: 110px;
+  }
+
+  .vd-pay-value {
+    font-size: 28px;
+  }
+
+  .vd-apply-band .apply-actions > a,
+  .vd-company-actions > a {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .vd-company-actions {
+    width: 100%;
+  }
+
+  .vd-company-actions > a {
+    flex-basis: 0;
+  }
+
+  .vd-similar-head h2 {
+    font-size: 24px;
+  }
+}

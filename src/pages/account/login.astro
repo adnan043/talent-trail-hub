@@ -10,91 +10,175 @@
  * step directly (a one-click sign-in from the dashboard, owner.ts). `?notice=` explains
  * why the visitor landed here (a dashboard link that expired). `<DemoLogin />` shows a store
  * preview's demo admin, and nothing anywhere else.
+ *
+ * The "Vela" design (src/styles/signin-vela.css, `skin="vela"`; docs: ~/Downloads/Sign in-html): the
+ * forms on the left, a dark panel on the right. When `?next=` is a job page, the panel shows that
+ * job ("You'll go straight back to"), read from `GET /site-api/jobs/:slug`; otherwise no card.
  */
+import VelaRowIcon from '../../components/board/VelaRowIcon.astro';
 import Base from '../../layouts/Base.astro';
 import DemoLogin from '../../platform/DemoLogin.astro';
+import {ROW_ICON_NAMES} from '../../lib/row-icon';
 import {staticContext} from '../../server/page';
-import '../../styles/board-pages.css';
+import '../../styles/home-vela.css';
+import '../../styles/signin-vela.css';
+import '../../styles/auth-shell.css';
 
 export const prerender = true;
 
 const {site, viewer} = await staticContext(Astro.request);
+const name = site?.name ?? 'My site';
 ---
 
-<Base site={site} viewer={viewer} isStatic noindex title="Sign in">
-  <main id="main" tabindex="-1" class="wrap auth-wrap board-auth">
-    <div class="card auth-card">
-      <nav class="auth-tabs" aria-label="Sign in or sign up">
-        <a href="/account/login/" aria-current="page">Sign in</a>
-        <a href="/account/register/" data-keep-next>Sign up</a>
-      </nav>
-      <h1 id="login-title">Sign in</h1>
-      <p class="notice notice-error" id="login-notice" role="alert" hidden></p>
-      <!-- The store preview's read-only demo admin: shows only where the platform set it (docs/agent/store-apps.md). -->
-      <DemoLogin />
+<Base site={site} viewer={viewer} isStatic noindex title="Sign in" skin="vela" bare>
+  <main id="main" tabindex="-1" class="v-home v-si">
+    <div class="v-si-wrap">
+      <div class="v-si-card">
+        <div class="v-si-main">
+          <nav class="v-si-tabs" aria-label="Sign in or sign up">
+            <a href="/account/login/" aria-current="page">Sign in</a>
+            <a href="/account/register/" data-keep-next>Sign up</a>
+          </nav>
 
-      <!-- Or a code by email (no password needed): "Email me a code instead". -->
-      <form id="email-form" class="auth-form" novalidate hidden>
-        <p class="muted" id="email-lead">Enter your email and we'll send you a 6-digit code. No password needed.</p>
-        <div class="field">
-          <label for="login-email">Email</label>
-          <input id="login-email" name="email" type="email" autocomplete="username" inputmode="email" placeholder="name@example.com" />
-        </div>
-        <p class="notice" data-form-status hidden></p>
-        <button class="button" type="submit">Email me a code</button>
-      </form>
-
-      <!-- 2. The emailed code. -->
-      <form id="email-code-form" class="auth-form" novalidate hidden>
-        <p class="muted" id="email-code-lead" aria-live="polite"></p>
-        <div class="field">
-          <label for="email-code">Code from the email</label>
-          <input id="email-code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="7" spellcheck="false" placeholder="123456" />
-        </div>
-        <p class="notice" data-form-status hidden></p>
-        <button class="button" type="submit">Sign in</button>
-        <p class="auth-links">
-          <button class="button link" type="button" id="code-resend">Send a new code</button>
-          <span aria-hidden="true">·</span>
-          <button class="button link" type="button" id="code-other-email">Use another email</button>
-        </p>
-      </form>
-
-      <!-- 1. The first form shown: email and password. -->
-      <form id="login-form" class="auth-form" novalidate>
-        <p class="auth-lead">Manage job posts and review your applicants.</p>
-        <div class="field">
-          <label for="login-password-email">Email</label>
-          <input id="login-password-email" name="email" type="email" autocomplete="username" inputmode="email" placeholder="name@example.com" />
-        </div>
-        <div class="field">
-          <label for="login-password">Password</label>
-          <div class="pw-input">
-            <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Your password" />
-            <button class="pw-reveal" type="button" data-reveal-password aria-controls="login-password" aria-pressed="false" aria-label="Show password" hidden>Show</button>
+          <div class="v-si-head">
+            <h1 id="login-title">Welcome back</h1>
+            <p id="login-sub">Sign in to apply, follow your applications or manage your job posts.</p>
           </div>
-        </div>
-        <p class="notice" data-form-status hidden></p>
-        <button class="button" type="submit">Sign in</button>
-      </form>
+          <p class="notice notice-error" id="login-notice" role="alert" hidden></p>
+          <!-- The store preview's read-only demo admin: shows only where the platform set it (docs/agent/store-apps.md). -->
+          <DemoLogin />
 
-      <!-- Two-step sign-in: the authenticator code, after a password, an emailed code or one click. -->
-      <form id="code-form" class="auth-form" novalidate hidden>
-        <p class="muted">Open your authenticator app and enter the 6-digit code for this site. Lost your phone? Enter one of your recovery codes instead.</p>
-        <div class="field">
-          <label for="login-code">Code</label>
-          <input id="login-code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="20" spellcheck="false" placeholder="123456" />
-        </div>
-        <p class="notice" data-form-status hidden></p>
-        <button class="button" type="submit">Continue</button>
-      </form>
+          <!-- Or a code by email (no password needed): "Email me a sign-in code". -->
+          <form id="email-form" class="v-si-form" novalidate hidden>
+            <p class="v-si-lead" id="email-lead">Enter your email and we'll send you a 6-digit code. No password needed.</p>
+            <div class="field">
+              <label for="login-email">Email</label>
+              <input id="login-email" name="email" type="email" autocomplete="username" inputmode="email" placeholder="name@example.com" />
+            </div>
+            <p class="notice" data-form-status hidden></p>
+            <button class="v-si-go" type="submit">Email me a code</button>
+          </form>
 
-      <p class="auth-links" id="login-links">
-        <button class="button link" type="button" id="use-password" hidden>Use a password instead</button>
-        <button class="button link" type="button" id="use-code">Email me a code instead</button>
-        <span aria-hidden="true">·</span>
-        <a href="/account/forgot/">Forgot your password?</a>
-      </p>
+          <!-- 2. The emailed code. -->
+          <form id="email-code-form" class="v-si-form" novalidate hidden>
+            <p class="v-si-lead" id="email-code-lead" aria-live="polite"></p>
+            <div class="field">
+              <label for="email-code">Code from the email</label>
+              <input id="email-code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="7" spellcheck="false" placeholder="123456" />
+            </div>
+            <p class="notice" data-form-status hidden></p>
+            <button class="v-si-go" type="submit">Sign in</button>
+            <p class="v-si-links">
+              <button class="v-si-link" type="button" id="code-resend">Send a new code</button>
+              <span aria-hidden="true">·</span>
+              <button class="v-si-link" type="button" id="code-other-email">Use another email</button>
+            </p>
+          </form>
+
+          <!-- 1. The first form shown: email and password. -->
+          <form id="login-form" class="v-si-form" novalidate>
+            <div class="field">
+              <label for="login-password-email">Email</label>
+              <input id="login-password-email" name="email" type="email" autocomplete="username" inputmode="email" placeholder="name@example.com" />
+            </div>
+            <div class="field">
+              <div class="v-si-label-row">
+                <label for="login-password">Password</label>
+                <a class="v-si-a" href="/account/forgot/">Forgot password?</a>
+              </div>
+              <div class="pw-input">
+                <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Your password" />
+                <button class="pw-reveal" type="button" data-reveal-password aria-controls="login-password" aria-pressed="false" aria-label="Show password" hidden>Show</button>
+              </div>
+            </div>
+            <p class="notice" data-form-status hidden></p>
+            <button class="v-si-go" type="submit">
+              Sign in
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </button>
+          </form>
+
+          <!-- Two-step sign-in: the authenticator code, after a password, an emailed code or one click. -->
+          <form id="code-form" class="v-si-form" novalidate hidden>
+            <p class="v-si-lead">Open your authenticator app and enter the 6-digit code for this site. Lost your phone? Enter one of your recovery codes instead.</p>
+            <div class="field">
+              <label for="login-code">Code</label>
+              <input id="login-code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="20" spellcheck="false" placeholder="123456" />
+            </div>
+            <p class="notice" data-form-status hidden></p>
+            <button class="v-si-go" type="submit">Continue</button>
+          </form>
+
+          <!-- The other way in: a code by email, or back to the password. -->
+          <div class="v-si-other" id="login-links">
+            <div class="v-si-or"><span></span>or<span></span></div>
+            <button class="v-si-alt" type="button" id="use-password" hidden>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+              Use a password instead
+            </button>
+            <button class="v-si-alt" type="button" id="use-code">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 6-10 7L2 6" />
+              </svg>
+              Email me a sign-in code
+            </button>
+          </div>
+
+          <p class="v-si-new">
+            New to <span data-brand-text="{name}">{name}</span>? <a class="v-si-a" href="/account/register/" data-keep-next>Create a free account</a>
+          </p>
+        </div>
+
+        <aside class="v-si-aside">
+          <div class="v-si-aside-grid" aria-hidden="true"></div>
+          <div class="v-si-aside-top">
+            <span class="v-si-pill"><span class="v-si-pill-dot"></span>Candidates never pay</span>
+            <div class="v-si-aside-head">
+              <h2>Pick up where<br />you <span class="v-si-grad">left off</span></h2>
+              <p id="login-back-lead">Sign in and you’ll go straight back to what you were doing.</p>
+            </div>
+            <ul class="v-si-perks">
+              {
+                ['Apply in one click with your saved CV', 'Follow every application, from sent to shortlisted', 'Save jobs and come back to them later'].map(perk => (
+                  <li>
+                    <span class="v-si-tick">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                        <path d="m5 12 5 5L20 7" />
+                      </svg>
+                    </span>
+                    <span>{perk}</span>
+                  </li>
+                ))
+              }
+            </ul>
+          </div>
+          <!-- Filled in the browser when `?next=` is a job page (the job's own data); hidden otherwise. -->
+          <div class="v-si-back" id="login-back" hidden>
+            <span class="v-si-back-label">You’ll go straight back to</span>
+            <div class="v-si-back-job">
+              <span class="v-row-icon v-si-back-icon" id="login-back-icon" aria-hidden="true"></span>
+              <div class="v-si-back-body">
+                <span class="v-si-back-title" id="login-back-title"></span>
+                <span class="v-si-back-meta" id="login-back-meta"></span>
+              </div>
+              <span class="v-si-back-pay" id="login-back-pay" hidden></span>
+            </div>
+            {
+              ROW_ICON_NAMES.map(icon => (
+                <template data-row-icon={icon}>
+                  <VelaRowIcon icon={icon} />
+                </template>
+              ))
+            }
+          </div>
+        </aside>
+      </div>
     </div>
   </main>
 </Base>
@@ -102,7 +186,10 @@ const {site, viewer} = await staticContext(Astro.request);
 <script>
   import {nextParam, nextPath, signedIn, rememberSignUpEmail} from '../../lib/account';
   import {bindForm, postJson} from '../../lib/form';
+  import {employmentLabel, formatSalary, workplaceAndPlace} from '../../lib/job-display';
   import {bindPasswordReveal} from '../../lib/password-checks';
+  import {rowIcon} from '../../lib/row-icon';
+  import type {JobDetailResponse} from '../../lib/types-public';
   import {AUTH_RULES, rules} from '../../lib/rules';
   import {siteFetch} from '../../platform/browser';
 
@@ -130,6 +217,7 @@ const {site, viewer} = await staticContext(Astro.request);
     document.querySelectorAll<HTMLAnchorElement>('[data-keep-next]').forEach(a => {
       a.href = `${a.pathname}?next=${encodeURIComponent(next)}`;
     });
+    void showBackJob(next);
 
     const emailForm = $<HTMLFormElement>('email-form');
     const emailCodeForm = $<HTMLFormElement>('email-code-form');
@@ -142,6 +230,7 @@ const {site, viewer} = await staticContext(Astro.request);
     function show(form: HTMLFormElement, title: string, focus: string) {
       for (const f of forms) f.hidden = f !== form;
       $('login-title').textContent = title;
+      $('login-sub').hidden = form !== loginForm;
       $('use-password').hidden = form !== emailForm;
       $('use-code').hidden = form !== loginForm;
       $('login-links').hidden = form === codeForm || form === emailCodeForm;
@@ -273,4 +362,40 @@ const {site, viewer} = await staticContext(Astro.request);
       },
     });
   });
+
+  /**
+   * The dark panel's "You'll go straight back to" card: only when `next` is a job page
+   * (`/jobs/<slug>/…`) and that job is open. Read-only; any failure leaves the card hidden.
+   */
+  async function showBackJob(next: string) {
+    const card = document.querySelector<HTMLElement>('#login-back');
+    const match = /^\/jobs\/([^/?#]+)\/?(?:[?#]|$)/.exec(next);
+    if (!card || !match) return;
+    let slug: string;
+    try {
+      slug = decodeURIComponent(match[1]);
+    } catch {
+      return;
+    }
+    const data = await siteFetch(`/site-api/jobs/${encodeURIComponent(slug)}`)
+      .then(res => (res.ok ? (res.json() as Promise<JobDetailResponse>) : null))
+      .catch(() => null);
+    const job = data?.job;
+    // Gone, or the visitor moved on (client navigation) while it loaded.
+    if (!job || job.state !== 'active' || !card.isConnected) return;
+    const icon = rowIcon(job.title);
+    const tile = card.querySelector<HTMLElement>('#login-back-icon')!;
+    const svg = card.querySelector<HTMLTemplateElement>(`template[data-row-icon="${icon}"]`);
+    tile.classList.add(`cat-${icon}`);
+    if (svg) tile.replaceChildren(svg.content.cloneNode(true));
+    card.querySelector('#login-back-title')!.textContent = job.title;
+    card.querySelector('#login-back-meta')!.textContent = [job.company.name, workplaceAndPlace(job), employmentLabel(job.employmentType)].join(' · ');
+    // The design's short range: "$45K – $55K" → "$45K–55K" (same symbol on both ends only).
+    const pay = formatSalary(job.salary)?.replace(/^([^\d\s]*)([\d.,]+[KMBT]?) – \1([\d.,]+[KMBT]?)/, '$1$2–$3') ?? null;
+    const payBox = card.querySelector<HTMLElement>('#login-back-pay')!;
+    payBox.textContent = pay ?? '';
+    payBox.hidden = !pay;
+    document.querySelector('#login-back-lead')!.textContent = 'Sign in and you’ll land back on the job you were looking at, ready to apply.';
+    card.hidden = false;
+  }
 </script>

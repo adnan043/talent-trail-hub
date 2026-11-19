@@ -1,0 +1,802 @@
+/*
+ * A company's profile page in the "Vela" design (docs: ~/Downloads/Company profile-html). Builds on
+ * home-vela.css (tokens `--v-*`, `.v-home` base, `.v-row-icon.cat-*` tiles); every value here is the
+ * design's. No style attributes (CSP). The header and footer are the site chrome (site-chrome.css),
+ * not styled here.
+ */
+
+/* ---------------------------------------------------------------- hero */
+.vc-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--v-border-subtle);
+  background:
+    radial-gradient(38% 60% at 12% 18%, rgba(129, 140, 248, 0.22), transparent 70%),
+    radial-gradient(34% 55% at 88% 12%, rgba(99, 102, 241, 0.16), transparent 70%),
+    radial-gradient(40% 60% at 82% 92%, rgba(165, 180, 252, 0.16), transparent 70%),
+    radial-gradient(42% 60% at 18% 96%, rgba(167, 139, 250, 0.17), transparent 70%),
+    linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+}
+
+.vc-hero-inner {
+  position: relative;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 32px 44px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v-home .vc-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 999px;
+  background: var(--v-surface-card);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--v-text-body);
+  text-decoration: none;
+  transition: all 160ms ease;
+}
+
+.v-home .vc-back:hover {
+  border-color: #a3acfc;
+  color: #4338ca;
+  background: #f7f8ff;
+}
+
+.vc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.vc-head-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+
+.vc-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.v-home .vc-title {
+  margin: 0;
+  font-size: clamp(38px, 4.6vw, 56px);
+  line-height: 1.02;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  color: var(--v-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.vc-meta {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 15px;
+  color: var(--v-text-body);
+}
+
+.vc-meta li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vc-meta svg {
+  flex: none;
+}
+
+.vc-meta b {
+  font-family: var(--v-figtree);
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.vc-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Buttons: secondary (white, outlined) and primary (indigo). */
+.v-home .vc-sec,
+.v-home .vc-pri {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v-home .vc-sec {
+  border: 1px solid var(--v-border-default);
+  background: var(--v-surface-card);
+  color: var(--v-text-strong);
+  transition: all 160ms ease;
+}
+
+.v-home .vc-sec:hover {
+  border-color: #a3acfc;
+  color: #4338ca;
+  background: #f7f8ff;
+}
+
+.v-home .vc-pri {
+  padding: 0 20px;
+  background: #4f46e5;
+  color: #ffffff;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.v-home .vc-pri:hover {
+  background: #4338ca;
+  color: #ffffff;
+  box-shadow: 0 12px 24px -10px rgba(79, 70, 229, 0.65);
+}
+
+/* The logo: 88px, the real logo on white or initials on a tile colour. */
+.vc-logo {
+  flex: none;
+  width: 88px;
+  height: 88px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.vc-logo-img {
+  background: #ffffff;
+  border: 1px solid var(--v-border-subtle);
+}
+
+.v-home .vc-logo-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The design's tile colours (the same as the companies and job pages). */
+.vc-tile-0 { background: #4f46e5; }
+.vc-tile-1 { background: #047857; }
+.vc-tile-2 { background: #232834; }
+.vc-tile-3 { background: #0891b2; }
+.vc-tile-4 { background: #1d4ed8; }
+.vc-tile-5 { background: #b45309; }
+.vc-tile-6 { background: #ca8a04; }
+.vc-tile-7 { background: #0f766e; }
+.vc-tile-8 { background: #16a34a; }
+.vc-tile-9 { background: #7c3aed; }
+.vc-tile-10 { background: #92400e; }
+.vc-tile-11 { background: #db2777; }
+.vc-tile-12 { background: #475569; }
+
+/* ---------------------------------------------------------------- body */
+.vc-body {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 32px 80px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.vc-main {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.vc-aside {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* About */
+.vc-card {
+  padding: 32px 36px;
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.v-home .vc-about h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--v-text-strong);
+}
+
+.vc-rich {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--v-text-body);
+  overflow-wrap: anywhere;
+}
+
+.v-home .vc-rich > * {
+  margin: 0;
+}
+
+.v-home .vc-rich > * + * {
+  margin-top: 14px;
+}
+
+.v-home .vc-rich :where(p, li) {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--v-text-body);
+}
+
+.v-home .vc-rich :where(h2, h3, h4) {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.v-home .vc-rich :where(ul, ol) {
+  padding-left: 1.25rem;
+}
+
+.v-home .vc-rich a {
+  color: #4338ca;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v-home .vc-rich a:hover {
+  text-decoration: underline;
+}
+
+.vc-rich :where(strong, b) {
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+/* Open roles */
+.vc-roles {
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 20px;
+  overflow: hidden;
+  scroll-margin-top: 80px;
+}
+
+.vc-roles-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 28px 18px;
+}
+
+.vc-roles-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.v-home .vc-roles-title h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--v-text-strong);
+}
+
+.vc-count {
+  font-family: var(--v-figtree);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--v-text-muted);
+}
+
+.vc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--v-surface-sunken);
+  border-radius: 10px;
+}
+
+.v-home .vc-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-family: var(--v-figtree);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--v-text-body);
+  box-shadow: none;
+}
+
+.v-home .vc-tabs button[aria-pressed='true'] {
+  background: var(--v-surface-card);
+  color: var(--v-text-strong);
+  box-shadow: 0 1px 2px rgba(21, 25, 34, 0.08);
+}
+
+.vc-tabs button span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v-text-muted);
+}
+
+.vc-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One row: the title link covers it; Save (job seekers only) sits above the link. */
+.vc-row {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  padding: 16px 28px;
+  border-top: 1px solid rgba(21, 25, 34, 0.05);
+  transition: background-color 140ms ease;
+}
+
+.vc-row[hidden] {
+  display: none;
+}
+
+.vc-row:hover {
+  background: var(--v-surface-page);
+}
+
+.vc-row-icon.v-row-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.vc-row-body {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v-home .vc-row-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.v-home .vc-row-link {
+  color: var(--v-text-strong);
+  text-decoration: none;
+}
+
+.v-home .vc-row:hover .vc-row-link {
+  color: #4338ca;
+}
+
+.vc-row-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.vc-row-link:focus-visible {
+  outline: none;
+}
+
+.vc-row:has(.vc-row-link:focus-visible) {
+  outline: 2px solid #4f46e5;
+  outline-offset: -2px;
+}
+
+.vc-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 13px;
+  color: var(--v-text-muted);
+}
+
+.vc-row-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 120px;
+  font-family: var(--v-figtree);
+}
+
+.vc-row-pay {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--v-text-strong);
+  white-space: nowrap;
+}
+
+.vc-row-posted {
+  font-size: 13px;
+  color: var(--v-text-muted);
+}
+
+.vc-row-go {
+  flex: none;
+  display: flex;
+  color: #4f46e5;
+  opacity: 0.35;
+  transform: translateX(-3px);
+  transition: all 160ms ease;
+}
+
+.vc-row:hover .vc-row-go {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.vc-row .save-job {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 10px;
+  background: var(--v-surface-card);
+  color: var(--v-text-body);
+}
+
+.vc-row .save-job:hover {
+  background: var(--v-surface-hover);
+  color: #4f46e5;
+}
+
+.vc-row .save-job[aria-pressed='true'] {
+  color: #4f46e5;
+}
+
+.vc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 24px 28px 28px;
+  border-top: 1px solid rgba(21, 25, 34, 0.05);
+}
+
+.v-home .vc-empty h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.v-home .vc-empty p {
+  margin: 0 0 8px;
+  font-size: 14.5px;
+  color: var(--v-text-body);
+}
+
+/* ---------------------------------------------------------------- aside */
+.vc-glance {
+  padding: 24px 24px 10px;
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 20px;
+}
+
+.v-home .vc-glance h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.vc-glance dl {
+  margin: 0;
+}
+
+.vc-glance dl > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(21, 25, 34, 0.06);
+}
+
+.vc-glance dl > div > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.vc-glance-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f2ff;
+  color: #4f46e5;
+}
+
+.vc-glance dt {
+  font-size: 12.5px;
+  color: var(--v-text-muted);
+}
+
+.vc-glance dd {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--v-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.vc-fig {
+  font-family: var(--v-figtree);
+}
+
+.vc-socials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.v-home .vc-socials a {
+  color: #4338ca;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v-home .vc-socials a:hover {
+  text-decoration: underline;
+}
+
+/* "Apply in one click" (guests only). */
+.vc-join {
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  border-radius: 20px;
+  background:
+    radial-gradient(60% 80% at 0% 0%, rgba(99, 102, 241, 0.45), transparent 60%),
+    radial-gradient(50% 70% at 100% 20%, rgba(167, 139, 250, 0.35), transparent 60%),
+    radial-gradient(60% 60% at 70% 110%, rgba(34, 211, 238, 0.22), transparent 60%),
+    linear-gradient(160deg, #151922 0%, #1b1a3d 100%);
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vc-join[hidden] {
+  display: none;
+}
+
+.v-home .vc-join h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.v-home .vc-join p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #c7cbe0;
+}
+
+.v-home .vc-join .vc-pri {
+  height: 44px;
+  border-radius: 11px;
+}
+
+/* Stay safe */
+.vc-safe {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 16px;
+  background: var(--v-surface-card);
+}
+
+.vc-safe-icon {
+  flex: none;
+  display: flex;
+  color: #4f46e5;
+}
+
+.v-home .vc-safe p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--v-text-body);
+}
+
+.vc-safe b {
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+/* ---------------------------------------------------------------- narrower screens */
+@media (max-width: 767.98px) {
+  .vc-hero-inner {
+    padding: 20px 16px 32px;
+    gap: 22px;
+  }
+
+  .vc-body {
+    padding: 24px 16px 56px;
+    gap: 20px;
+  }
+
+  .vc-main {
+    gap: 20px;
+  }
+
+  .vc-card {
+    padding: 24px 20px;
+  }
+
+  .vc-roles-head {
+    padding: 20px 20px 16px;
+  }
+
+  .vc-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 14px;
+    padding: 16px 20px;
+  }
+
+  .vc-row-icon.v-row-icon {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .vc-row-body {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .vc-row-side {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .vc-row .save-job {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .vc-row-go {
+    display: none;
+  }
+
+  .vc-empty {
+    padding: 20px 20px 24px;
+  }
+}
+
+/* Phones: a smaller logo and title, full-width buttons. */
+@media (max-width: 639.98px) {
+  .vc-head-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .vc-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    font-size: 24px;
+  }
+
+  .v-home .vc-title {
+    font-size: clamp(30px, 9vw, 38px);
+    line-height: 1.08;
+  }
+
+  .vc-head-actions {
+    width: 100%;
+  }
+
+  .vc-head-actions > a {
+    flex: 1 1 0;
+    padding: 0 12px;
+    white-space: nowrap;
+  }
+
+  .vc-tabs {
+    width: 100%;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+  }
+
+  .v-home .vc-tabs button {
+    justify-content: center;
+    gap: 5px;
+    padding: 0 4px;
+    font-size: 13.5px;
+    white-space: nowrap;
+  }
+}

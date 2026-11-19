@@ -1,0 +1,568 @@
+/*
+ * The sign-in page in the "Vela" design (docs: ~/Downloads/Sign in-html). Builds on home-vela.css
+ * (tokens `--v-*`, `.v-home` base, `.v-row-icon` tiles); every value here is the design's. No style
+ * attributes (CSP). The header and footer are the site chrome (site-chrome.css), not styled here.
+ * The form hooks (`.field`, `.pw-input`, `.pw-reveal`, `.notice`, `.spinner`) come from
+ * src/lib/form.ts and src/lib/password-checks.ts; only their look changes here.
+ */
+
+/* ---------------------------------------------------------------- page */
+.v-si {
+  flex: 1;
+  position: relative;
+  background:
+    radial-gradient(38% 60% at 12% 18%, rgba(129, 140, 248, 0.22), transparent 70%),
+    radial-gradient(34% 55% at 88% 12%, rgba(240, 171, 252, 0.18), transparent 70%),
+    radial-gradient(40% 60% at 82% 92%, rgba(103, 232, 249, 0.13), transparent 70%),
+    radial-gradient(42% 60% at 18% 96%, rgba(167, 139, 250, 0.17), transparent 70%),
+    linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+}
+
+.v-si-wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 16px 56px;
+  box-sizing: border-box;
+}
+
+.v-si-card {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 28px;
+  box-shadow: 0 30px 60px -30px rgba(79, 70, 229, 0.25);
+}
+
+/* ---------------------------------------------------------------- left: the forms */
+.v-si-main {
+  flex: 1 1 440px;
+  min-width: 0;
+  padding: 32px 20px 28px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v-si-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--v-surface-sunken);
+}
+
+.v-si-tabs a {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--v-text-muted);
+  text-decoration: none;
+  transition: color 140ms ease;
+}
+
+.v-si-tabs a:hover {
+  color: var(--v-text-strong);
+}
+
+.v-si-tabs a[aria-current='page'] {
+  background: var(--v-surface-card);
+  box-shadow: 0 1px 2px rgba(21, 25, 34, 0.08);
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.v-si-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v-si .v-si-head h1 {
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--v-text-strong);
+}
+
+.v-si-head p,
+.v-si-lead {
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--v-text-muted);
+}
+
+.v-si-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.v-si-form[hidden],
+.v-si-other[hidden],
+.v-si-alt[hidden] {
+  display: none;
+}
+
+/* Fields: label 14/600, input 48px, 12px radius, the indigo focus ring. */
+.v-si .field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v-si .field label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.375;
+  color: var(--v-text-strong);
+}
+
+.v-si-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.v-si .field input {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--v-border-default);
+  border-radius: 12px;
+  background: var(--v-surface-card);
+  font: inherit;
+  font-size: 15px;
+  color: var(--v-text-strong);
+  outline: 0;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.v-si .field input::placeholder {
+  color: var(--v-text-subtle);
+}
+
+.v-si .field input:hover {
+  border-color: #a3acfc;
+}
+
+.v-si .field input:focus,
+.v-si .field input:focus-visible {
+  outline: 0;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
+.v-si .field input[aria-invalid='true'],
+.v-si .field input[aria-invalid='true']:hover {
+  border-color: var(--danger);
+}
+
+.v-si .field input[aria-invalid='true']:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.v-si .field-error {
+  font-size: 13.5px;
+}
+
+/* Show / hide password. */
+.v-si .field .pw-input input {
+  padding-right: 72px;
+}
+
+.v-si .pw-reveal {
+  inset: 6px 6px auto auto;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--v-text-muted);
+}
+
+.v-si .pw-reveal:hover {
+  background: var(--v-surface-sunken);
+  color: var(--v-text-strong);
+}
+
+/* The form's status line and the page notice (an expired link). */
+.v-si .notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Submit: 50px indigo, the arrow on "Sign in". */
+.v-si-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 50px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: #4f46e5;
+  color: #ffffff;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.v-si-go:hover:not(:disabled) {
+  background: #4338ca;
+  box-shadow: 0 12px 24px -10px rgba(79, 70, 229, 0.65);
+}
+
+.v-si-go:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+/* "Send a new code · Use another email". */
+.v-si-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 8px;
+  font-size: 14px;
+  color: var(--v-text-muted);
+}
+
+.v-si-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: #4338ca;
+  cursor: pointer;
+}
+
+.v-si-link:hover {
+  text-decoration: underline;
+}
+
+.v-si-link:disabled {
+  cursor: progress;
+  text-decoration: none;
+}
+
+.v-si .v-si-a {
+  color: #4338ca;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v-si-label-row .v-si-a {
+  font-size: 13.5px;
+}
+
+.v-si .v-si-a:hover {
+  color: #4338ca;
+  text-decoration: underline;
+}
+
+/* "or" + the other way in. */
+.v-si-other {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v-si-or {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--v-text-muted);
+}
+
+.v-si-or span {
+  flex: 1;
+  height: 1px;
+  background: var(--v-border-subtle);
+}
+
+.v-si-alt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 50px;
+  padding: 0 18px;
+  border: 1px solid var(--v-border-default);
+  border-radius: 12px;
+  background: var(--v-surface-card);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--v-text-strong);
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.v-si-alt:hover {
+  border-color: #a3acfc;
+  background: #f7f8ff;
+  color: #4338ca;
+}
+
+.v-si-new {
+  margin: auto 0 0;
+  padding-top: 4px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--v-text-muted);
+}
+
+/* ---------------------------------------------------------------- right: the dark panel */
+.v-si-aside {
+  position: relative;
+  overflow: hidden;
+  flex: 1 1 400px;
+  min-width: 0;
+  padding: 32px 20px 28px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 40px;
+  background:
+    radial-gradient(60% 80% at 0% 0%, rgba(99, 102, 241, 0.45), transparent 60%),
+    radial-gradient(50% 70% at 100% 20%, rgba(167, 139, 250, 0.35), transparent 60%),
+    radial-gradient(60% 60% at 70% 110%, rgba(34, 211, 238, 0.22), transparent 60%),
+    linear-gradient(160deg, #151922 0%, #1b1a3d 100%);
+  color: #ffffff;
+}
+
+.v-si-aside-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 20%, transparent 75%);
+}
+
+.v-si-aside-top {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v-si-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 12.5px;
+  color: #e4e7f5;
+}
+
+.v-si-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2);
+}
+
+.v-si-aside-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.v-si .v-si-aside-head h2 {
+  font-size: 36px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: #ffffff;
+}
+
+.v-si-grad {
+  background: linear-gradient(90deg, #c7d2fe, #f0abfc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.v-si-aside-head p {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: #c7cbe0;
+}
+
+.v-si-perks {
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.v-si-perks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.v-si-tick {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #c7d2fe;
+}
+
+.v-si-perks li > span:last-child {
+  padding-top: 3px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #e4e7f5;
+}
+
+/* "You'll go straight back to" (only when `next` is a job). */
+.v-si-back {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.v-si-back[hidden] {
+  display: none;
+}
+
+.v-si-back-label {
+  font-family: var(--v-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8b0d6;
+}
+
+.v-si-back-job {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.v-si .v-si-back-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.v-si-back-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.v-si-back-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.v-si-back-meta {
+  font-size: 13px;
+  color: #a8b0d6;
+}
+
+.v-si-back-pay {
+  font-family: var(--v-figtree);
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.v-si-back-pay[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- wider screens: the design's spacing */
+@media (min-width: 768px) {
+  .v-si-wrap {
+    padding: 64px 32px 88px;
+  }
+
+  .v-si-main {
+    padding: 44px 52px 40px;
+  }
+
+  .v-si-aside {
+    padding: 44px 44px 40px;
+  }
+}
+
+@media (max-width: 480px) {
+  .v-si .v-si-head h1 {
+    font-size: 30px;
+  }
+
+  .v-si .v-si-aside-head h2 {
+    font-size: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-si-tabs a,
+  .v-si .field input,
+  .v-si-go,
+  .v-si-alt {
+    transition: none;
+  }
+}
