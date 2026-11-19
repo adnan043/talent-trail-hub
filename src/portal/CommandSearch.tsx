@@ -1,10 +1,10 @@
 import {useInfiniteQuery} from '@tanstack/react-query';
-import {Link, useNavigate} from '@tanstack/react-router';
+import {useNavigate} from '@tanstack/react-router';
 import {type KeyboardEvent, useEffect, useMemo, useRef, useState} from 'react';
 
-import {adminJobsQuery, moderationQuery, NO_JOB_FILTERS} from './admin/queries';
+import {adminJobsQuery, NO_JOB_FILTERS} from './admin/queries';
 import {myJobsQuery} from './employer/queries';
-import {pageCount, useMe} from './shared';
+import {useMe} from './shared';
 import {Icon, type IconName, Modal} from './ui';
 
 /**
@@ -149,47 +149,4 @@ function SearchBody({screens, close}: {screens: SearchScreen[]; close: () => voi
       )}
     </div>
   );
-}
-
-/**
- * The bell: what is waiting for this person. Moderators: jobs waiting for review (the queue's
- * cached first page, shared with the nav badge). Employers: their jobs that were rejected or
- * wait for payment. Nothing to show: no bell.
- */
-export function AttentionBell() {
-  const me = useMe();
-  const moderator = Boolean(me.data?.abilities.moderateJobs);
-  const isEmployer = Boolean(me.data && !me.data.board.singleCompany && !me.data.abilities.manageJobs);
-  const queue = useInfiniteQuery({
-    ...moderationQuery,
-    enabled: moderator,
-    select: data => {
-      const first = data.pages[0];
-      return first?.items.length ? pageCount(first.items, first.nextAfter !== null) : null;
-    },
-  });
-  const own = useInfiniteQuery({
-    ...myJobsQuery,
-    enabled: isEmployer && !moderator,
-    select: data => data.pages[0]?.items.filter(j => j.status === 'rejected' || j.status === 'pending_payment').length ?? 0,
-  });
-  if (moderator) {
-    const count = queue.data;
-    return (
-      <Link to="/manage/moderation" className="app-ib" aria-label={count ? `Moderation, ${count} waiting` : 'Moderation, nothing waiting'} title="Moderation">
-        <Icon name="bell" size={18} />
-        {count && <span className="app-ib-dot" />}
-      </Link>
-    );
-  }
-  if (isEmployer) {
-    const count = own.data ?? 0;
-    return (
-      <Link to="/employer/jobs" className="app-ib" aria-label={count ? `My jobs, ${count} need you` : 'My jobs, nothing needs you'} title="My jobs">
-        <Icon name="bell" size={18} />
-        {count > 0 && <span className="app-ib-dot" />}
-      </Link>
-    );
-  }
-  return null;
 }
