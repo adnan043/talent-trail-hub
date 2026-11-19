@@ -2,14 +2,16 @@ import {Hono} from 'hono';
 import {validator} from 'hono/validator';
 
 import type {Prisma, PrismaClient} from '../../generated/prisma/client';
-import type {CompaniesOverview, CompaniesPage, CompanyProfileResponse, PublicCompanySummary} from '../../lib/types-public';
+import type {CompaniesOverview, CompaniesPage, CompanyProfileResponse, PublicCompany, PublicCompanySummary} from '../../lib/types-public';
 import {isDbId} from '../../lib/board';
 import {getViewer} from '../../platform/auth';
+import {cache} from '../../platform/cache';
 import {problem, withDb} from '../../platform/guards';
 import {cachedBoardSettings} from '../board/brand';
 import {publicJobWhere} from '../board/public';
+import {HOME_PREFIX} from '../board/public-cache';
 import {NEWEST} from '../board/public-search';
-import {companySelect, jobSummarySelect, logoCacheControl, toCompany, toCompanySummary, toJobSummary} from '../board/public-shapes';
+import {companySelect, jobState, jobSummarySelect, logoCacheControl, reviveSummary, toCompany, toCompanySummary, toJobSummary} from '../board/public-shapes';
 import {type BoardSettings, isSingleCompany} from '../board/settings';
 
 /**
@@ -30,6 +32,16 @@ const AZ_CURSOR = /^\d{1,10}$/;
 const TOP = 24;
 /** "Hiring the most": this many companies, with a few of their open job titles. */
 const TOP_ROLES = 3;
+/**
+ * The directory's plain first page and its header are the same for every visitor: kept in the Site
+ * Cache under the public lists' prefix (every job, company and settings write clears them), and short
+ * because jobs expire by themselves. Filtered and later pages read their rows but reuse the header.
+ */
+const DIRECTORY_TTL = 180;
+const DIRECTORY_FIRST_KEY = `${HOME_PREFIX}companies:first`;
+const DIRECTORY_OVERVIEW_KEY = `${HOME_PREFIX}companies:overview`;
+/** A profile and its open jobs (`board:home:company:<scope>:<slug>`): cleared with the public lists; expiry applied per request. */
+const PROFILE_TTL = 600;
 
 const summarySelect = {id: true, slug: true, name: true, logoUrl: true, location: true, activeJobCount: true} as const;
 type SummaryRow = {id: number; slug: string; name: string; logoUrl: string | null; location: string | null};
@@ -138,6 +150,34 @@ async function companiesOverview(db: PrismaClient, settings: BoardSettings, now:
   return {companyCount: totals._count._all, roleCount: totals._sum.activeJobCount ?? 0, top, topRoles};
 }
 
+type ProfileJobRow = Prisma.JobGetPayload<{select: typeof jobSummarySelect}>;
+
+/**
+ * A profile's rows: both by slug, in parallel (one round trip): the jobs' rule already leaves out a
+ * blocked company and, on a single-company board, every other company. A company gets a public page
+ * once one of its jobs has been live (approved or paid): its text and links are never published by
+ * merely signing up and naming a company. Null when there is no such public company.
+ */
+async function loadProfile(db: PrismaClient, settings: BoardSettings, slug: string, now: Date): Promise<{company: PublicCompany; jobs: ProfileJobRow[]} | null> {
+  const [company, jobs] = await Promise.all([
+    db.company.findFirst({
+      where: {
+        slug,
+        isBlocked: false,
+        ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {jobs: {some: {publishedAt: {not: null}}}}),
+      },
+      select: companySelect,
+    }),
+    db.job.findMany({
+      where: {AND: [publicJobWhere(settings, now), {company: {slug}}]},
+      orderBy: [{isFeatured: 'desc'}, ...NEWEST],
+      take: PROFILE_JOBS,
+      select: jobSummarySelect,
+    }),
+  ]);
+  return company ? {company: toCompany(company), jobs} : null;
+}
+
 export const companyRoutes = new Hono()
   // A logo kept in the Site Database (sites without file storage): bytes checked on the way in.
   // Public only for a company with a public profile (as `/:slug`): an image uploaded by a company
@@ -184,26 +224,34 @@ export const companyRoutes = new Hono()
       const settings = await cachedBoardSettings(db);
       if (isSingleCompany(settings)) return c.json(problem('not_found', 'There is no companies directory on this board.'), 404);
       const {after: raw, sort, q} = c.req.valid('query');
-      const where = searchWhere(q);
-      let ranks: Rank[];
-      if (sort === 'az') {
-        ranks = await byName(db, raw ? Number(raw) : null, where);
-      } else {
-        // Keyset over (count desc, id asc): the rows after the cursor's position.
-        const [count, id] = raw ? raw.split('.').map(Number) : [0, 0];
-        ranks = await hiringRanking(db, settings, now, {after: raw ? {count: count!, id: id!} : undefined, take: PAGE + 1, where});
-      }
-      const slice = ranks.slice(0, PAGE);
-      const more = ranks.length > PAGE;
-      const last = slice.at(-1);
       // The page itself is the ranking's top when it is the unfiltered first page by open jobs.
       const isTop = sort === 'most' && !raw && !q;
-      const [companies, overview] = await Promise.all([companySummaries(db, slice), companiesOverview(db, settings, now, isTop ? ranks : null)]);
-      const body: CompaniesPage = {
-        companies,
-        nextAfter: more && last ? (sort === 'az' ? String(last.id) : `${last.count}.${last.id}`) : null,
-        overview,
+      const load = async (): Promise<CompaniesPage> => {
+        const where = searchWhere(q);
+        let ranks: Rank[];
+        if (sort === 'az') {
+          ranks = await byName(db, raw ? Number(raw) : null, where);
+        } else {
+          // Keyset over (count desc, id asc): the rows after the cursor's position.
+          const [count, id] = raw ? raw.split('.').map(Number) : [0, 0];
+          ranks = await hiringRanking(db, settings, now, {after: raw ? {count: count!, id: id!} : undefined, take: PAGE + 1, where});
+        }
+        const slice = ranks.slice(0, PAGE);
+        const more = ranks.length > PAGE;
+        const last = slice.at(-1);
+        const [companies, overview] = await Promise.all([
+          companySummaries(db, slice),
+          isTop
+            ? companiesOverview(db, settings, now, ranks)
+            : cache.getOrSet(DIRECTORY_OVERVIEW_KEY, DIRECTORY_TTL, () => companiesOverview(db, settings, now, null)),
+        ]);
+        return {
+          companies,
+          nextAfter: more && last ? (sort === 'az' ? String(last.id) : `${last.count}.${last.id}`) : null,
+          overview,
+        };
       };
+      const body = isTop ? await cache.getOrSet(DIRECTORY_FIRST_KEY, DIRECTORY_TTL, load) : await load();
       c.header('Cache-Control', 'public, max-age=60');
       return c.json(body);
     }
@@ -221,28 +269,14 @@ export const companyRoutes = new Hono()
       const now = new Date();
       const settings = await cachedBoardSettings(db);
       const slug = c.req.valid('param').slug;
-      // Both by slug, in parallel (one round trip): the jobs' rule already leaves out a blocked
-      // company and, on a single-company board, every other company. A company gets a public
-      // page once one of its jobs has been live (approved or paid): its text and links are never
-      // published by merely signing up and naming a company.
-      const [company, jobs] = await Promise.all([
-        db.company.findFirst({
-          where: {
-            slug,
-            isBlocked: false,
-            ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {jobs: {some: {publishedAt: {not: null}}}}),
-          },
-          select: companySelect,
-        }),
-        db.job.findMany({
-          where: {AND: [publicJobWhere(settings, now), {company: {slug}}]},
-          orderBy: [{isFeatured: 'desc'}, ...NEWEST],
-          take: PROFILE_JOBS,
-          select: jobSummarySelect,
-        }),
-      ]);
-      if (!company) return c.json(problem('not_found', 'No such company.'), 404);
-      const body: CompanyProfileResponse = {company: toCompany(company), jobs: jobs.map(r => toJobSummary(r, now, settings.currency))};
+      // The same for every visitor: kept in the Site Cache under the public lists' prefix, so every
+      // job, company and settings write (they clear it) shows at once. A job that expired since is
+      // dropped below with this request's clock, never cached.
+      const scope = isSingleCompany(settings) ? `company-${settings.ownerCompanyId}` : 'all';
+      const page = await cache.getOrSet(`${HOME_PREFIX}company:${scope}:${slug}`, PROFILE_TTL, () => loadProfile(db, settings, slug, new Date()));
+      if (!page) return c.json(problem('not_found', 'No such company.'), 404);
+      const jobs = page.jobs.map(reviveSummary).filter(r => jobState(r, now) === 'active');
+      const body: CompanyProfileResponse = {company: page.company, jobs: jobs.map(r => toJobSummary(r, now, settings.currency))};
       c.header('Cache-Control', 'public, max-age=60');
       return c.json(body);
     }

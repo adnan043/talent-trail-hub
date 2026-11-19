@@ -155,7 +155,7 @@ export function brandCss(
   // font preset and the single-company rule; the brand colour stays out of it.
   const colours = options.colours ?? true;
   const font = FONTS[settings.fontPreset] ?? null;
-  const fontTokens = font ? {'--font-sans': font, '--font-display': font} : {};
+  const fontTokens: Record<string, string> = font ? {'--font-sans': font, '--font-display': font} : {};
   if (!colours) {
     return [
       '/* Board branding (F30): generated from the board settings (no colours on this page). */',

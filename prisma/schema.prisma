@@ -596,6 +596,8 @@ model Job {
   @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_search_text_trgm_idx")
   @@index([locationCity(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_location_city_trgm_idx")
   @@index([locationRegion(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_location_region_trgm_idx")
+  /// The admin's job search and the dashboard's ⌘K (`title ILIKE '%term%'`).
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_title_trgm_idx")
   @@map("jobs")
 }
 
