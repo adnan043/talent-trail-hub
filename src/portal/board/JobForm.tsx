@@ -48,6 +48,30 @@ export interface JobFormProps {
   secondary?: ReactNode;
   /** A line above the buttons: a failure that is not about one field. */
   status?: ReactNode;
+  /**
+   * One white card in titled sections (title and hint on the left, fields on the right), the
+   * buttons in a bar that sticks to the bottom: the admin's and the employer's edit screens.
+   * Off: the plain stack (the post-a-job wizard).
+   */
+  sectioned?: boolean;
+  /** With `sectioned`: a first section of the caller's own (the admin's company picker). */
+  lead?: {title: string; description?: string; content: ReactNode};
+  /** With `sectioned`: a note left of the buttons in the sticky bar. */
+  note?: ReactNode;
+}
+
+/** A titled part of a sectioned form; just its children otherwise. */
+function Section({on, title, description, children}: {on: boolean; title: string; description?: string; children: ReactNode}) {
+  if (!on) return <>{children}</>;
+  return (
+    <section className="form-section">
+      <div className="form-section-text">
+        <h3>{title}</h3>
+        {description && <p>{description}</p>}
+      </div>
+      <div className="form-stack">{children}</div>
+    </section>
+  );
 }
 
 const APPLY_LABELS: Record<ApplyMethod, {title: string; description: string}> = {
@@ -68,6 +92,9 @@ export function JobForm({
   pendingLabel = 'Saving…',
   secondary,
   status,
+  sectioned = false,
+  lead,
+  note,
 }: JobFormProps) {
   // Each field's rule asks the shared checker about the CURRENT values (cross-field rules too).
   const latest = useRef(initial);
@@ -91,7 +118,14 @@ export function JobForm({
   const categoryOptions = [{value: '', label: 'Choose a category'}, ...categories.map(c => ({value: String(c.id), label: c.name}))];
 
   return (
-    <form className="form-stack" noValidate onSubmit={form.submit(values => onSubmit(values))}>
+    <form className={sectioned ? 'form-sectioned' : 'form-stack'} noValidate onSubmit={form.submit(values => onSubmit(values))}>
+      <div className={sectioned ? 'card-panel form-sections' : 'form-stack'}>
+      {lead && (
+        <Section on={sectioned} title={lead.title} description={lead.description}>
+          {lead.content}
+        </Section>
+      )}
+      <Section on={sectioned} title="The role" description="What the job is called and how it’s done.">
       <Field id="f-title" label="Job title" error={form.error('title')} hint="Like “Senior Backend Engineer”.">
         <input {...form.field('title')} maxLength={LIMITS.title + 20} autoComplete="off" placeholder="Senior Backend Engineer" />
       </Field>
@@ -112,6 +146,8 @@ export function JobForm({
         onChange={value => form.set('workplaceType', value)}
         options={WORKPLACE_TYPES.map(t => ({value: t, title: WORKPLACE_LABELS[t]}))}
       />
+      </Section>
+      <Section on={sectioned} title="Location and pay" description="Jobs that show pay get far more applicants.">
       {remote ? (
         <Field
           id="f-applicantCountries"
@@ -147,6 +183,8 @@ export function JobForm({
         </Field>
       </div>
 
+      </Section>
+      <Section on={sectioned} title="Description" description={`At least ${LIMITS.descriptionMin} characters. Simple Markdown works.`}>
       <Field
         id="f-descriptionMd"
         label="Description"
@@ -159,6 +197,8 @@ export function JobForm({
         <input {...form.field('tags')} autoComplete="off" placeholder="react, typescript" />
       </Field>
 
+      </Section>
+      <Section on={sectioned} title="How people apply" description="Where the Apply button sends candidates.">
       <RadioCards<ApplyMethod>
         legend="How people apply"
         name="applyMethod"
@@ -177,8 +217,12 @@ export function JobForm({
         </Field>
       )}
 
+      </Section>
+      </div>
+
       {status}
-      <div className="form-actions">
+      <div className={sectioned ? 'form-actions form-stickybar' : 'form-actions'}>
+        {sectioned && note && <span className="form-stickybar-note">{note}</span>}
         {secondary}
         <Button type="submit" pending={pending} pendingLabel={pendingLabel}>
           {submitLabel}

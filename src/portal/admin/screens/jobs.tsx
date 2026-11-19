@@ -26,6 +26,7 @@ import {
   SearchInput,
   Select,
   StatusBadge,
+  TileCell,
   useConfirm,
   useForm,
   useToast,
@@ -106,14 +107,15 @@ export function Jobs() {
       key: 'job',
       header: 'Job',
       cell: job => (
-        <span>
-          <a className="cell-title" href={`/jobs/${job.slug}/`}>
-            {job.title}
-          </a>
-          <span className="cell-sub">
-            {job.company} · {job.category}
-          </span>
-        </span>
+        <TileCell
+          tile={job.company}
+          title={
+            <a className="cell-title" href={`/jobs/${job.slug}/`}>
+              {job.title}
+            </a>
+          }
+          detail={`${job.company} · ${job.category}`}
+        />
       ),
     },
     {
@@ -131,7 +133,8 @@ export function Jobs() {
     },
     {key: 'source', header: 'Source', width: 'shrink', hideOnMobile: true, cell: job => SOURCE_LABELS[job.source]},
     {key: 'ends', header: 'Ends', width: 'shrink', hideOnMobile: true, cell: job => day(job.expiresAt)},
-    {key: 'numbers', header: 'Views / applicants', width: 'shrink', hideOnMobile: true, cell: job => `${job.views} / ${job.applicants}`},
+    {key: 'views', header: 'Views', align: 'end', width: 'shrink', hideOnMobile: true, cell: job => job.views.toLocaleString('en-US')},
+    {key: 'applicants', header: 'Applicants', align: 'end', width: 'shrink', hideOnMobile: true, cell: job => job.applicants.toLocaleString('en-US')},
     {
       key: 'actions',
       header: 'Actions',

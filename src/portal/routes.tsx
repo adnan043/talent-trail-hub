@@ -37,6 +37,7 @@ import {myApplicationsQuery} from './applicants/queries';
 import {applicantProfileQuery, ownPhotoUrl} from './applicants/profile-queries';
 import {ProfilePhoto} from './applicants/profile-parts';
 import {welcomeSearch} from './applicants/WelcomeScreen';
+import {AttentionBell, CommandSearch} from './CommandSearch';
 import {useMe, useSite} from './shared';
 import {
   Avatar,
@@ -251,6 +252,7 @@ function Shell() {
   const title = useScreenTitle();
   const siteName = site.data?.site?.name;
   const {heading, resolved} = useNavigationFocus(title, siteName);
+  const pathname = useRouterState({select: state => state.location.pathname});
   const [open, setOpen] = useState(false);
   // `logout()` reloads the page when it is done, so pending never needs resetting.
   const [signingOut, setSigningOut] = useState(false);
@@ -277,9 +279,32 @@ function Shell() {
 
   const name = siteName ?? 'My site';
   const logo = site.data?.site?.logo;
+  // Admin and company accounts get the Vela dashboard (src/styles/dashboard-vela.css); a job
+  // seeker keeps their own light shell.
+  const vela = kind !== 'applicant';
+  const groups = visibleGroups(me.data, kind);
+  const crumbs = crumbsFor(groups, pathname, title);
+  const isStaff = Boolean(abilities?.readBoardReports || abilities?.manageJobs || abilities?.moderateJobs || abilities?.manageUsers);
+  const accountItems = [
+    {label: 'Your account', icon: 'user' as const, onSelect: () => void navigate({to: '/account'})},
+    {label: 'Back to the website', icon: 'globe' as const, onSelect: () => window.location.assign('/')},
+    'separator' as const,
+    {
+      label: 'Sign out',
+      icon: 'log-out' as const,
+      onSelect: () => {
+        setSigningOut(true);
+        void logout();
+      },
+    },
+  ];
   return (
     // A job seeker's dashboard has a white sidebar card with a grey border (app.css `[data-side='light']`).
-    <div className="app-shell" data-nav-open={open ? '' : undefined} data-side={kind === 'applicant' ? 'light' : undefined}>
+    <div
+      className="app-shell"
+      data-nav-open={open ? '' : undefined}
+      data-side={kind === 'applicant' ? 'light' : undefined}
+      data-skin={vela ? 'vela' : undefined}>
       <aside className="app-sidebar" aria-label="Sidebar">
         <a className="app-brand" href="/">
           {logo ? (
@@ -290,30 +315,49 @@ function Shell() {
               <span className="app-brand-name">{name}</span>
             </>
           )}
+          {vela && me.data && <i className="app-brand-pill">{isStaff ? 'Admin' : 'Company'}</i>}
         </a>
         {kind === 'applicant' && <ApplicantSideCard />}
         <nav className="app-nav" aria-label="Dashboard">
-          {NAV_GROUPS.map(group => {
-            if (group.for === 'applicant' && kind !== 'applicant') return null;
-            if (group.for === 'not-applicant' && kind === 'applicant') return null;
-            const items = group.items.filter(
-              item => (!item.ability || abilities?.[item.ability]) && !(item.hideForAbility && abilities?.[item.hideForAbility]) && !(item.employer && me.data?.board.singleCompany)
-            );
-            if (!items.length) return null;
-            return (
-              <div className="app-nav-group" key={group.label}>
-                <p className="app-nav-label">{group.label}</p>
-                {items.map(item => (
-                  <Link key={item.to} to={item.to} className="app-nav-link" activeOptions={{exact: item.exact ?? false}}>
-                    <Icon name={item.icon} size={18} />
-                    {item.label}
-                    {item.badge && <item.badge />}
-                  </Link>
-                ))}
-              </div>
-            );
-          })}
+          {groups.map(group => (
+            <div className="app-nav-group" key={group.label}>
+              <p className="app-nav-label">{group.label}</p>
+              {group.items.map(item => (
+                <Link key={item.to} to={item.to} className="app-nav-link" activeOptions={{exact: item.exact ?? false}}>
+                  <Icon name={item.icon} size={18} />
+                  {item.label}
+                  {item.badge && <item.badge />}
+                </Link>
+              ))}
+            </div>
+          ))}
         </nav>
+        {vela && viewer && (
+          <div className="app-side-foot">
+            <a className="app-nav-link" href="/">
+              <Icon name="arrow-up-right" size={18} />
+              View public site
+            </a>
+            <div className="app-me">
+              <Menu
+                label={`Account menu for ${viewer.name ?? 'you'}`}
+                align="start"
+                disabled={signingOut}
+                trigger={
+                  <>
+                    {signingOut ? <span className="spinner" aria-hidden="true" /> : <Avatar name={viewer.name ?? ''} size="sm" />}
+                    <span className="app-me-text">
+                      <b>{signingOut ? 'Signing out…' : viewer.name}</b>
+                      <small>{viewer.email}</small>
+                    </span>
+                    <Icon name="chevrons-up-down" size={16} />
+                  </>
+                }
+                items={accountItems}
+              />
+            </div>
+          </div>
+        )}
       </aside>
       <button type="button" className="app-scrim" aria-label="Close the menu" tabIndex={-1} onClick={() => setOpen(false)} />
 
@@ -326,35 +370,50 @@ function Shell() {
             aria-expanded={open}
             onClick={() => setOpen(value => !value)}
           />
-          <h1 className="app-title" ref={heading} tabIndex={-1}>
-            {title}
-          </h1>
+          {vela ? (
+            <div className="app-crumbs">
+              <nav aria-label="Breadcrumb">
+                {crumbs.map(crumb => (
+                  <span key={crumb.label} className="app-crumb">
+                    <Link to={crumb.to} activeOptions={{exact: true}}>
+                      {crumb.label}
+                    </Link>
+                    <span aria-hidden="true" className="app-crumb-sep">
+                      /
+                    </span>
+                  </span>
+                ))}
+              </nav>
+              <h1 className="app-title" ref={heading} tabIndex={-1}>
+                {title}
+              </h1>
+            </div>
+          ) : (
+            <h1 className="app-title" ref={heading} tabIndex={-1}>
+              {title}
+            </h1>
+          )}
           <div className="app-topbar-actions">
-            {viewer && (
-              <Menu
-                label={`Account menu for ${viewer.name ?? 'you'}`}
-                trigger={
-                  <>
-                    {signingOut ? <span className="spinner" aria-hidden="true" /> : <Avatar name={viewer.name ?? ''} size="sm" />}
-                    <span className="app-viewer-name">{signingOut ? 'Signing out…' : viewer.name}</span>
-                    <Icon name="chevron-down" size={16} />
-                  </>
-                }
-                disabled={signingOut}
-                items={[
-                  {label: 'Your account', icon: 'user', onSelect: () => void navigate({to: '/account'})},
-                  {label: 'Back to the website', icon: 'globe', onSelect: () => window.location.assign('/')},
-                  'separator',
-                  {
-                    label: 'Sign out',
-                    icon: 'log-out',
-                    onSelect: () => {
-                      setSigningOut(true);
-                      void logout();
-                    },
-                  },
-                ]}
-              />
+            {vela ? (
+              <>
+                <CommandSearch screens={groups.flatMap(group => group.items.map(item => ({to: item.to, label: item.label, icon: item.icon, group: group.label})))} />
+                <AttentionBell />
+              </>
+            ) : (
+              viewer && (
+                <Menu
+                  label={`Account menu for ${viewer.name ?? 'you'}`}
+                  trigger={
+                    <>
+                      {signingOut ? <span className="spinner" aria-hidden="true" /> : <Avatar name={viewer.name ?? ''} size="sm" />}
+                      <span className="app-viewer-name">{signingOut ? 'Signing out…' : viewer.name}</span>
+                      <Icon name="chevron-down" size={16} />
+                    </>
+                  }
+                  disabled={signingOut}
+                  items={accountItems}
+                />
+              )
             )}
           </div>
         </header>
@@ -364,6 +423,37 @@ function Shell() {
       </div>
     </div>
   );
+}
+
+/** The sidebar's groups this visitor sees: each item gated by its ability and the board mode; empty groups dropped. */
+function visibleGroups(me: ReturnType<typeof useMe>['data'], kind: string | undefined): NavGroup[] {
+  const abilities = me?.abilities;
+  return NAV_GROUPS.flatMap(group => {
+    if (group.for === 'applicant' && kind !== 'applicant') return [];
+    if (group.for === 'not-applicant' && kind === 'applicant') return [];
+    const items = group.items.filter(
+      item => (!item.ability || abilities?.[item.ability]) && !(item.hideForAbility && abilities?.[item.hideForAbility]) && !(item.employer && me?.board.singleCompany)
+    );
+    return items.length ? [{...group, items}] : [];
+  });
+}
+
+/**
+ * The top bar's trail: the sidebar group, then the sidebar item when the screen is inside it
+ * ("Board / Moderation / Review job"). The screen's own title is the `<h1>` after it.
+ */
+function crumbsFor(groups: NavGroup[], fullPath: string, title: string): {label: string; to: string}[] {
+  const pathname = fullPath.replace(/^\/dashboard(?=\/|$)/, '') || '/';
+  let best: {group: NavGroup; item: NavItem} | null = null;
+  for (const group of groups)
+    for (const item of group.items) {
+      const hit = item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`);
+      if (hit && (!best || item.to.length > best.item.to.length)) best = {group, item};
+    }
+  if (!best) return [{label: 'Workspace', to: '/'}];
+  const out = [{label: best.group.label, to: best.group.items[0]!.to}];
+  if (best.item.label !== title && pathname !== best.item.to) out.push({label: best.item.label, to: best.item.to});
+  return out;
 }
 
 // One `createRoute` per screen, with a LITERAL path (`<Link to>` is typed from
