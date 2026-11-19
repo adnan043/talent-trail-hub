@@ -11,6 +11,7 @@ import {authEmailGuard} from './auth-email-guard';
 import {authSettings} from './auth-settings';
 import {signOutOthersOnTwoFactor} from './two-factor-signout';
 import {dropApplicantProfileOnDelete} from './applicant-account-delete';
+import {refuseDemoWrites} from './demo-guard';
 import {checkoutRoutes, membershipRoutes} from './routes/checkout';
 import {abilitiesFor, CATALOGUE} from './permissions';
 import {applicationRoutes} from './routes/applications';
@@ -64,6 +65,8 @@ export const app = new Hono()
   // The editor Preview only: auth cookies carried in headers (its gateway drops cookies).
   .use(previewCookies)
   .use(sameOrigin)
+  // The store preview's read-only demo admin: every write but signing in and out refuses it.
+  .use(refuseDemoWrites)
   // The Buy button posts here as a plain form too (no JavaScript): BEFORE `csrf`, with its own
   // `formCsrf` (the token, or a same-origin form post). Keep it here (docs/agent/payments.md).
   .route('/checkout', checkoutRoutes)
