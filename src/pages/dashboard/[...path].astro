@@ -37,15 +37,34 @@ const open = viewer.state === 'user' || config.preview;
         </noscript>
       </>
     ) : (
-      <main class="app-gate">
-        <div class="card center">
-          <h1>Sign in to continue</h1>
-          <p class="lede">Sign in to {site?.name ?? 'this site'} to open your dashboard.</p>
-          <div class="actions">
-            <a class="button" href={`/account/login/?next=${back}`}>Sign in</a>
-            <a class="button ghost" href={`/account/register/?next=${back}`}>Create an account</a>
-            <a class="button link" href="/">Back to the website</a>
+      <main id="main" tabindex="-1" class="app-gate v-gate">
+        <div class="v-gate-card">
+          <span class="v-gate-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="10.5" width="16" height="10" rx="2.5" />
+              <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+              <circle cx="12" cy="15.5" r="1.2" />
+            </svg>
+          </span>
+          <div class="v-gate-head">
+            <h1>Sign in to continue</h1>
+            <p>Sign in to {site?.name ?? 'this site'} to open your dashboard.</p>
           </div>
+          <div class="v-gate-actions">
+            <a class="v-gate-go" href={`/account/login/?next=${back}`}>
+              Sign in
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </a>
+            <a class="v-gate-alt" href={`/account/register/?next=${back}`}>Create an account</a>
+          </div>
+          <a class="v-gate-back" href="/">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M19 12H5M11 18l-6-6 6-6" />
+            </svg>
+            Back to the website
+          </a>
         </div>
       </main>
     )

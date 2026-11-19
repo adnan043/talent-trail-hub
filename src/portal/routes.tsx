@@ -37,7 +37,7 @@ import {myApplicationsQuery} from './applicants/queries';
 import {applicantProfileQuery, ownPhotoUrl} from './applicants/profile-queries';
 import {ProfilePhoto} from './applicants/profile-parts';
 import {welcomeSearch} from './applicants/WelcomeScreen';
-import {AttentionBell, CommandSearch} from './CommandSearch';
+import {CommandSearch} from './CommandSearch';
 import {useMe, useSite} from './shared';
 import {
   Avatar,
@@ -395,10 +395,7 @@ function Shell() {
           )}
           <div className="app-topbar-actions">
             {vela ? (
-              <>
-                <CommandSearch screens={groups.flatMap(group => group.items.map(item => ({to: item.to, label: item.label, icon: item.icon, group: group.label})))} />
-                <AttentionBell />
-              </>
+              <CommandSearch screens={groups.flatMap(group => group.items.map(item => ({to: item.to, label: item.label, icon: item.icon, group: group.label})))} />
             ) : (
               viewer && (
                 <Menu
