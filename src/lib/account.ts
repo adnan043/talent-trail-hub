@@ -16,6 +16,14 @@ export function nextPath(fallback = '/dashboard'): string {
 }
 
 /**
+ * A `next` that only a company account can use: posting a job or the employer's screens. Sign-up
+ * picks "Hire" for it, so the Pricing and "Post a job" buttons never make a job seeker account.
+ */
+export function isEmployerPath(next: string): boolean {
+  return /^\/dashboard\/(?:post-a-job|employer)(?:[/?#]|$)/.test(next);
+}
+
+/**
  * `?next=` exactly as the page was given it (a same-site PATH), or undefined. Send THIS to the sign-in
  * routes and go where they answer: the server decides, so an admin lands in the admin.
  */

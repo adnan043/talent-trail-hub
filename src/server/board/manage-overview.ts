@@ -52,7 +52,9 @@ export const manageOverviewRoutes = new Hono()
     const settings = await cachedBoardSettings(db);
     const body = await cache.getOrSet(`${REPORT_PREFIX}overview:${settings.currency}`, REPORT_TTL, async (): Promise<ManageOverview> => {
       const now = new Date();
-      const since = new Date(now.getTime() - 30 * DAY_MS);
+      // "In the last 30 days": the same 30 UTC days as the activity chart's 30-day range (today and
+      // the 29 before it), so the cards and the chart beside them never disagree.
+      const since = new Date(bucketKey(now, false) - 29 * DAY_MS);
       type Totals = {revenue_all: bigint | null; revenue_30d: bigint | null; paid_orders: number; pending: number; active: number; applications: number; companies: number};
       const [[totals], top] = await Promise.all([
         db.$queryRaw<Totals[]>`

@@ -96,7 +96,16 @@ export function NewAdminJob() {
           ) : (
             <>
               <Field label="Find a company" id="f-companySearch" optional hint="Type part of its name.">
-                <input id="f-companySearch" type="search" value={search} onChange={e => setSearch(e.target.value)} maxLength={80} placeholder="Acme" />
+                {/* Inside the job's form: Enter only searches (as typing does), never posts the job. */}
+                <input
+                  id="f-companySearch"
+                  type="search"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
+                  maxLength={80}
+                  placeholder="Acme"
+                />
               </Field>
               <Field label="Company" id="f-companyId" error={meta.error('companyId')}>
                 <Select {...meta.field('companyId')} options={companyOptions(companies.data.companies, meta.values.companyId, chosen)} />
