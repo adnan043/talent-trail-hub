@@ -173,7 +173,7 @@ const {site, viewer} = await staticContext(Astro.request);
 </Base>
 
 <script>
-  import {nextPath, rememberSignUpEmail, signedIn} from '../../lib/account';
+  import {isEmployerPath, nextPath, rememberSignUpEmail, signedIn} from '../../lib/account';
   import {bindForm, postJson} from '../../lib/form';
   import {formatMoney} from '../../lib/format';
   import {employmentLabel, formatSalary, workplaceAndPlace} from '../../lib/job-display';
@@ -236,7 +236,14 @@ const {site, viewer} = await staticContext(Astro.request);
     const form = document.querySelector<HTMLFormElement>('#register-form')!;
     const params = new URLSearchParams(window.location.search);
     const kinds = form.querySelectorAll<HTMLInputElement>('input[name="kind"]');
-    if (params.get('as') === 'company') kinds.forEach(input => (input.checked = input.value === 'company'));
+    // A company account: asked for (`?as=company`), or the way back is an employer screen (Pricing's and
+    // "Post a job"'s sign-up, the dashboard's sign-in gate there): a job seeker account could never post.
+    // Not on a single-company board, which hides the company choice.
+    const company = [...kinds].find(input => input.value === 'company');
+    const choice = company?.closest('label');
+    if ((params.get('as') === 'company' || isEmployerPath(next)) && choice && getComputedStyle(choice).display !== 'none') {
+      kinds.forEach(input => (input.checked = input === company));
+    }
     /** After the emailed code: the welcome step sets up what the account is for, then goes on. */
     const afterSignUp = () => {
       const kind = [...kinds].find(input => input.checked)?.value === 'company' ? 'company' : 'applicant';

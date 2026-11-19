@@ -62,6 +62,22 @@ describe.skipIf(!DATABASE_URL)('manage reports (integration, real Postgres)', ()
     expect(o.topJobs.map(j => j.title).sort()).toEqual(['live-1', 'live-2']);
   });
 
+  it("the overview's 30 days are the chart's 30 UTC days, so the card and the chart agree", async () => {
+    await seed();
+    const job = await db.job.findFirstOrThrow({where: {slug: 'live-1'}});
+    const today = new Date();
+    const startOfToday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const apply = (at: number, email: string) =>
+      db.application.create({data: {jobId: job.id, name: 'A', email, consentAt: new Date(at), consentText: 'ok', createdAt: new Date(at)}});
+    await apply(Date.now() - 60_000, 'now@example.com');
+    await apply(startOfToday - 29 * DAY + 60_000, 'first-day@example.com'); // the chart's oldest day
+    await apply(startOfToday - 29 * DAY - 60_000, 'before@example.com'); // under 30×24 h ago, but before that day
+    const o = (await owner.get('/site-api/manage/overview')).json as {applications30d: {value: number}};
+    const a = (await owner.get('/site-api/manage/overview/activity?range=30d')).json as {rows: {applications: number}[]};
+    expect(o.applications30d.value).toBe(2);
+    expect(a.rows.reduce((n, r) => n + r.applications, 0)).toBe(o.applications30d.value);
+  });
+
   it('activity buckets by UTC day, newest first', async () => {
     await seed();
     const res = await owner.get('/site-api/manage/overview/activity?range=7d');
