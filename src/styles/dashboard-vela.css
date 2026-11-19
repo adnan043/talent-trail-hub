@@ -826,6 +826,12 @@ body:has(.app-shell[data-skin='vela']) .badge-neutral {
   color: #353b49;
 }
 
+/* Square header cells: the card's own corners do the rounding (it clips), so a rounded
+   header cell only shows a notch, under a filter toolbar most of all. */
+[data-skin='vela'] .data-table th {
+  border-radius: 0 !important;
+}
+
 [data-skin='vela'] .data-table th:first-child,
 [data-skin='vela'] .data-table td:first-child {
   padding-inline-start: 24px;
@@ -1078,6 +1084,24 @@ body:has(.app-shell[data-skin='vela']) .field .menu-trigger-field:focus-visible 
   box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
 }
 
+/* The Markdown editor's textarea sits inside the editor's own border: never a border of its
+   own, in any state (a border only at rest made the box 2px taller, so it jumped on hover). */
+body:has(.app-shell[data-skin='vela']) .field .md-editor textarea,
+body:has(.app-shell[data-skin='vela']) .field .md-editor textarea:is(:hover, :focus-visible) {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body:has(.app-shell[data-skin='vela']) .md-editor:hover {
+  border-color: #a3acfc;
+}
+
+body:has(.app-shell[data-skin='vela']) .md-editor:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
 body:has(.app-shell[data-skin='vela']) .field [aria-invalid='true'] {
   border-color: #d92d20;
 }
@@ -1128,11 +1152,13 @@ body:has(.app-shell[data-skin='vela']) .switch[aria-checked='true'] {
   color: var(--ink);
 }
 
+[data-skin='vela'] .tab[aria-current='page'],
 [data-skin='vela'] .tab[aria-selected='true'] {
   color: #4338ca;
   font-weight: 600;
 }
 
+[data-skin='vela'] .tab[aria-current='page']::after,
 [data-skin='vela'] .tab[aria-selected='true']::after {
   inset: auto 10px -1px;
   background: #4f46e5;

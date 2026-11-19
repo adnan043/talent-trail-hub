@@ -1,4 +1,4 @@
-import {createRoute, lazyRouteComponent} from '@tanstack/react-router';
+import {createRoute, lazyRouteComponent, redirect} from '@tanstack/react-router';
 
 import {JOB_SOURCES, JOB_STATUSES} from '../../lib/board';
 import type {AdminJobFilters} from '../../lib/types-manage';
@@ -78,6 +78,15 @@ const applicantsRoute = createRoute({
 const tiersRoute = route('/manage/tiers', 'Listing tiers', qc => [qc.ensureQueryData(tiersQuery)], () => import('./screens/tiers'), 'Tiers');
 const privacyRoute = route('/manage/privacy', 'Candidate data', () => [], () => import('./screens/privacy'), 'Privacy');
 const emailsRoute = route('/manage/emails', 'Email log', qc => [qc.ensureInfiniteQueryData(emailLogQuery({status: '', to: ''}))], () => import('./screens/emails'), 'Emails');
+// The sidebar's one "Settings" item: opens its first tab (Branding · Board mode · Moderation mode).
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/manage/settings',
+  staticData: {title: 'Settings'},
+  beforeLoad: () => {
+    throw redirect({to: '/manage/settings/branding', replace: true});
+  },
+});
 const brandingRoute = route('/manage/settings/branding', 'Branding', qc => [qc.ensureQueryData(brandingQuery)], () => import('./screens/settings-branding'), 'Branding');
 const boardRoute = route('/manage/settings/board', 'Board mode', qc => [qc.ensureQueryData(boardModeQuery)], () => import('./screens/settings-board'), 'BoardMode');
 const moderationModeRoute = route('/manage/settings/moderation', 'Moderation mode', qc => [qc.ensureQueryData(moderationModeQuery)], () => import('./screens/settings-board'), 'ModerationMode');
@@ -92,10 +101,14 @@ export const adminRoutes = [
   tiersRoute,
   privacyRoute,
   emailsRoute,
+  settingsRoute,
   brandingRoute,
   boardRoute,
   moderationModeRoute,
 ] as const;
+
+/** The board's settings (tabs inside one screen, settings-tabs.tsx): listed last in the sidebar's Site group. */
+export const SETTINGS_NAV_ITEM: NavItem = {to: '/manage/settings', label: 'Settings', icon: 'settings', ability: 'manageBoard'};
 
 export const ADMIN_NAV: {label: string; items: NavItem[]}[] = [
   {
@@ -107,14 +120,6 @@ export const ADMIN_NAV: {label: string; items: NavItem[]}[] = [
       {to: '/manage/tiers', label: 'Listing tiers', icon: 'layers', ability: 'manageBoard'},
       {to: '/manage/privacy', label: 'Candidate data', icon: 'lock', ability: 'managePrivacy'},
       {to: '/manage/emails', label: 'Email log', icon: 'mail', ability: 'readBoardReports'},
-    ],
-  },
-  {
-    label: 'Board settings',
-    items: [
-      {to: '/manage/settings/branding', label: 'Branding', icon: 'globe', ability: 'manageBoard'},
-      {to: '/manage/settings/board', label: 'Board mode', icon: 'database', ability: 'manageBoard'},
-      {to: '/manage/settings/moderation', label: 'Moderation mode', icon: 'shield', ability: 'manageBoard'},
     ],
   },
 ];

@@ -29,7 +29,7 @@ import {
   twoFactorQuery,
   usersQuery,
 } from './queries';
-import {ADMIN_NAV, adminRoutes} from './admin/routes';
+import {ADMIN_NAV, adminRoutes, SETTINGS_NAV_ITEM} from './admin/routes';
 import {activityQuery, moderationQuery, overviewQuery} from './admin/queries';
 import {EMPLOYER_NAV, employerRoutes} from './employer/routes';
 import {myJobsQuery} from './employer/queries';
@@ -152,16 +152,16 @@ const NAV_GROUPS: NavGroup[] = [
   },
   // The job board: the employer's area, then the admin's (src/portal/employer/, src/portal/admin/).
   ...EMPLOYER_NAV.map(group => ({...group, for: 'not-applicant' as const})),
-  ...ADMIN_NAV.filter(group => group.label !== 'Board settings'),
+  ...ADMIN_NAV,
   {
     label: 'Site',
     items: [
       {to: '/users', label: 'Users', icon: 'users', ability: 'manageUsers'},
       {to: '/roles', label: 'Roles', icon: 'shield', ability: 'manageRoles'},
       {to: '/activity', label: 'Activity', icon: 'activity', ability: 'readAudit'},
+      SETTINGS_NAV_ITEM,
     ],
   },
-  ...ADMIN_NAV.filter(group => group.label === 'Board settings'),
 ];
 
 /** The screen's title for the top bar and the tab: the deepest route's `staticData.title`. */

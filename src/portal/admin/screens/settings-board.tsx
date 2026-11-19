@@ -5,17 +5,17 @@ import {useState} from 'react';
 import {type BoardMode, LIMITS, type ModerationMode} from '../../../lib/board';
 import type {AdminBoardMode, AdminModerationMode} from '../../../lib/types-manage';
 import {api, ApiError, read} from '../../api';
-import {Button, buttonClass, Card, ErrorNote, Field, LoadingBlock, Notice, PageHeader, RadioCards, rules, Select, useConfirm, useForm, useToast} from '../../ui';
+import {Button, buttonClass, Card, ErrorNote, Field, LoadingBlock, Notice, RadioCards, rules, Select, useConfirm, useForm, useToast} from '../../ui';
 import {boardModeQuery, moderationModeQuery} from '../queries';
+import {SettingsPage} from './settings-tabs';
 
 /** `/manage/settings/board` (site:board:settings): marketplace or one company's careers board (F39). */
 export function BoardMode() {
   const board = useQuery(boardModeQuery);
   return (
-    <div className="app-page screen-board-mode">
-      <PageHeader title="Board mode" description="A marketplace for many employers, or the careers board of one company." />
+    <SettingsPage className="screen-board-mode">
       {board.isPending ? <LoadingBlock rows={4} /> : board.error ? <ErrorNote error={board.error} /> : <BoardModeForm data={board.data} />}
-    </div>
+    </SettingsPage>
   );
 }
 
@@ -145,12 +145,7 @@ export function ModerationMode() {
     },
   });
   return (
-    <div className="app-page screen-moderation-mode">
-      <PageHeader
-        title="Moderation mode"
-        description="Whether employer jobs wait for your approval."
-        actions={<Link className={buttonClass({variant: 'secondary'})} to="/manage/moderation">Open the queue</Link>}
-      />
+    <SettingsPage className="screen-moderation-mode" actions={<Link className={buttonClass({variant: 'secondary'})} to="/manage/moderation">Open the queue</Link>}>
       {current.isPending ? (
         <LoadingBlock rows={3} />
       ) : current.error ? (
@@ -173,6 +168,6 @@ export function ModerationMode() {
           </div>
         </Card>
       )}
-    </div>
+    </SettingsPage>
   );
 }
