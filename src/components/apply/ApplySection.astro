@@ -1,6 +1,7 @@
 ---
 /**
  * F4 apply, on the job page (`<ApplySection job={…} />`). Applying needs a job seeker account.
+ * Looks: the "Vela" dark band (src/styles/job-detail-vela.css, `.vd-apply-band`); the form step is a light card.
  * - `onsite`: the browser asks `/site-api/applications/jobs/:slug/can-apply` and shows ONE step:
  *   sign in, set up the profile, finish it (photo, CV), or the one-click form (cover note,
  *   consent) made from the profile (./apply-form.ts).
@@ -31,8 +32,9 @@ const mailto = job.applyMethod === 'email' && email ? `mailto:${email}?subject=$
 const id = `apply-${job.id}`;
 ---
 
-<section class="bp-panel bp-pad apply-section" id="apply" aria-labelledby={`${id}-title`} data-apply-section data-slug={job.slug}>
-  <h2 id={`${id}-title`} class="bp-subheading">Apply for this job</h2>
+<section class="apply-section vd-apply-band" id="apply" aria-labelledby={`${id}-title`} data-apply-section data-slug={job.slug}>
+  <div class="vd-apply-grid" aria-hidden="true"></div>
+  <h2 id={`${id}-title`} class="vd-apply-title">Apply in one click</h2>
   {
     !job.open ? (
       <p class="notice">This job is no longer taking applications.</p>
@@ -43,24 +45,24 @@ const id = `apply-${job.id}`;
         <p class="notice" data-apply-blocked hidden></p>
 
         <div class="apply-step" data-apply-signin hidden>
-          <p class="apply-lead">Sign in to apply. A free job seeker account keeps your profile, photo and CV, so every application takes one click, and you can follow its status.</p>
+          <p class="apply-lead">A free account keeps your profile, photo and CV, so every application takes one click, and you can follow its status.</p>
           <div class="apply-actions">
-            <a class="button bp-lg" href={`/account/login/?next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Sign in to apply</a>
-            <a class="button button-outline bp-lg" href={`/account/register/?as=applicant&next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Create an account</a>
+            <a class="vd-apply" href={`/account/login/?next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Sign in to apply<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+            <a class="vd-apply-ghost" href={`/account/register/?as=applicant&next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Create an account</a>
           </div>
         </div>
 
         <div class="apply-step" data-apply-choose hidden>
           <p class="apply-lead">Set up your job seeker profile first: your photo and CV (your email comes from your account). It takes a minute, and then you come back here.</p>
           <div class="apply-actions">
-            <a class="button bp-lg" href={`/dashboard/welcome?as=applicant&next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Set up my profile</a>
+            <a class="vd-apply" href={`/dashboard/welcome?as=applicant&next=${encodeURIComponent(`/jobs/${job.slug}/#apply`)}`}>Set up my profile</a>
           </div>
         </div>
 
         <div class="apply-step" data-apply-incomplete hidden>
           <p class="apply-lead" data-apply-missing></p>
           <div class="apply-actions">
-            <a class="button bp-lg" href="/dashboard/profile">Finish my profile</a>
+            <a class="vd-apply" href="/dashboard/profile">Finish my profile</a>
           </div>
         </div>
 
@@ -86,7 +88,7 @@ const id = `apply-${job.id}`;
           </div>
           <p class="notice" data-form-status hidden></p>
           <div class="actions">
-            <button class="button" type="submit">Apply now</button>
+            <button class="vd-apply" type="submit">Apply now</button>
           </div>
         </form>
       </div>
@@ -101,7 +103,7 @@ const id = `apply-${job.id}`;
             </>
           )}
         </p>
-        <a class="button bp-lg" href={(url ?? mailto)!} data-apply-click {...(url ? {target: '_blank', rel: 'noopener noreferrer'} : {})}>
+        <a class="vd-apply" href={(url ?? mailto)!} data-apply-click {...(url ? {target: '_blank', rel: 'noopener noreferrer'} : {})}>
           {url ? 'Apply on the company site' : 'Apply by email'}
         </a>
       </div>

@@ -1,0 +1,760 @@
+/*
+ * Create an account (/account/register/) in the "Vela" design (docs: ~/Downloads/Sign up-html).
+ * Builds on home-vela.css (tokens `--v-*`, `.v-home` base). Every value here is the design's.
+ * No style attributes (CSP). The form keeps the site's markup hooks (`.field`, `.pw-checks`,
+ * `[data-form-status]`), restyled here.
+ */
+
+/* ---------------------------------------------------------------- page */
+.v-su {
+  position: relative;
+  background:
+    radial-gradient(38% 60% at 12% 18%, rgba(129, 140, 248, 0.22), transparent 70%),
+    radial-gradient(34% 55% at 88% 12%, rgba(240, 171, 252, 0.18), transparent 70%),
+    radial-gradient(40% 60% at 82% 92%, rgba(103, 232, 249, 0.13), transparent 70%),
+    radial-gradient(42% 60% at 18% 96%, rgba(167, 139, 250, 0.17), transparent 70%),
+    linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+}
+
+.v-su-wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 16px 56px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  .v-su-wrap {
+    padding: 64px 32px 88px;
+  }
+}
+
+.v-su-card {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+  background: var(--v-surface-card);
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 28px;
+  box-shadow: 0 30px 60px -30px rgba(79, 70, 229, 0.25);
+}
+
+/* ---------------------------------------------------------------- form side */
+.v-su-main {
+  flex: 1 1 440px;
+  min-width: 0;
+  padding: 28px 20px 28px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+@media (min-width: 640px) {
+  .v-su-main {
+    padding: 44px 52px 40px;
+  }
+}
+
+.v-su-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--v-surface-sunken);
+}
+
+.v-su-tabs a {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--v-text-muted);
+  text-decoration: none;
+  transition: color 140ms ease;
+}
+
+.v-su-tabs a:hover {
+  color: var(--v-text-strong);
+}
+
+.v-su-tabs a[aria-current='page'] {
+  background: var(--v-surface-card);
+  box-shadow: 0 1px 2px rgba(21, 25, 34, 0.08);
+  font-weight: 600;
+  color: var(--v-text-strong);
+}
+
+.v-su-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v-su .v-su-head h1 {
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--v-text-strong);
+}
+
+.v-su-head p {
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--v-text-muted);
+}
+
+.v-su-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* "I want to": real radio inputs inside the design's choice cards. */
+.v-su-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.v-su-kind legend {
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.375;
+  color: var(--v-text-strong);
+}
+
+.v-su-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid var(--v-border-default);
+  background: var(--v-surface-card);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.v-su-choice:hover {
+  border-color: var(--v-primary-300);
+}
+
+.v-su-choice:has(input:checked) {
+  border-color: var(--v-primary-500);
+  background: #f7f8ff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.v-su-choice:has(input:focus-visible) {
+  outline: 2px solid var(--v-primary-500);
+  outline-offset: 2px;
+}
+
+/* The native radio stays in the form (keyboard, screen readers), drawn by the card. */
+.v-su-choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.v-su-choice-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--v-surface-sunken);
+  color: var(--v-text-body);
+}
+
+.v-su-choice:has(input:checked) .v-su-choice-icon {
+  background: var(--v-primary-600);
+  color: #ffffff;
+}
+
+.v-su-choice-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.v-su-choice-text strong {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--v-text-strong);
+}
+
+.v-su-choice-text span {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--v-text-muted);
+}
+
+.v-su-choice-dot {
+  flex: none;
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--v-border-default);
+  background: #fff;
+}
+
+.v-su-choice:has(input:checked) .v-su-choice-dot {
+  border: 5px solid var(--v-primary-600);
+}
+
+/* Fields. */
+.v-su .field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v-su .field label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.375;
+  color: var(--v-text-strong);
+}
+
+.v-su .field .v-in {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--v-border-default);
+  border-radius: 12px;
+  background: var(--v-surface-card);
+  font: inherit;
+  font-size: 15px;
+  color: var(--v-text-strong);
+  outline: 0;
+  box-shadow: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.v-su .field .v-in::placeholder {
+  color: var(--v-text-subtle);
+}
+
+.v-su .field .v-in:hover {
+  border-color: var(--v-primary-300);
+}
+
+.v-su .field .v-in:focus,
+.v-su .field .v-in:focus-visible {
+  outline: 0;
+  border-color: var(--v-primary-500);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
+.v-su .field .v-in[aria-invalid='true'],
+.v-su .field .v-in[aria-invalid='true']:hover {
+  border-color: var(--danger);
+}
+
+.v-su .field .v-in[aria-invalid='true']:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.v-su .field-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+/* Password: Show / Hide inside the field. */
+.v-su .pw-input {
+  position: relative;
+}
+
+.v-su .field .pw-input .v-in {
+  padding-right: 72px;
+}
+
+.v-su .pw-reveal {
+  position: absolute;
+  inset: 6px 6px auto auto;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--v-text-muted);
+  cursor: pointer;
+}
+
+.v-su .pw-reveal:hover {
+  background: var(--v-surface-sunken);
+  color: var(--v-text-strong);
+}
+
+/* How far along the password is (decoration; the rules below say it in words). */
+.v-su-meter {
+  display: flex;
+  gap: 4px;
+}
+
+.v-su-meter span {
+  flex: 1;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--v-surface-sunken);
+  transition: background-color 160ms ease;
+}
+
+.v-su-meter[data-level='1'] span:nth-child(-n + 1),
+.v-su-meter[data-level='2'] span:nth-child(-n + 2) {
+  background: var(--v-primary-500);
+}
+
+.v-su-meter[data-level='3'] span {
+  background: var(--v-success-500);
+}
+
+/* The live rules (src/lib/password-checks.ts), in the design's hint style. */
+.v-su .pw-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--v-text-muted);
+}
+
+.v-su .pw-checks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v-su .pw-checks li::before {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--v-border-default);
+  font-size: 9px;
+  opacity: 1;
+}
+
+.v-su .pw-checks li[data-ok] {
+  color: var(--v-text-strong);
+}
+
+.v-su .pw-checks li[data-ok]::before {
+  border-color: var(--v-primary-600);
+  background: var(--v-primary-600);
+  color: #ffffff;
+}
+
+.v-su .pw-checks[data-tried] li:not([data-ok]) {
+  color: var(--danger);
+}
+
+.v-su .pw-checks[data-tried] li:not([data-ok])::before {
+  border-color: currentColor;
+}
+
+.v-su .notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Create account. */
+.v-su-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 50px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--v-primary-600);
+  color: #fff;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.v-su-go:hover {
+  background: var(--v-primary-700);
+  box-shadow: 0 12px 24px -10px rgba(79, 70, 229, 0.65);
+}
+
+.v-su-go:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+.v-su-go svg {
+  flex: none;
+}
+
+/* One button, two labels: which one shows follows the choice above (CSS only, so the form's
+   pending/idle swap keeps both). */
+.v-su-go [data-cta-company],
+.v-su-card:has(input[name='kind'][value='company']:checked) .v-su-go [data-cta-applicant] {
+  display: none;
+}
+
+.v-su-card:has(input[name='kind'][value='company']:checked) .v-su-go [data-cta-company] {
+  display: inline;
+}
+
+.v-su-terms {
+  margin: -4px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--v-text-muted);
+}
+
+.v-su .v-su-a {
+  color: var(--v-primary-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v-su .v-su-terms .v-su-a {
+  font-weight: 500;
+}
+
+.v-su .v-su-a:hover {
+  color: var(--v-primary-700);
+  text-decoration: underline;
+}
+
+.v-su-switch {
+  margin: auto 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--v-text-muted);
+}
+
+/* ---------------------------------------------------------------- dark side */
+.v-su-aside {
+  position: relative;
+  overflow: hidden;
+  flex: 1 1 400px;
+  min-width: 0;
+  padding: 32px 20px 28px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 40px;
+  background:
+    radial-gradient(60% 80% at 0% 0%, rgba(99, 102, 241, 0.45), transparent 60%),
+    radial-gradient(50% 70% at 100% 20%, rgba(167, 139, 250, 0.35), transparent 60%),
+    radial-gradient(60% 60% at 70% 110%, rgba(34, 211, 238, 0.22), transparent 60%),
+    linear-gradient(160deg, #151922 0%, #1b1a3d 100%);
+  color: #fff;
+}
+
+@media (min-width: 640px) {
+  .v-su-aside {
+    padding: 44px 44px 40px;
+  }
+}
+
+/* The side follows the choice: job seeker by default, the employer side for "Hire people". */
+.v-su-aside[data-for='company'],
+.v-su-card:has(input[name='kind'][value='company']:checked) .v-su-aside[data-for='applicant'] {
+  display: none;
+}
+
+.v-su-card:has(input[name='kind'][value='company']:checked) .v-su-aside[data-for='company'] {
+  display: flex;
+}
+
+.v-su-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 20%, transparent 75%);
+}
+
+.v-su-aside-top {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v-su-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 12.5px;
+  color: #e4e7f5;
+}
+
+.v-su-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2);
+}
+
+.v-su-aside-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.v-su .v-su-aside h2 {
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: #fff;
+}
+
+@media (min-width: 640px) {
+  .v-su .v-su-aside h2 {
+    font-size: 36px;
+  }
+}
+
+.v-su-shine {
+  background: linear-gradient(90deg, #c7d2fe, #f0abfc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.v-su-aside-copy p {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: #c7cbe0;
+}
+
+.v-su-ticks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.v-su-ticks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.v-su-tick {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #c7d2fe;
+}
+
+.v-su-ticks li > span:last-child {
+  padding-top: 3px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #e4e7f5;
+}
+
+.v-su-aside-bottom {
+  position: relative;
+}
+
+.v-su-aside-bottom[hidden] {
+  display: none;
+}
+
+/* "You'll go straight back to": the job in `?next=`, when there is one. */
+.v-su-goto {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.v-su-goto-label {
+  font-family: var(--v-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8b0d6;
+}
+
+.v-su-goto-job {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.v-su-goto-icon {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0891b2;
+  color: #fff;
+}
+
+.v-su-goto-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v-su-goto-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v-su-goto-meta {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #a8b0d6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v-su-goto-pay {
+  flex: none;
+  font-family: var(--v-figtree);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.v-su-goto-pay:empty {
+  display: none;
+}
+
+/* "Job posts from $X" + Compare plans (the board's real tiers). */
+.v-su-price {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.v-su-price-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v-su-price-label {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #a8b0d6;
+}
+
+.v-su-price-value {
+  font-family: var(--v-figtree);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #fff;
+}
+
+.v-su .v-su-plans {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 160ms ease;
+}
+
+.v-su .v-su-plans:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}

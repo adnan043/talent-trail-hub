@@ -12,13 +12,15 @@
  * Layout: hero (search + field chips), then the filters card beside the results card (md and up);
  * below md the filters open as a side sheet from the "Filters" button.
  */
+import CompanyLogo from '../../components/board/CompanyLogo.astro';
 import Icon from '../../components/board/Icon.astro';
+import VelaEmployerBand from '../../components/board/VelaEmployerBand.astro';
 import VelaJobRow from '../../components/board/VelaJobRow.astro';
 import Base from '../../layouts/Base.astro';
 import {EMPLOYMENT_TYPES, WORKPLACE_LABELS, type WorkplaceType} from '../../lib/board';
 import {employmentLabel, postedAgo, workplaceLabel} from '../../lib/job-display';
 import {activeFilterCount, isFilteredSearch, JOB_SORTS, jobSearchHref, MIN_SALARY_OPTIONS, parseJobSearch, POSTED_WITHIN, toApiQuery} from '../../lib/job-search';
-import type {CategoryCount, HomeResponse, JobsPage} from '../../lib/types-public';
+import type {CategoryCount, HomeResponse, JobsPage, PublicTier} from '../../lib/types-public';
 import {backend, read} from '../../server/backend';
 import {boardPage} from '../../server/board/public-page';
 import '../../styles/board-list.css';
@@ -30,12 +32,18 @@ const api = backend(Astro.request);
 // The workplace switch's counts are board-wide (the home API's, cached): shown only while no other
 // filter narrows the list, so they always match what a tab leads to.
 const onlyWorkplace = !search.q && !search.category && !search.types.length && !search.location && !search.minSalary && !search.posted && !search.featured;
-const [{site, viewer, board}, result, cats, home] = await Promise.all([
+// The home API (cached) also feeds "Companies hiring now" below the results; the tiers (cached a
+// day; 404 on single-company boards) the employer band's price card.
+const [{site, viewer, board}, result, cats, home, tiers] = await Promise.all([
   boardPage(Astro.request, Astro.response),
   read<JobsPage>(api.jobs.$get({query: toApiQuery(search)})),
   read<{categories: CategoryCount[]}>(api.board.categories.$get()),
-  onlyWorkplace ? read<HomeResponse>(api.board.home.$get({query: {workplace: ''}})) : Promise.resolve(null),
+  read<HomeResponse>(api.board.home.$get({query: {workplace: ''}})),
+  read<{tiers: PublicTier[]; freePosting: boolean}>(api.board.tiers.$get()),
 ]);
+const single = board?.singleCompany ?? false;
+// "Companies hiring now": the home API's companies (6 at most), not on a single-company board.
+const hiring = single ? [] : (home?.companies ?? []);
 if (!result) Astro.response.status = 503;
 const categories = cats?.categories ?? [];
 const filtered = isFilteredSearch(search);
@@ -85,7 +93,7 @@ const newest = jobs
 
 // The workplace switch: '' = all (one workplace at most; several from an old URL press none).
 const SWITCH_ORDER: WorkplaceType[] = ['remote', 'hybrid', 'onsite'];
-const counts = home?.workplaceCounts;
+const counts = onlyWorkplace ? home?.workplaceCounts : undefined;
 const tabs = [{value: '' as const, label: 'All'}, ...SWITCH_ORDER.map(w => ({value: w, label: WORKPLACE_LABELS[w]}))].map(t => ({
   ...t,
   href: jobSearchHref(search, {workplaces: t.value ? [t.value] : [], before: ''}),
@@ -382,6 +390,39 @@ const showing = total != null && jobs.length <= total ? `Showing 1–${jobs.leng
         </section>
       </div>
     </form>
+
+    {
+      hiring.length > 0 && (
+        <section class="v-section vj-more" aria-labelledby="hiring-title">
+          <div class="v-card">
+            <div class="v-card-head">
+              <h2 id="hiring-title">Companies hiring now</h2>
+              <a href="/companies/">
+                {hiring.length < 6 ? `All ${hiring.length} ${hiring.length === 1 ? 'company' : 'companies'}` : 'All companies'}
+              </a>
+            </div>
+            <ul class="v-hire vj-hire">
+              {hiring.map(co => (
+                <li>
+                  <a class="v-hire-card" href={`/companies/${encodeURIComponent(co.slug)}/`}>
+                    <CompanyLogo name={co.name} logoUrl={co.logoUrl} size="sm" />
+                    <span class="v-hire-text">
+                      <span class="v-hire-name">{co.name}</span>
+                      {co.location && <span class="v-hire-sub">{co.location}</span>}
+                    </span>
+                    <span class="v-hire-count">
+                      {co.openJobCount.toLocaleString('en-US')} {roleWord(co.openJobCount)}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )
+    }
+
+    {!single && <VelaEmployerBand tiers={tiers} titleId="jobs-employer-title" />}
   </main>
 </Base>
 
