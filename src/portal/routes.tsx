@@ -336,7 +336,7 @@ function Shell() {
           <div className="app-side-foot">
             <a className="app-nav-link" href="/">
               <Icon name="arrow-up-right" size={18} />
-              View public site
+              View website
             </a>
             <div className="app-me">
               <Menu
