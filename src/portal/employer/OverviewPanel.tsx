@@ -3,7 +3,7 @@ import {Link} from '@tanstack/react-router';
 
 import {JOB_STATUS_LABELS} from '../../lib/board';
 import {pageCount} from '../shared';
-import {buttonClass, Card, EmptyState, ErrorNote, LoadingBlock, Stat, StatusBadge} from '../ui';
+import {buttonClass, Card, EmptyState, ErrorNote, Icon, LoadingBlock, Stat, StatusBadge} from '../ui';
 import {myJobsQuery} from './queries';
 import {STATUS_TONES} from './status';
 
@@ -44,12 +44,18 @@ export function EmployerOverviewPanel() {
       </div>
       <Card
         title="Your latest jobs"
+        description="Newest first. Open one to see its applicants."
         actions={
           <Link className={buttonClass({variant: 'secondary', size: 'sm'})} to="/post-a-job">
             Post a job
           </Link>
         }
-        footer={<Link to="/employer/jobs">View all</Link>}>
+        footer={
+          <Link className="vd-foot-link" to="/employer/jobs">
+            All my jobs
+            <Icon name="arrow-right" size={14} />
+          </Link>
+        }>
         {jobs.isPending ? (
           <LoadingBlock rows={3} />
         ) : jobs.error ? (
@@ -58,6 +64,9 @@ export function EmployerOverviewPanel() {
           <ul className="list">
             {items!.slice(0, 5).map(job => (
               <li key={job.id} className="list-row">
+                <span className="list-row-icon" aria-hidden="true">
+                  <Icon name="briefcase" size={16} />
+                </span>
                 <span className="list-row-text">
                   <Link className="list-row-title" to="/employer/jobs/$id/applicants" params={{id: String(job.id)}}>
                     {job.title}

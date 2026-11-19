@@ -42,6 +42,17 @@ function describe(event: AuditRow): Line {
     case 'user_registered':
     case 'registered':
       return {who, what: 'signed up', icon: 'user-plus', tone: 'brand'};
+    case 'signed_in_with_password':
+      return {who, what: 'signed in with their password', icon: 'user'};
+    case 'sign_in_failed':
+      return {
+        who: null,
+        what: `A sign-in with a wrong password was tried for ${user}`,
+        icon: 'alert',
+        tone: 'warning',
+      };
+    case 'email_change_cancelled':
+      return {who: null, what: `An email change for ${user} was cancelled`, icon: 'mail'};
     case 'signed_in_with_code':
       return {who, what: 'signed in with an emailed code', icon: 'user'};
     case 'owner_signed_in':

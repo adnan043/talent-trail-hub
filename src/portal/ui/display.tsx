@@ -186,7 +186,8 @@ export function StatusBadge({tone, children}: {tone: Tone; children: ReactNode})
 export const initials = (name: string) =>
   name
     .split(/\s+/)
-    .filter(Boolean)
+    // Words only: "Harbor & Pine" is "HP", not "H&".
+    .filter(word => /^[\p{L}\p{N}]/u.test(word))
     .slice(0, 2)
     .map(word => word[0]?.toUpperCase() ?? '')
     .join('');
@@ -210,6 +211,24 @@ export function Person({name, detail, src}: {name: string; detail?: ReactNode; s
       <span className="person-text">
         <span className="person-name">{name}</span>
         {detail && <span className="person-detail">{detail}</span>}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A record with a company (or owner) initial tile: the first cell of a jobs table or list.
+ * `title` is usually a link; `detail` the quiet second line.
+ */
+export function TileCell({tile, title, detail}: {tile: string; title: ReactNode; detail?: ReactNode}) {
+  return (
+    <span className="tile-cell">
+      <span className="tile-cell-tile" aria-hidden="true">
+        {initials(tile) || '·'}
+      </span>
+      <span className="tile-cell-text">
+        {title}
+        {detail && <span className="cell-sub">{detail}</span>}
       </span>
     </span>
   );

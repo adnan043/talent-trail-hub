@@ -377,6 +377,19 @@ const ICONS = {
       <circle cx="12" cy="8" r="6" />
     </>
   ),
+  'arrow-up-right': <path d="M7 17 17 7M8 7h9v9" />,
+  building: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01M10 21v-3h4v3" />
+    </>
+  ),
+  receipt: (
+    <>
+      <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" />
+      <path d="M9 8h6M9 12h6" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

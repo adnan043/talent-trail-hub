@@ -1,9 +1,8 @@
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
-import {type ChangeEvent, useEffect, useRef, useState} from 'react';
+import {type ChangeEvent, useRef, useState} from 'react';
 
 import {FONT_PRESETS, type FontPreset, LIMITS} from '../../../lib/board';
 import type {AdminBranding, FooterLink} from '../../../lib/types-manage';
-import {sidebarTokens} from '../../../lib/sidebar-colours';
 import {HEX_COLOR, isFooterHref, MANAGE_LIMITS} from '../../../lib/types-manage';
 import {putFile} from '../../../platform/files-browser';
 import {imageForStorage} from '../../board/image';
@@ -28,15 +27,6 @@ export function Branding() {
 
 const OPTIONAL_HEX = /^(#[0-9a-f]{6})?$/i;
 
-/** Re-scopes the sidebar's tokens to the picked colours; a half-typed value counts as empty. */
-function applySidebar(bg: string, text: string) {
-  const el = document.querySelector<HTMLElement>('.app-sidebar');
-  if (!el) return;
-  const tokens = sidebarTokens(HEX_COLOR.test(bg) ? bg : null, HEX_COLOR.test(text) ? text : null);
-  for (const [name, value] of Object.entries(tokens)) el.style.setProperty(name, value);
-  el.style.background = tokens['--card'];
-}
-
 function BrandingForm({data}: {data: AdminBranding}) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -51,12 +41,6 @@ function BrandingForm({data}: {data: AdminBranding}) {
       heroSubtitle: [rules.maxLength(MANAGE_LIMITS.heroSubtitle)],
     }
   );
-  // The sidebar follows the pickers live (set through the CSSOM: the CSP blocks `style=""`); it is
-  // saved only with the form. Leaving the screen puts back the last SAVED colours.
-  const saved = useRef(data);
-  saved.current = data;
-  useEffect(() => applySidebar(form.values.sidebarBg, form.values.sidebarText), [form.values.sidebarBg, form.values.sidebarText]);
-  useEffect(() => () => applySidebar(saved.current.sidebarBg, saved.current.sidebarText), []);
   const [links, setLinks] = useState<FooterLink[]>(data.footerLinks);
   const [linkErrors, setLinkErrors] = useState<Record<string, string>>({});
   const save = useMutation({
@@ -94,7 +78,7 @@ function BrandingForm({data}: {data: AdminBranding}) {
       <form noValidate onSubmit={submit}>
         <Card title="Colour and home page" footer={<Button type="submit" pending={save.isPending} pendingLabel="Saving…">Save branding</Button>}>
           <div className="form-stack">
-            <Field label="Main colour" id="f-primaryColor" error={form.error('primaryColor')} hint="Buttons and links. A hex colour like #4f46e5.">
+            <Field label="Main colour" id="f-primaryColor" error={form.error('primaryColor')} hint="The public site’s buttons and links. A hex colour like #4f46e5. The dashboard keeps its own indigo.">
               <span className="color-field">
                 <input {...form.field('primaryColor')} placeholder="#4f46e5" />
                 <input
@@ -105,29 +89,7 @@ function BrandingForm({data}: {data: AdminBranding}) {
                 />
               </span>
             </Field>
-            <Field label="Sidebar background" id="f-sidebarBg" error={form.error('sidebarBg')} hint="The dashboard sidebar. Empty keeps the default dark panel." optional>
-              <span className="color-field">
-                <input {...form.field('sidebarBg')} placeholder="#1f1a16" />
-                <input
-                  type="color"
-                  aria-label="Pick the sidebar background"
-                  value={HEX_COLOR.test(form.values.sidebarBg) ? form.values.sidebarBg : '#1f1a16'}
-                  onChange={e => form.set('sidebarBg', e.target.value)}
-                />
-              </span>
-            </Field>
-            <Field label="Sidebar text colour" id="f-sidebarText" error={form.error('sidebarText')} hint="Sidebar links and labels. Made readable on the background." optional>
-              <span className="color-field">
-                <input {...form.field('sidebarText')} placeholder="#0d0c22" />
-                <input
-                  type="color"
-                  aria-label="Pick the sidebar text colour"
-                  value={HEX_COLOR.test(form.values.sidebarText) ? form.values.sidebarText : '#0d0c22'}
-                  onChange={e => form.set('sidebarText', e.target.value)}
-                />
-              </span>
-            </Field>
-            <Field label="Font" id="f-fontPreset">
+            <Field label="Font" id="f-fontPreset" hint="The public site’s font.">
               <Select {...form.field('fontPreset')} options={FONT_PRESETS.map(f => ({value: f, label: FONT_LABELS[f]}))} />
             </Field>
             <Field label="Home page title" id="f-heroTitle" error={form.error('heroTitle')}>

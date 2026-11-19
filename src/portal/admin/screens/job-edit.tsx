@@ -7,7 +7,7 @@ import {EMPTY_JOB_VALUES, type JobValues} from '../../../lib/job-input';
 import {EMPLOYER_JOB_NOTE} from '../../../lib/types-manage';
 import {api, ApiError, read} from '../../api';
 import {JobForm} from '../../board/JobForm';
-import {buttonClass, Card, EmptyState, ErrorNote, Field, LoadingBlock, Notice, PageHeader, rules, Select, useForm, useToast} from '../../ui';
+import {buttonClass, EmptyState, ErrorNote, Field, LoadingBlock, Notice, PageHeader, rules, Select, useForm, useToast} from '../../ui';
 import {adminJobQuery, companiesQuery, invalidateAdminJobs, jobFormOptionsQuery} from '../queries';
 
 const fieldsOf = (err: unknown) => (err instanceof ApiError ? err.fields : undefined);
@@ -76,8 +76,21 @@ export function NewAdminJob() {
   return (
     <div className="app-page screen-admin-job">
       <PageHeader title="Post an admin job" description="Free, and live as soon as you save it. You can edit it later." />
-      <Card title="Company and listing">
-        <div className="form-stack">
+      <JobForm
+        initial={EMPTY_JOB_VALUES}
+        categories={options.data.categories.filter(c => c.active)}
+        currency={options.data.currency}
+        onSubmit={submit}
+        pending={create.isPending}
+        pendingLabel="Posting…"
+        submitLabel="Post the job"
+        sectioned
+        note="Goes live straight away: no review for admin jobs."
+        lead={{
+          title: 'Company and listing',
+          description: 'Pick a company already on the board, or name a new one, and how long it stays live.',
+          content: (
+            <>
           {locked ? (
             <Notice tone="info">Single-company board: this job is posted for {locked.name}.</Notice>
           ) : (
@@ -98,16 +111,9 @@ export function NewAdminJob() {
           <Field label="Days live" id="f-durationDays" error={meta.error('durationDays')} hint={`1 to ${LIMITS.tierDaysMax}.`}>
             <input {...meta.field('durationDays')} inputMode="numeric" placeholder="30" />
           </Field>
-        </div>
-      </Card>
-      <JobForm
-        initial={EMPTY_JOB_VALUES}
-        categories={options.data.categories.filter(c => c.active)}
-        currency={options.data.currency}
-        onSubmit={submit}
-        pending={create.isPending}
-        pendingLabel="Posting…"
-        submitLabel="Post the job"
+            </>
+          ),
+        }}
         serverErrors={fieldsOf(create.error)}
         secondary={<Link className={buttonClass({variant: 'secondary'})} to="/manage/jobs" disabled={create.isPending}>Cancel</Link>}
         status={statusOf(create.error)}
@@ -163,6 +169,7 @@ export function EditAdminJob() {
           pending={save.isPending}
           serverErrors={fieldsOf(save.error)}
           submitLabel="Save changes"
+          sectioned
           secondary={<Link className={buttonClass({variant: 'secondary'})} to="/manage/jobs" disabled={save.isPending}>Back</Link>}
           status={statusOf(save.error)}
         />
