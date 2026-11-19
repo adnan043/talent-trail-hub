@@ -1,69 +1,173 @@
 ---
 /**
- * Create an account. PRERENDERED; posts to `/site-api/auth/register`. The answer is the same whether
- * or not the email already has an account, and no account exists until the emailed code comes back
- * in this browser (`/account/verify/`). First the visitor says what the account is for: a job seeker
- * (`?as=applicant` picks it, from a job's "Create an account") or a company. After the code, the
- * dashboard's welcome step sets that up (`/dashboard/welcome?as=…`).
+ * Create an account, in the "Vela" design (src/styles/signup-vela.css, `skin="vela"`; docs:
+ * ~/Downloads/Sign up-html). PRERENDERED; posts to `/site-api/auth/register`. The answer is the same
+ * whether or not the email already has an account, and no account exists until the emailed code
+ * comes back in this browser (`/account/verify/`). First the visitor says what the account is for: a
+ * job seeker (`?as=applicant` picks it, from a job's "Create an account") or a company. After the
+ * code, the dashboard's welcome step sets that up (`/dashboard/welcome?as=…`).
+ *
+ * The dark side follows that choice (CSS `:has`). Its bottom card is real data or nothing: the job
+ * in `?next=` (job seeker) and the cheapest listing tier (employer), both filled in the browser.
  */
 import Base from '../../layouts/Base.astro';
 import {staticContext} from '../../server/page';
 import '../../styles/board-pages.css';
+import '../../styles/home-vela.css';
+import '../../styles/signup-vela.css';
+import '../../styles/auth-shell.css';
 
 export const prerender = true;
 
 const {site, viewer} = await staticContext(Astro.request);
 ---
 
-<Base site={site} viewer={viewer} isStatic noindex title="Create an account">
-  <main id="main" tabindex="-1" class="wrap auth-wrap board-auth">
-    <div class="card auth-card">
-      <nav class="auth-tabs" aria-label="Sign in or sign up">
-        <a href="/account/login/" data-keep-next>Sign in</a>
-        <a href="/account/register/" aria-current="page">Sign up</a>
-      </nav>
-      <h1>Create an account</h1>
-      <p class="auth-lead">Find a job with one click, or hire the right people.</p>
-      <form id="register-form" class="auth-form" novalidate>
-        <fieldset class="kind-choice">
-          <legend>I want to</legend>
-          <label class="kind-option">
-            <input type="radio" name="kind" value="applicant" checked />
-            <span class="kind-text">
-              <strong>Find a job</strong>
-              <span>Build a profile with your photo and CV, apply and follow every application.</span>
-            </span>
-          </label>
-          <label class="kind-option" data-marketplace-only>
-            <input type="radio" name="kind" value="company" />
-            <span class="kind-text">
-              <strong>Hire people</strong>
-              <span>Create your company profile, post jobs and review applicants.</span>
-            </span>
-          </label>
-        </fieldset>
-        <div class="field">
-          <label for="register-name">Your name</label>
-          <input id="register-name" name="name" type="text" autocomplete="name" maxlength="80" placeholder="Your full name" />
-        </div>
-        <div class="field">
-          <label for="register-email">Email</label>
-          <input id="register-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" />
-        </div>
-        <div class="field">
-          <label for="register-password">Password</label>
-          <div class="pw-input">
-            <input id="register-password" name="password" type="password" autocomplete="new-password" aria-describedby="register-password-checks" data-describedby="register-password-checks" placeholder="At least 10 characters" />
-            <button class="pw-reveal" type="button" data-reveal-password aria-controls="register-password" aria-pressed="false" aria-label="Show password" hidden>Show</button>
+<Base site={site} viewer={viewer} isStatic noindex title="Create an account" skin="vela" bare>
+  <main id="main" tabindex="-1" class="v-home v-su">
+    <div class="v-su-wrap">
+      <div class="v-su-card">
+        <div class="v-su-main">
+          <nav class="v-su-tabs" aria-label="Sign in or sign up">
+            <a href="/account/login/" data-keep-next>Sign in</a>
+            <a href="/account/register/" aria-current="page">Sign up</a>
+          </nav>
+          <div class="v-su-head">
+            <h1>Create your account</h1>
+            <p>Free for candidates. Takes about a minute.</p>
           </div>
-          <ul class="pw-checks" id="register-password-checks"><li>At least 10 characters</li></ul>
+          <form id="register-form" class="v-su-form" novalidate>
+            <fieldset class="v-su-kind">
+              <legend>I want to</legend>
+              <label class="v-su-choice">
+                <input type="radio" name="kind" value="applicant" checked />
+                <span class="v-su-choice-icon" aria-hidden="true">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                    <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path>
+                  </svg>
+                </span>
+                <span class="v-su-choice-text">
+                  <strong>Find a job</strong>
+                  <span>Build a profile with your photo and CV, then apply in one click.</span>
+                </span>
+                <span class="v-su-choice-dot" aria-hidden="true"></span>
+              </label>
+              <label class="v-su-choice" data-marketplace-only>
+                <input type="radio" name="kind" value="company" />
+                <span class="v-su-choice-icon" aria-hidden="true">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                    <rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
+                  </svg>
+                </span>
+                <span class="v-su-choice-text">
+                  <strong>Hire people</strong>
+                  <span>Set up your company, post jobs and review applicants.</span>
+                </span>
+                <span class="v-su-choice-dot" aria-hidden="true"></span>
+              </label>
+            </fieldset>
+            <div class="field">
+              <label for="register-name">Your name</label>
+              <input id="register-name" class="v-in" name="name" type="text" autocomplete="name" maxlength="80" placeholder="Your full name" />
+            </div>
+            <div class="field">
+              <label for="register-email">Email</label>
+              <input id="register-email" class="v-in" name="email" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" />
+            </div>
+            <div class="field">
+              <label for="register-password">Password</label>
+              <div class="pw-input">
+                <input
+                  id="register-password"
+                  class="v-in"
+                  name="password"
+                  type="password"
+                  autocomplete="new-password"
+                  aria-describedby="register-password-checks"
+                  data-describedby="register-password-checks"
+                  placeholder="At least 10 characters"
+                />
+                <button class="pw-reveal" type="button" data-reveal-password aria-controls="register-password" aria-pressed="false" aria-label="Show password" hidden>Show</button>
+              </div>
+              <div class="v-su-meter" id="register-password-meter" data-level="0" aria-hidden="true"><span></span><span></span><span></span></div>
+              <ul class="pw-checks" id="register-password-checks"><li>At least 10 characters</li></ul>
+            </div>
+            <p class="notice" data-form-status hidden></p>
+            <button class="v-su-go" type="submit">
+              <span data-cta-applicant>Create account</span><span data-cta-company>Create employer account</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M5 12h14M13 6l6 6-6 6"></path>
+              </svg>
+            </button>
+            <p class="v-su-terms">
+              By creating an account you agree to the <a href="/terms/" class="v-su-a">Terms</a> and <a href="/privacy/" class="v-su-a">Privacy policy</a>.
+            </p>
+          </form>
+          <p class="v-su-switch">Already have an account? <a href="/account/login/" class="v-su-a" data-keep-next>Sign in</a></p>
         </div>
-        <p class="notice" data-form-status hidden></p>
-        <button class="button" type="submit">Create account</button>
-      </form>
-      <p class="auth-links">
-        Already have an account? <a href="/account/login/" data-keep-next>Sign in</a>
-      </p>
+
+        <aside class="v-su-aside" data-for="applicant" aria-label="Why create an account">
+          <div class="v-su-grid" aria-hidden="true"></div>
+          <div class="v-su-aside-top">
+            <span class="v-su-pill">Candidates never pay</span>
+            <div class="v-su-aside-copy">
+              <h2>Your next role,<br /><span class="v-su-shine">one click away</span></h2>
+              <p>Make your profile once. Every job after that is a single click, and you’ll always know where you stand.</p>
+            </div>
+            <ul class="v-su-ticks">
+              <li><span class="v-su-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m5 12 5 5L20 7"></path></svg></span><span>Hand-picked roles, each checked by a person</span></li>
+              <li><span class="v-su-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m5 12 5 5L20 7"></path></svg></span><span>Apply in one click with your saved CV</span></li>
+              <li><span class="v-su-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m5 12 5 5L20 7"></path></svg></span><span>See when you’re reviewed or shortlisted</span></li>
+            </ul>
+          </div>
+          <div class="v-su-aside-bottom" id="register-goto" hidden>
+            <div class="v-su-goto">
+              <span class="v-su-goto-label">You’ll go straight back to</span>
+              <div class="v-su-goto-job">
+                <span class="v-su-goto-icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                    <rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
+                  </svg>
+                </span>
+                <div class="v-su-goto-text">
+                  <span class="v-su-goto-title" data-goto-title></span>
+                  <span class="v-su-goto-meta" data-goto-meta></span>
+                </div>
+                <span class="v-su-goto-pay" data-goto-pay></span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <aside class="v-su-aside" data-for="company" data-marketplace-only aria-label="Why hire here">
+          <div class="v-su-grid" aria-hidden="true"></div>
+          <div class="v-su-aside-top">
+            <span class="v-su-pill">Candidates never pay</span>
+            <div class="v-su-aside-copy">
+              <h2>Reach people who<br />are <span class="v-su-shine">looking now</span></h2>
+              <p>Post in a few minutes. A real person checks every job before it goes live.</p>
+            </div>
+            <ul class="v-su-ticks">
+              <li><span class="v-su-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m5 12 5 5L20 7"></path></svg></span><span>Apply here, by link or by email</span></li>
+              <li><span class="v-su-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m5 12 5 5L20 7"></path></svg></span><span>Resumes and applicants land in your dashboard</span></li>
+              <li><span class="v-su-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m5 12 5 5L20 7"></path></svg></span><span>Simple pricing. Pay once per job.</span></li>
+            </ul>
+          </div>
+          <div class="v-su-aside-bottom" id="register-price" hidden>
+            <div class="v-su-price">
+              <span class="v-su-price-text">
+                <span class="v-su-price-label" data-price-label>Job posts from</span>
+                <span class="v-su-price-value" data-price-value></span>
+              </span>
+              <a href="/pricing/" class="v-su-plans">
+                Compare plans
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M5 12h14M13 6l6 6-6 6"></path>
+                </svg>
+              </a>
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   </main>
 </Base>
@@ -71,9 +175,53 @@ const {site, viewer} = await staticContext(Astro.request);
 <script>
   import {nextPath, rememberSignUpEmail, signedIn} from '../../lib/account';
   import {bindForm, postJson} from '../../lib/form';
-  import {bindPasswordChecks, bindPasswordReveal} from '../../lib/password-checks';
+  import {formatMoney} from '../../lib/format';
+  import {employmentLabel, formatSalary, workplaceAndPlace} from '../../lib/job-display';
+  import {bindPasswordChecks, bindPasswordReveal, passwordChecks} from '../../lib/password-checks';
   import {AUTH_RULES, passwordMeetsRules} from '../../lib/rules';
+  import type {JobDetailResponse, PublicTier} from '../../lib/types-public';
   import {siteFetch} from '../../platform/browser';
+
+  /** The design's meter: 0 empty, 1 typing, 2 long enough, 3 every rule met. Decoration only. */
+  function meterLevel(password: string, email: string): number {
+    if (!password) return 0;
+    const checks = passwordChecks(password, email);
+    if (checks.every(check => check.ok)) return 3;
+    return checks.find(check => check.id === 'length')?.ok ? 2 : 1;
+  }
+
+  /** "You'll go straight back to": the job in `?next=` (`/jobs/<slug>/`), or nothing. */
+  async function showNextJob(next: string) {
+    const slug = /^\/jobs\/([a-z0-9][a-z0-9-]{0,199})\/?(?:[?#].*)?$/i.exec(next)?.[1];
+    const box = document.querySelector<HTMLElement>('#register-goto');
+    if (!slug || !box) return;
+    const res = await siteFetch(`/site-api/jobs/${encodeURIComponent(slug)}`, {headers: {accept: 'application/json'}}).catch(() => null);
+    const data = res?.ok ? ((await res.json().catch(() => null)) as JobDetailResponse | null) : null;
+    const job = data?.job;
+    if (!job || job.state !== 'active' || !box.isConnected) return;
+    box.querySelector('[data-goto-title]')!.textContent = job.title;
+    box.querySelector('[data-goto-meta]')!.textContent = [job.company.name, workplaceAndPlace(job), employmentLabel(job.employmentType)]
+      .filter(Boolean)
+      .join(' · ');
+    // The design's short range: "$50K – $60K" → "$50K–60K" (same symbol on both ends only).
+    const pay = formatSalary(job.salary)?.replace(/^([^\d\s]*)([\d.,]+[KMBT]?) – \1([\d.,]+[KMBT]?)/, '$1$2–$3') ?? '';
+    box.querySelector('[data-goto-pay]')!.textContent = pay;
+    box.hidden = false;
+  }
+
+  /** "Job posts from $X": the cheapest active tier. Nothing when the board sells none (404). */
+  async function showPrice() {
+    const box = document.querySelector<HTMLElement>('#register-price');
+    if (!box) return;
+    const res = await siteFetch('/site-api/board/tiers', {headers: {accept: 'application/json'}}).catch(() => null);
+    const data = res?.ok ? ((await res.json().catch(() => null)) as {tiers: PublicTier[]; freePosting: boolean} | null) : null;
+    if (!data || !data.tiers?.length || !box.isConnected) return;
+    const cheapest = data.tiers.reduce((low, tier) => (tier.priceCents < low.priceCents ? tier : low));
+    const free = data.freePosting || cheapest.priceCents === 0;
+    box.querySelector('[data-price-label]')!.textContent = free ? 'Job posts are' : 'Job posts from';
+    box.querySelector('[data-price-value]')!.textContent = free ? 'Free' : formatMoney(cheapest.priceCents, cheapest.currency).replace(/\.00$/, '');
+    box.hidden = false;
+  }
 
   // Client navigation (ClientRouter): a bundled script runs once, so this page's code runs on
   // every `astro:page-load` (the first load, each navigation, back/forward) while it is this page.
@@ -99,6 +247,16 @@ const {site, viewer} = await staticContext(Astro.request);
     const password = form.elements.namedItem('password') as HTMLInputElement;
     bindPasswordChecks(password, document.getElementById('register-password-checks')!, {email});
     bindPasswordReveal(form);
+
+    const meter = document.getElementById('register-password-meter');
+    const updateMeter = () => meter?.setAttribute('data-level', String(meterLevel(password.value, email.value)));
+    password.addEventListener('input', updateMeter);
+    email.addEventListener('input', updateMeter);
+    updateMeter();
+
+    void showNextJob(next);
+    void showPrice();
+
     bindForm(form, {
       rules: {name: AUTH_RULES.name, email: AUTH_RULES.email, password: [passwordMeetsRules(() => email.value)]},
       pendingLabel: 'Creating account…',
@@ -111,47 +269,3 @@ const {site, viewer} = await staticContext(Astro.request);
     });
   });
 </script>
-
-<style>
-  .kind-choice {
-    display: grid;
-    gap: 0.625rem;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-  .kind-choice legend {
-    margin-bottom: 0.5rem;
-    padding: 0;
-    font-weight: 600;
-  }
-  .kind-option {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    cursor: pointer;
-  }
-  .kind-option:has(input:checked) {
-    border-color: var(--brand);
-    background: var(--brand-soft);
-  }
-  .kind-option input {
-    flex: none;
-    width: 18px;
-    height: 18px;
-    min-height: 0;
-    margin: 3px 0 0;
-    accent-color: var(--brand);
-  }
-  .kind-text {
-    display: grid;
-    gap: 0.125rem;
-  }
-  .kind-text span {
-    font-size: 14px;
-    color: var(--muted);
-  }
-</style>

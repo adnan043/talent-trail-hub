@@ -88,6 +88,11 @@ interface Props {
    * The header and footer look the same on every page either way (src/styles/site-chrome.css).
    */
   skin?: 'vela';
+  /**
+   * No site header or footer (sign in, sign up): only the site's logo, linking home, above the page.
+   * The page brings its own full-height layout (src/styles/auth-shell.css).
+   */
+  bare?: boolean;
 }
 
 const {
@@ -109,6 +114,7 @@ const {
   board = null,
   noindexFollow = false,
   skin,
+  bare = false,
 } = Astro.props;
 const single = board?.singleCompany ?? false;
 // The board's brand, inline when this page has the settings (src/lib/brand-style.ts): the same CSS as
@@ -125,7 +131,7 @@ if (brandStyle) Astro.csp?.insertStyleHash(`sha256-${createHash('sha256').update
 // Another font preset (serif, mono) never uses the web font: nothing to preload.
 const preloadFont = !board || board.fontPreset === 'inter';
 // The vela skin brings its own font (Geist) unless the board picked another preset.
-const bodyClass = ['vchrome', {'vchrome-font': preloadFont, vela: skin === 'vela', 'vela-font': skin === 'vela' && preloadFont}];
+const bodyClass = ['vchrome', {bare, 'vchrome-font': preloadFont, vela: skin === 'vela', 'vela-font': skin === 'vela' && preloadFont}];
 const name = site?.name ?? 'My site';
 const fullTitle = title ? `${title} · ${name}` : name;
 const description = pageDescription ?? withName(SITE.description, name);
@@ -202,141 +208,161 @@ const structured = indexable
   </head>
   <body class:list={bodyClass} data-viewer={viewer.state} data-static={hydrate ? '1' : undefined}>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="site-header">
-      <div class="wrap site-header-inner">
-        <a href="/" class="brand">
-          {site?.logo ? (
-            <span class="brand-plate">
-              <BrandMark site={site} />
-            </span>
-          ) : (
-            <span class="brand-name" data-brand-text="{name}" data-built-name={name}>{name}</span>
-          )}
-        </a>
-        <nav class="site-nav" aria-label="Main">
-          {NAV.map(item => (
-            <a
-              href={item.href}
-              class:list={{active: active(item.href)}}
-              aria-current={active(item.href) ? 'page' : undefined}
-              data-marketplace-only={item.marketplaceOnly ? '' : undefined}
-              data-applicant-only={item.applicantOnly ? '' : undefined}
-              hidden={(item.marketplaceOnly && single) || item.applicantOnly ? true : undefined}
-              data-astro-prefetch={item.prefetch === false ? undefined : 'viewport'}>
-              {item.label}
-              {item.href === '/saved/' && <span class="nav-count" data-saved-count aria-hidden="true" hidden />}
-            </a>
-          ))}
-        </nav>
-        <div class="site-header-actions">
-          {/* One slot as wide signed in as signed out (global.css `.account-slot`): no shift when a
-              prerendered page learns the visitor. */}
-          <div class="account-slot">
-            <AccountMenu viewer={viewer} hydrate={hydrate} single={single} />
-            <a
-              class="button button-ghost sign-in-link"
-              href={`/account/login/?next=${back}`}
-              data-astro-prefetch
-              data-guest-only
-              hidden={viewer.state === 'user'}>
-              Sign in
-            </a>
-          </div>
-          <a
-            class="button post-job-cta"
-            href={POST_A_JOB.href}
-            data-marketplace-only
-            hidden={single ? true : undefined}>
-            {POST_A_JOB.label}
-          </a>
-          <MobileMenu
-            nav={NAV}
-            viewer={viewer}
-            hydrate={hydrate}
-            single={single}
-            active={active}
-            signInHref={`/account/login/?next=${back}`}
-          />
-        </div>
-      </div>
-    </header>
-
-    <slot />
-
-    <footer class="site-footer">
-      <div class="wrap site-footer-inner">
-        <div class="footer-brand">
+    {
+      bare ? (
+        <div class="bare-top">
           <a href="/" class="brand">
             {site?.logo ? (
               <span class="brand-plate">
                 <BrandMark site={site} />
               </span>
             ) : (
-              <span class="brand-name footer-brand-name" data-brand-text="{name}">{name}</span>
+              <span class="brand-name" data-brand-text="{name}" data-built-name={name}>{name}</span>
             )}
           </a>
-          <p data-brand-text={SITE.description}>{withName(SITE.description, name)}</p>
         </div>
-        <nav class="footer-col" aria-label="Job seekers">
-          <h2 class="footer-title">Job seekers</h2>
-          <ul>
-            {NAV.filter(item => item.href !== '/pricing/').map(item => (
-              <li
-                data-marketplace-only={item.marketplaceOnly ? '' : undefined}
-                data-applicant-only={item.applicantOnly ? '' : undefined}
-                hidden={(item.marketplaceOnly && single) || item.applicantOnly ? true : undefined}>
-                <a href={item.href} data-astro-prefetch={item.prefetch === false ? undefined : ''}>
-                  {item.footerLabel ?? item.label}
+      ) : (
+        <header class="site-header">
+          <div class="wrap site-header-inner">
+            <a href="/" class="brand">
+              {site?.logo ? (
+                <span class="brand-plate">
+                  <BrandMark site={site} />
+                </span>
+              ) : (
+                <span class="brand-name" data-brand-text="{name}" data-built-name={name}>{name}</span>
+              )}
+            </a>
+            <nav class="site-nav" aria-label="Main">
+              {NAV.map(item => (
+                <a
+                  href={item.href}
+                  class:list={{active: active(item.href)}}
+                  aria-current={active(item.href) ? 'page' : undefined}
+                  data-marketplace-only={item.marketplaceOnly ? '' : undefined}
+                  data-applicant-only={item.applicantOnly ? '' : undefined}
+                  hidden={(item.marketplaceOnly && single) || item.applicantOnly ? true : undefined}
+                  data-astro-prefetch={item.prefetch === false ? undefined : 'viewport'}>
+                  {item.label}
+                  {item.href === '/saved/' && <span class="nav-count" data-saved-count aria-hidden="true" hidden />}
                 </a>
-              </li>
-            ))}
-            <li data-user-only hidden={viewer.state !== 'user'}>
-              <a href="/dashboard">Dashboard</a>
-            </li>
-          </ul>
-        </nav>
-        <nav class="footer-col" aria-label="Employers" data-marketplace-only hidden={single ? true : undefined}>
-          <h2 class="footer-title">Employers</h2>
-          <ul>
-            <li>
-              <a href={POST_A_JOB.href}>{POST_A_JOB.label}</a>
-            </li>
-            <li>
-              <a href="/pricing/">Pricing</a>
-            </li>
-            <li data-guest-only hidden={viewer.state === 'user'}>
-              <a href={`/account/login/?next=${back}`} data-astro-prefetch>Employer sign in</a>
-            </li>
-            <li data-guest-only hidden={viewer.state === 'user'}>
-              <a href={`/account/register/?next=${back}`} data-astro-prefetch>Create an account</a>
-            </li>
-          </ul>
-        </nav>
-        <nav class="footer-col" aria-label="Legal and links">
-          <h2 class="footer-title">Legal</h2>
-          <ul data-footer-links data-hydrate={board ? undefined : '1'}>
-            {(board?.footerLinks ?? []).map(link => (
-              <li data-board-link>
-                <a href={link.href} rel={link.href.startsWith('/') ? undefined : 'noopener noreferrer'}>{link.label}</a>
-              </li>
-            ))}
-            <li>
-              <a href="/privacy/" data-astro-prefetch>Privacy</a>
-            </li>
-            <li>
-              <a href="/terms/" data-astro-prefetch>Terms</a>
-            </li>
-          </ul>
-        </nav>
-      </div>
-      <div class="site-footer-bottom">
-        <div class="wrap">
-          <p data-brand-text="Copyright © {year} {name}. All rights reserved.">
-            Copyright © {new Date().getUTCFullYear()} {name}. All rights reserved.
-          </p>
-        </div>
-      </div>
-    </footer>
+              ))}
+            </nav>
+            <div class="site-header-actions">
+              {/* One slot as wide signed in as signed out (global.css `.account-slot`): no shift when a
+                  prerendered page learns the visitor. */}
+              <div class="account-slot">
+                <AccountMenu viewer={viewer} hydrate={hydrate} single={single} />
+                <a
+                  class="button button-ghost sign-in-link"
+                  href={`/account/login/?next=${back}`}
+                  data-astro-prefetch
+                  data-guest-only
+                  hidden={viewer.state === 'user'}>
+                  Sign in
+                </a>
+              </div>
+              <a
+                class="button post-job-cta"
+                href={POST_A_JOB.href}
+                data-marketplace-only
+                hidden={single ? true : undefined}>
+                {POST_A_JOB.label}
+              </a>
+              <MobileMenu
+                nav={NAV}
+                viewer={viewer}
+                hydrate={hydrate}
+                single={single}
+                active={active}
+                signInHref={`/account/login/?next=${back}`}
+              />
+            </div>
+          </div>
+        </header>
+      )
+    }
+
+    <slot />
+
+    {
+      !bare && (
+        <footer class="site-footer">
+          <div class="wrap site-footer-inner">
+            <div class="footer-brand">
+              <a href="/" class="brand">
+                {site?.logo ? (
+                  <span class="brand-plate">
+                    <BrandMark site={site} />
+                  </span>
+                ) : (
+                  <span class="brand-name footer-brand-name" data-brand-text="{name}">{name}</span>
+                )}
+              </a>
+              <p data-brand-text={SITE.description}>{withName(SITE.description, name)}</p>
+            </div>
+            <nav class="footer-col" aria-label="Job seekers">
+              <h2 class="footer-title">Job seekers</h2>
+              <ul>
+                {NAV.filter(item => item.href !== '/pricing/').map(item => (
+                  <li
+                    data-marketplace-only={item.marketplaceOnly ? '' : undefined}
+                    data-applicant-only={item.applicantOnly ? '' : undefined}
+                    hidden={(item.marketplaceOnly && single) || item.applicantOnly ? true : undefined}>
+                    <a href={item.href} data-astro-prefetch={item.prefetch === false ? undefined : ''}>
+                      {item.footerLabel ?? item.label}
+                    </a>
+                  </li>
+                ))}
+                <li data-user-only hidden={viewer.state !== 'user'}>
+                  <a href="/dashboard">Dashboard</a>
+                </li>
+              </ul>
+            </nav>
+            <nav class="footer-col" aria-label="Employers" data-marketplace-only hidden={single ? true : undefined}>
+              <h2 class="footer-title">Employers</h2>
+              <ul>
+                <li>
+                  <a href={POST_A_JOB.href}>{POST_A_JOB.label}</a>
+                </li>
+                <li>
+                  <a href="/pricing/">Pricing</a>
+                </li>
+                <li data-guest-only hidden={viewer.state === 'user'}>
+                  <a href={`/account/login/?next=${back}`} data-astro-prefetch>Employer sign in</a>
+                </li>
+                <li data-guest-only hidden={viewer.state === 'user'}>
+                  <a href={`/account/register/?next=${back}`} data-astro-prefetch>Create an account</a>
+                </li>
+              </ul>
+            </nav>
+            <nav class="footer-col" aria-label="Legal and links">
+              <h2 class="footer-title">Legal</h2>
+              <ul data-footer-links data-hydrate={board ? undefined : '1'}>
+                {(board?.footerLinks ?? []).map(link => (
+                  <li data-board-link>
+                    <a href={link.href} rel={link.href.startsWith('/') ? undefined : 'noopener noreferrer'}>{link.label}</a>
+                  </li>
+                ))}
+                <li>
+                  <a href="/privacy/" data-astro-prefetch>Privacy</a>
+                </li>
+                <li>
+                  <a href="/terms/" data-astro-prefetch>Terms</a>
+                </li>
+              </ul>
+            </nav>
+          </div>
+          <div class="site-footer-bottom">
+            <div class="wrap">
+              <p data-brand-text="Copyright © {year} {name}. All rights reserved.">
+                Copyright © {new Date().getUTCFullYear()} {name}. All rights reserved.
+              </p>
+            </div>
+          </div>
+        </footer>
+      )
+    }
 
     <script>
       import {logout, refreshSession} from '../platform/browser';

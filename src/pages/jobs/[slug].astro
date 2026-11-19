@@ -7,17 +7,22 @@
  * a database outage → 503. The view count goes up once per browser session (script below).
  */
 import ApplySection from '../../components/apply/ApplySection.astro';
-import CompanyLogo from '../../components/board/CompanyLogo.astro';
 import SaveButton from '../../components/board/SaveButton.astro';
+import VelaRowIcon from '../../components/board/VelaRowIcon.astro';
 import NotFound from '../../components/NotFound.astro';
 import Base from '../../layouts/Base.astro';
+import {SALARY_PERIOD_LABELS} from '../../lib/board';
+import {initials} from '../../lib/format';
 import {jobPostingJsonLd} from '../../lib/json-ld';
 import {countryName, employmentLabel, formatPlace, formatSalary, postedAgo, SALARY_NOT_DISCLOSED, shortDate, workplaceAndPlace, workplaceLabel} from '../../lib/job-display';
 import {clip, htmlToText} from '../../lib/rich-text';
-import type {JobDetailResponse} from '../../lib/types-public';
+import {rowIcon} from '../../lib/row-icon';
+import type {JobDetailResponse, PublicJobSummary} from '../../lib/types-public';
 import {sanitizeHtml} from '../../platform/sanitize';
 import {backend, read} from '../../server/backend';
 import '../../styles/board-pages.css';
+import '../../styles/home-vela.css';
+import '../../styles/job-detail-vela.css';
 import {boardPage} from '../../server/board/public-page';
 
 const slug = Astro.params.slug ?? '';
@@ -82,6 +87,21 @@ const facts = job
       ...(hiringFrom ? [{label: 'Hiring from', value: hiringFrom}] : []),
     ]
   : [];
+
+// ---- The "Vela" design (src/styles/job-detail-vela.css; docs: ~/Downloads/Job detail-html).
+/** The side card's pay: "$50K – $60K" big, "per year" under it (the period comes off the range). */
+const payRange = job?.salary ? (formatSalary(job.salary)?.replace(/\/(hr|day|wk|mo)$/, '') ?? null) : null;
+const payPeriod = job?.salary && payRange ? `per ${SALARY_PERIOD_LABELS[job.salary.period]}` : null;
+/** "28 days left" next to the apply-by date (whole days, rounded up). */
+const daysLeft = open && job?.expiresAt ? Math.max(0, Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 86_400_000)) : null;
+const leftLabel = daysLeft === null ? null : daysLeft === 0 ? 'Last day' : daysLeft === 1 ? '1 day left' : `${daysLeft} days left`;
+/** A company without a logo: its initials on one of the design's tile colours (same name, same colour). */
+let nameHash = 0;
+for (const ch of job?.company.name ?? '') nameHash = (nameHash * 31 + ch.charCodeAt(0)) >>> 0;
+const tile = `vd-tile-${nameHash % 13}`;
+const categoryHref = job ? `/jobs/?category=${encodeURIComponent(job.category.slug)}` : '/jobs/';
+/** The design's short range in the rows: "$130K – $165K" → "$130K–165K". */
+const rowPay = (s: PublicJobSummary) => formatSalary(s.salary)?.replace(/^([^\d\s]*)([\d.,]+[KMBT]?) – \1([\d.,]+[KMBT]?)/, '$1$2–$3') ?? null;
 ---
 
 {
@@ -96,131 +116,106 @@ const facts = job
       imageSquare
       imageAlt={job.company.logoUrl ? `${job.company.name} logo` : undefined}
       noindexFollow={!open}
-      jsonLd={jobPostingJsonLd(job, {name}) ?? undefined}>
-      <main id="main" tabindex="-1" class="wrap bp-page" data-job-view={open ? job.slug : undefined}>
-        <a class="bp-back" href="/jobs/"><svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>All jobs</a>
-        {!open && (
-          <div class="bp-alert jd-alert" role="status">
-            <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
-            <p class="bp-alert-title">{job.state === 'closed' ? 'This job has been filled or closed' : 'This job has expired'}</p>
-            <p>
-              It no longer accepts applications.{' '}
-              <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>See open {job.category.name} jobs</a>
-            </p>
-          </div>
-        )}
-        <div class="jd-layout">
-          <div class="jd-main">
-            <article class="bp-panel">
-              <div class="jd-article-head">
-                <header class="jd-head">
-                  <CompanyLogo name={job.company.name} logoUrl={job.company.logoUrl} size="lg" eager />
-                  <div class="jd-head-text">
-                    <p class="jd-company-line">
-                      <a class="jd-company" href={companyHref}>{job.company.name}</a>
-                      {job.featured && open && (
-                        <span class="bp-badge bp-badge-brand">
-                          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
-                          Featured
-                        </span>
-                      )}
-                      {!open && <span class="bp-badge bp-badge-neutral">{job.state === 'closed' ? 'Closed' : 'Expired'}</span>}
-                    </p>
-                    <h1>{job.title}</h1>
-                    <p class="jd-meta">{metaLine}</p>
-                    {job.tags.length > 0 && (
-                      <ul class="bp-tags" aria-label="Tags">
-                        {job.tags.map(tag => (
-                          <li class="bp-tag">{tag}</li>
-                        ))}
-                      </ul>
+      jsonLd={jobPostingJsonLd(job, {name}) ?? undefined}
+      skin="vela">
+      <main id="main" tabindex="-1" class="v-home vd" data-job-view={open ? job.slug : undefined}>
+        <section class="vd-hero">
+          <div class="vd-hero-inner">
+            <a class="vd-back" href="/jobs/">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"></path></svg>
+              All jobs
+            </a>
+            <div class="vd-head">
+              <div class="vd-head-main">
+                {job.company.logoUrl ? (
+                  <span class="vd-logo vd-logo-72 vd-logo-img" aria-hidden="true">
+                    <img src={job.company.logoUrl} alt="" width="72" height="72" loading="eager" decoding="async" />
+                  </span>
+                ) : (
+                  <span class:list={['vd-logo', 'vd-logo-72', tile]} aria-hidden="true">{initials(job.company.name)}</span>
+                )}
+                <div class="vd-head-text">
+                  <p class="vd-company-line">
+                    <a class="vd-company" href={companyHref}>{job.company.name}</a>
+                    {job.featured && open && (
+                      <span class="vd-badge">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"></path></svg>
+                        Featured
+                      </span>
                     )}
-                  </div>
-                </header>
-                <div class="jd-head-actions">
-                  <SaveButton slug={job.slug} title={job.title} variant="full" />
-                  <details class="jd-share" data-share-menu>
-                    <summary class="button bp-quiet">
-                      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg>
-                      Share
-                    </summary>
-                    <div class="jd-share-menu">
-                      <button type="button" data-web-share={pageUrl} data-share-title={shareText} hidden>Share with an app</button>
-                      <button type="button" data-copy-link={pageUrl}>
-                        <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
-                        Copy link
-                      </button>
-                      <span class="jd-share-sep" aria-hidden="true"></span>
-                      {share.map(s => (
-                        <a href={s.href} {...(s.label === 'Email' ? {} : {target: '_blank'})} rel="noopener noreferrer">
-                          {s.label}
-                          {s.label !== 'Email' && <span class="visually-hidden"> (opens in a new tab)</span>}
-                        </a>
-                      ))}
-                    </div>
-                  </details>
-                  <p class="jd-copy-status" data-copy-status role="status" aria-live="polite"></p>
+                    {!open && <span class="vd-badge vd-badge-muted">{job.state === 'closed' ? 'Closed' : 'Expired'}</span>}
+                  </p>
+                  <h1 class="vd-title">{job.title}</h1>
                 </div>
               </div>
+              <div class="vd-head-actions">
+                <SaveButton slug={job.slug} title={job.title} variant="full" />
+                <details class="vd-share" data-share-menu>
+                  <summary class="vd-ib vd-ib-icon" aria-label="Share this job">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"></path></svg>
+                  </summary>
+                  <div class="vd-share-menu">
+                    <button type="button" data-web-share={pageUrl} data-share-title={shareText} hidden>Share with an app</button>
+                    <button type="button" data-copy-link={pageUrl}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
+                      Copy link
+                    </button>
+                    <span class="vd-share-sep" aria-hidden="true"></span>
+                    {share.map(s => (
+                      <a href={s.href} {...(s.label === 'Email' ? {} : {target: '_blank'})} rel="noopener noreferrer">
+                        {s.label}
+                        {s.label !== 'Email' && <span class="visually-hidden"> (opens in a new tab)</span>}
+                      </a>
+                    ))}
+                  </div>
+                </details>
+                <p class="vd-copy-status" data-copy-status role="status" aria-live="polite"></p>
+              </div>
+            </div>
+            <ul class="vd-chips" aria-label="Key facts">
+              <li class="vd-chip">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+                {workplaceAndPlace(job, 'full')}
+              </li>
+              <li class="vd-chip">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path></svg>
+                {employmentLabel(job.employmentType)}
+              </li>
+              <li class="vd-chip vd-chip-cat">
+                <VelaRowIcon icon={rowIcon(job.category.name)} />
+                {job.category.name}
+              </li>
+              {job.tags.map(tag => (
+                <li class="vd-chip">{tag}</li>
+              ))}
+              {job.publishedAt && (
+                <li class="vd-chip vd-chip-plain">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                  Posted {postedAgo(job.publishedAt)}
+                </li>
+              )}
+            </ul>
+          </div>
+        </section>
 
-              <section class="jd-facts-mobile" aria-label="Key facts">
-                <dl class="jd-facts">
-                  <div>
-                    <dt>Salary</dt>
-                    <dd>{salary ?? SALARY_NOT_DISCLOSED}</dd>
-                  </div>
-                  {facts.map(f => (
-                    <div>
-                      <dt>{f.label}</dt>
-                      <dd>{f.value}</dd>
-                    </div>
-                  ))}
-                  <div>
-                    <dt>Category</dt>
-                    <dd>
-                      <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>{job.category.name}</a>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Posted</dt>
-                    <dd>{shortDate(job.publishedAt)}</dd>
-                  </div>
-                  {open && job.expiresAt && (
-                    <div>
-                      <dt>Apply by</dt>
-                      <dd>{shortDate(job.expiresAt)}</dd>
-                    </div>
-                  )}
-                </dl>
-              </section>
+        <div class="vd-body">
+          {!open && (
+            <div class="vd-alert" role="status">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+              <div>
+                <p class="vd-alert-title">{job.state === 'closed' ? 'This job has been filled or closed' : 'This job has expired'}</p>
+                <p>
+                  It no longer accepts applications.{' '}
+                  <a class="vd-link" href={categoryHref}>See open {job.category.name} jobs</a>
+                </p>
+              </div>
+            </div>
+          )}
 
-              <section class="jd-body" aria-labelledby="about-job-title">
-                <h2 id="about-job-title" class="bp-subheading">About the job</h2>
-                <div class="bp-rich" set:html={sanitizeHtml(job.descriptionHtml)} />
-                <div class="jd-share-mobile">
-                  <details class="jd-share" data-share-menu>
-                    <summary class="button bp-quiet">
-                      <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg>
-                      Share
-                    </summary>
-                    <div class="jd-share-menu">
-                      <button type="button" data-web-share={pageUrl} data-share-title={shareText} hidden>Share with an app</button>
-                      <button type="button" data-copy-link={pageUrl}>
-                        <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
-                        Copy link
-                      </button>
-                      <span class="jd-share-sep" aria-hidden="true"></span>
-                      {share.map(s => (
-                        <a href={s.href} {...(s.label === 'Email' ? {} : {target: '_blank'})} rel="noopener noreferrer">
-                          {s.label}
-                          {s.label !== 'Email' && <span class="visually-hidden"> (opens in a new tab)</span>}
-                        </a>
-                      ))}
-                    </div>
-                  </details>
-                  <p class="jd-copy-status" data-copy-status role="status" aria-live="polite"></p>
-                </div>
-              </section>
+          <div class="vd-main">
+            <article class="vd-card vd-prose" aria-labelledby="about-job-title">
+              <h2 id="about-job-title">About the job</h2>
+              <div class="vd-rich" set:html={sanitizeHtml(job.descriptionHtml)} />
             </article>
 
             {open && !direct && (
@@ -237,46 +232,58 @@ const facts = job
               />
             )}
 
-            <section class="bp-panel bp-pad jd-company-panel" aria-labelledby="company-title">
-              <h2 id="company-title" class="bp-label">About the company</h2>
-              <div class="jd-company-row">
-                <CompanyLogo name={job.company.name} logoUrl={job.company.logoUrl} />
-                <div>
-                  <p class="jd-company-name">{job.company.name}</p>
-                  {job.company.location && (
-                    <p class="jd-company-loc">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                      {job.company.location}
-                    </p>
+            <section class="vd-card vd-co-card" aria-labelledby="company-title">
+              <span class="vd-label">About the company</span>
+              <div class="vd-company-head">
+                <div class="vd-company-id">
+                  {job.company.logoUrl ? (
+                    <span class="vd-logo vd-logo-56 vd-logo-img" aria-hidden="true">
+                      <img src={job.company.logoUrl} alt="" width="56" height="56" loading="lazy" decoding="async" />
+                    </span>
+                  ) : (
+                    <span class:list={['vd-logo', 'vd-logo-56', tile]} aria-hidden="true">{initials(job.company.name)}</span>
+                  )}
+                  <div class="vd-company-text">
+                    <h2 id="company-title">{job.company.name}</h2>
+                    {job.company.location && (
+                      <span class="vd-company-loc">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+                        {job.company.location}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div class="vd-company-actions">
+                  <a class="vd-sec" href={companyHref}>View company</a>
+                  {job.company.website && (
+                    <a class="vd-sec" href={job.company.website} target="_blank" rel="noopener noreferrer nofollow">
+                      Website
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"></path></svg>
+                      <span class="visually-hidden"> (opens in a new tab)</span>
+                    </a>
                   )}
                 </div>
               </div>
-              {job.company.aboutHtml && <div class="bp-rich" set:html={sanitizeHtml(job.company.aboutHtml)} />}
-              <div class="jd-company-actions">
-                <a class="button bp-outline" href={companyHref}>View company profile</a>
-                {job.company.website && (
-                  <a class="button button-ghost" href={job.company.website} target="_blank" rel="noopener noreferrer nofollow">
-                    Website
-                    <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
-                    <span class="visually-hidden"> (opens in a new tab)</span>
-                  </a>
-                )}
-              </div>
+              {job.company.aboutHtml && <div class="vd-about" set:html={sanitizeHtml(job.company.aboutHtml)} />}
               {data!.moreAtCompany.length > 0 && (
-                <div class="jd-more">
+                <div class="vd-more">
                   <h3>More jobs at {job.company.name}</h3>
-                  <ul class="bp-rows">
+                  <ul class="vd-rows">
                     {data!.moreAtCompany.map(more => (
                       <li>
-                        <article class="bp-row">
-                          <div class="bp-row-body">
-                            <h4 class="bp-row-title">
-                              <a href={`/jobs/${encodeURIComponent(more.slug)}/`}>{more.title}</a>
-                            </h4>
-                            <p class="bp-row-meta">{[workplaceAndPlace(more), employmentLabel(more.employmentType), formatSalary(more.salary)].filter(Boolean).join(' · ')}</p>
-                          </div>
-                          <svg class="bp-row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
-                        </article>
+                        <a class="vd-row" href={`/jobs/${encodeURIComponent(more.slug)}/`}>
+                          <span class:list={['vd-row-icon', 'v-row-icon', `cat-${rowIcon(more.title)}`]} aria-hidden="true">
+                            <VelaRowIcon icon={rowIcon(more.title)} />
+                          </span>
+                          <span class="vd-row-body">
+                            <span class="vd-row-title">{more.title}</span>
+                            <span class="vd-row-meta">{[workplaceAndPlace(more), employmentLabel(more.employmentType)].join(' · ')}</span>
+                          </span>
+                          {rowPay(more) && <span class="vd-row-pay">{rowPay(more)}</span>}
+                          <span class="vd-row-go" aria-hidden="true">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                          </span>
+                        </a>
                       </li>
                     ))}
                   </ul>
@@ -285,20 +292,40 @@ const facts = job
             </section>
           </div>
 
-          <aside class="jd-aside bp-panel" aria-label="Apply and key facts" data-apply-section data-slug={job.slug}>
-            <div class="jd-aside-top">
-              <p class="jd-salary">{formatSalary(job.salary) ?? SALARY_NOT_DISCLOSED}</p>
-              {open && job.expiresAt && <p class="jd-deadline">Apply by {shortDate(job.expiresAt)}</p>}
-              {open && (
-                <a class="button bp-lg bp-block" href={applyHref} {...applyLinkAttrs}>
-                  {applyLabel}
-                  {direct?.external && <span class="visually-hidden"> on the company website (opens in a new tab)</span>}
-                </a>
-              )}
-            </div>
-            <div class="jd-aside-facts">
+          <aside class="vd-aside" aria-label="Pay and details">
+            <div class="vd-pay-card" data-apply-section data-slug={job.slug}>
+              <div class="vd-pay-top">
+                <div class="vd-pay">
+                  <span class="vd-pay-label">Salary</span>
+                  {payRange ? (
+                    <>
+                      <span class="vd-pay-value">{payRange}</span>
+                      <span class="vd-pay-period">{payPeriod}</span>
+                    </>
+                  ) : (
+                    <span class="vd-pay-value vd-pay-none">{SALARY_NOT_DISCLOSED}</span>
+                  )}
+                </div>
+                {open && job.expiresAt && (
+                  <div class="vd-deadline">
+                    <span class="vd-deadline-icon">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>
+                    </span>
+                    <span class="vd-deadline-text">Apply by <b>{shortDate(job.expiresAt)}</b></span>
+                    {leftLabel && <span class="vd-deadline-left">{leftLabel}</span>}
+                  </div>
+                )}
+                {open && (
+                  <a class="vd-apply vd-apply-block" href={applyHref} {...applyLinkAttrs}>
+                    {applyLabel}
+                    {direct?.external && <span class="visually-hidden"> on the company website (opens in a new tab)</span>}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                  </a>
+                )}
+                <span class="vd-free"><span class="vd-free-dot" aria-hidden="true"></span>Candidates never pay to apply</span>
+              </div>
               <h2 class="visually-hidden">Key facts</h2>
-              <dl class="jd-fact-rows">
+              <dl class="vd-facts">
                 {facts.map(f => (
                   <div>
                     <dt>{f.label}</dt>
@@ -308,47 +335,65 @@ const facts = job
                 <div>
                   <dt>Category</dt>
                   <dd>
-                    <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>{job.category.name}</a>
+                    <a class="vd-link" href={categoryHref}>{job.category.name}</a>
                   </dd>
                 </div>
                 <div>
                   <dt>Posted</dt>
-                  <dd>{shortDate(job.publishedAt)}</dd>
+                  <dd class="vd-fig">{shortDate(job.publishedAt)}</dd>
                 </div>
               </dl>
+            </div>
+            <div class="vd-safe">
+              <span class="vd-safe-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"></path></svg>
+              </span>
+              <p><b>Stay safe.</b> Never pay to apply for a job or share bank details during an application.</p>
             </div>
           </aside>
         </div>
 
         {data!.similar.length > 0 && (
-          <section class="jd-similar" aria-labelledby="similar-title">
-            <div class="bp-section-head">
-              <h2 id="similar-title">Similar jobs</h2>
-              <a href={`/jobs/?category=${encodeURIComponent(job.category.slug)}`}>All {job.category.name} jobs</a>
+          <section class="vd-similar" aria-labelledby="similar-title">
+            <div class="vd-similar-inner">
+              <div class="vd-similar-head">
+                <div>
+                  <h2 id="similar-title">Similar jobs</h2>
+                  <p>More {job.category.name} roles hiring now.</p>
+                </div>
+                <a class="vd-link vd-similar-all" href={categoryHref}>
+                  All {job.category.name} jobs
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                </a>
+              </div>
+              <ul class="vd-rows vd-similar-box">
+                {data!.similar.map(s => (
+                  <li>
+                    <a class="vd-row" href={`/jobs/${encodeURIComponent(s.slug)}/`}>
+                      <span class:list={['vd-row-icon', 'v-row-icon', `cat-${rowIcon(s.title)}`]} aria-hidden="true">
+                        <VelaRowIcon icon={rowIcon(s.title)} />
+                      </span>
+                      <span class="vd-row-body">
+                        <span class="vd-row-title">{s.title}</span>
+                        <span class="vd-row-meta">{[s.company.name, workplaceAndPlace(s), employmentLabel(s.employmentType)].join(' · ')}</span>
+                      </span>
+                      {rowPay(s) && <span class="vd-row-pay">{rowPay(s)}</span>}
+                      <span class="vd-row-go" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul class="jd-similar-grid">
-              {data!.similar.map(s => (
-                <li>
-                  <article class="bp-row">
-                    <div class="bp-row-body">
-                      <h3 class="bp-row-title">
-                        <a href={`/jobs/${encodeURIComponent(s.slug)}/`}>{s.title}</a>
-                      </h3>
-                      <p class="bp-row-meta">{[s.company.name, workplaceAndPlace(s), formatSalary(s.salary)].filter(Boolean).join(' · ')}</p>
-                    </div>
-                    <svg class="bp-row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
-                  </article>
-                </li>
-              ))}
-            </ul>
           </section>
         )}
 
         {open && (
-          <div class="jd-bar" data-apply-section data-slug={job.slug}>
+          <div class="jd-bar vd-bar" data-apply-section data-slug={job.slug}>
             <div class="jd-bar-inner">
               <SaveButton slug={job.slug} title={job.title} variant="full" />
-              <a class="button bp-lg jd-bar-apply" href={applyHref} {...applyLinkAttrs}>
+              <a class="vd-apply jd-bar-apply" href={applyHref} {...applyLinkAttrs}>
                 {applyLabel}
                 {direct?.external && <span class="visually-hidden"> on the company website (opens in a new tab)</span>}
               </a>

@@ -2,18 +2,25 @@
 /**
  * A company profile (F5): logo, about, links and its open jobs. Blocked or unknown → 404; on a
  * single-company board only the owner company has a profile (F39). An outage → 503.
+ * Design: "Vela" (src/styles/company-profile-vela.css; docs: ~/Downloads/Company profile-html).
  */
-import CompanyLogo from '../../components/board/CompanyLogo.astro';
-import JobList from '../../components/board/JobList.astro';
 import NotFound from '../../components/NotFound.astro';
+import SaveButton from '../../components/board/SaveButton.astro';
+import VelaRowIcon from '../../components/board/VelaRowIcon.astro';
 import Base from '../../layouts/Base.astro';
+import {WORKPLACE_LABELS, type WorkplaceType} from '../../lib/board';
+import {initials} from '../../lib/format';
 import {companyJsonLd} from '../../lib/json-ld';
+import {employmentLabel, formatSalary, postedAgo, workplaceAndPlace} from '../../lib/job-display';
 import {clip, htmlToText} from '../../lib/rich-text';
-import type {CompanyProfileResponse} from '../../lib/types-public';
+import {rowIcon, type RowIcon} from '../../lib/row-icon';
+import type {CompanyProfileResponse, PublicJobSummary} from '../../lib/types-public';
 import {sanitizeHtml} from '../../platform/sanitize';
 import {backend} from '../../server/backend';
 import {boardPage} from '../../server/board/public-page';
 import '../../styles/board-pages.css';
+import '../../styles/home-vela.css';
+import '../../styles/company-profile-vela.css';
 
 const slug = Astro.params.slug ?? '';
 const [{site, viewer, board}, answer] = await Promise.all([
@@ -39,71 +46,249 @@ const description = company
       160
     )
   : undefined;
+
+// ---- The "Vela" design.
+const jobs: PublicJobSummary[] = data?.jobs ?? [];
+/** A company without a logo: its initials on one of the design's tile colours (same name, same colour). */
+let nameHash = 0;
+for (const ch of company?.name ?? '') nameHash = (nameHash * 31 + ch.charCodeAt(0)) >>> 0;
+const tile = `vc-tile-${nameHash % 13}`;
+/** Workplace types in the design's order, with how many open roles each has. */
+const WP_ORDER: WorkplaceType[] = ['remote', 'hybrid', 'onsite'];
+const wpCounts = WP_ORDER.map(wp => ({wp, label: WORKPLACE_LABELS[wp], count: jobs.filter(j => j.workplaceType === wp).length})).filter(t => t.count > 0);
+/** "Remote, hybrid and on-site". */
+const waysToWork = (() => {
+  const words = wpCounts.map((t, i) => (i === 0 ? t.label : t.label.toLowerCase()));
+  return words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : (words[0] ?? null);
+})();
+/** "design, engineering, writing": the areas the row icons stand for (the default briefcase says nothing). */
+const AREA: Partial<Record<RowIcon, string>> = {code: 'engineering', design: 'design', write: 'writing', support: 'support', coach: 'teaching', finance: 'finance', marketing: 'marketing', ops: 'operations'};
+const areas = [...new Set(jobs.map(j => AREA[rowIcon(j.title)]).filter(Boolean))].sort().slice(0, 4).join(', ');
+const latest = jobs.reduce<string | null>((max, j) => (j.publishedAt && (!max || j.publishedAt > max) ? j.publishedAt : max), null);
+/** The design's short range in the rows: "$130K – $165K" → "$130K–165K". */
+const rowPay = (s: PublicJobSummary) => formatSalary(s.salary)?.replace(/^([^\d\s]*)([\d.,]+[KMBT]?) – \1([\d.,]+[KMBT]?)/, '$1$2–$3') ?? null;
+const roleWord = (n: number) => (n === 1 ? 'open role' : 'open roles');
 ---
 
 {
   company ? (
-    <Base site={site} viewer={viewer} board={board} title={`Jobs at ${company.name}`} description={description} image={company.logoUrl} imageSquare imageAlt={company.logoUrl ? `${company.name} logo` : undefined} jsonLd={companyJsonLd(company)}>
-      <main id="main" tabindex="-1" class="wrap bp-page bp-narrow">
-        <a class="bp-back" href={board?.singleCompany ? '/' : '/companies/'}><svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>{board?.singleCompany ? 'Home' : 'All companies'}</a>
-        <header class="bp-panel bp-pad">
-          <div class="cp-head-row">
-            <CompanyLogo name={company.name} logoUrl={company.logoUrl} size="lg" eager />
-            <div>
-              <h1>{company.name}</h1>
-              {company.location && (
-                <p class="cp-loc">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                  {company.location}
-                </p>
-              )}
-            </div>
-          </div>
-          {company.aboutHtml && <div class="bp-rich cp-about" set:html={sanitizeHtml(company.aboutHtml)} />}
-          {(company.website || company.socials.length > 0) && (
-            <ul class="cp-links" aria-label="Links">
-              {company.website && (
-                <li>
-                  <a class="button bp-quiet small-button" href={company.website} target="_blank" rel="noopener noreferrer nofollow">
-                    Website
-                    <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
-                    <span class="visually-hidden"> (opens in a new tab)</span>
-                  </a>
-                </li>
-              )}
-              {company.socials.map(s => (
-                <li>
-                  <a class="button bp-quiet small-button" href={s.url} target="_blank" rel="noopener noreferrer nofollow">
-                    {s.label}
-                    <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
-                    <span class="visually-hidden"> (opens in a new tab)</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </header>
-        <section class="bp-panel cp-jobs" aria-labelledby="jobs-title">
-          <div class="cp-jobs-head">
-            <h2 id="jobs-title">
-              Open positions <span class="count">({data!.jobs.length})</span>
-            </h2>
-          </div>
-          {data!.jobs.length ? (
-            <JobList jobs={data!.jobs} hideCompany />
-          ) : (
-            <div class="bp-empty bp-empty-plain">
-              <span class="bp-empty-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>
-              </span>
-              <h3>No open positions right now</h3>
-              <p>{company.name} has no open jobs at the moment.</p>
-              <div class="bp-empty-actions">
-                <a class="button bp-outline" href="/jobs/">Browse all jobs</a>
+    <Base site={site} viewer={viewer} board={board} title={`Jobs at ${company.name}`} description={description} image={company.logoUrl} imageSquare imageAlt={company.logoUrl ? `${company.name} logo` : undefined} jsonLd={companyJsonLd(company)} skin="vela">
+      <main id="main" tabindex="-1" class="v-home vc">
+        <section class="vc-hero">
+          <div class="vc-hero-inner">
+            <a class="vc-back" href={board?.singleCompany ? '/' : '/companies/'}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"></path></svg>
+              {board?.singleCompany ? 'Home' : 'All companies'}
+            </a>
+            <div class="vc-head">
+              <div class="vc-head-main">
+                {company.logoUrl ? (
+                  <span class="vc-logo vc-logo-img" aria-hidden="true">
+                    <img src={company.logoUrl} alt="" width="88" height="88" loading="eager" decoding="async" />
+                  </span>
+                ) : (
+                  <span class:list={['vc-logo', tile]} aria-hidden="true">{initials(company.name)}</span>
+                )}
+                <div class="vc-head-text">
+                  <h1 class="vc-title">{company.name}</h1>
+                  <ul class="vc-meta" aria-label="Summary">
+                    {company.location && (
+                      <li>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+                        {company.location}
+                      </li>
+                    )}
+                    <li>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path></svg>
+                      <b>{jobs.length}</b> {roleWord(jobs.length)}
+                    </li>
+                    {waysToWork && (
+                      <li>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
+                        {waysToWork}
+                      </li>
+                    )}
+                  </ul>
+                </div>
               </div>
+              {(company.website || jobs.length > 0) && (
+                <div class="vc-head-actions">
+                  {company.website && (
+                    <a class="vc-sec" href={company.website} target="_blank" rel="noopener noreferrer nofollow">
+                      Website
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"></path></svg>
+                      <span class="visually-hidden"> (opens in a new tab)</span>
+                    </a>
+                  )}
+                  {jobs.length > 0 && (
+                    <a class="vc-pri" href="#roles">
+                      See open roles
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </section>
+
+        <div class="vc-body">
+          <div class="vc-main">
+            {company.aboutHtml && (
+              <section class="vc-card vc-about" aria-labelledby="about-title">
+                <h2 id="about-title">About {company.name}</h2>
+                <div class="vc-rich" set:html={sanitizeHtml(company.aboutHtml)} />
+              </section>
+            )}
+
+            <section id="roles" class="vc-roles" aria-labelledby="jobs-title" data-roles>
+              <div class="vc-roles-head">
+                <div class="vc-roles-title">
+                  <h2 id="jobs-title">Open roles</h2>
+                  <span class="vc-count">{jobs.length}</span>
+                </div>
+                {wpCounts.length > 1 && (
+                  <div class="vc-tabs" role="group" aria-label="Filter by workplace">
+                    <button type="button" aria-pressed="true" data-wp="">
+                      All<span>{jobs.length}</span>
+                    </button>
+                    {wpCounts.map(t => (
+                      <button type="button" aria-pressed="false" data-wp={t.wp}>
+                        {t.label}
+                        <span>{t.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {jobs.length ? (
+                <ul class="vc-rows">
+                  {jobs.map(job => {
+                    const icon = rowIcon(job.title);
+                    const pay = rowPay(job);
+                    return (
+                      <li class="vc-row" data-wp={job.workplaceType}>
+                        <span class:list={['vc-row-icon', 'v-row-icon', `cat-${icon}`]} aria-hidden="true">
+                          <VelaRowIcon icon={icon} />
+                        </span>
+                        <span class="vc-row-body">
+                          <h3 class="vc-row-title">
+                            <a class="vc-row-link" href={`/jobs/${encodeURIComponent(job.slug)}/`}>{job.title}</a>
+                          </h3>
+                          <span class="vc-row-meta">
+                            <span>{workplaceAndPlace(job)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{employmentLabel(job.employmentType)}</span>
+                          </span>
+                        </span>
+                        <span class="vc-row-side">
+                          {pay && <span class="vc-row-pay">{pay}</span>}
+                          {job.publishedAt && (
+                            <time class="vc-row-posted" datetime={job.publishedAt}>
+                              {postedAgo(job.publishedAt)}
+                            </time>
+                          )}
+                        </span>
+                        <SaveButton slug={job.slug} title={job.title} />
+                        <span class="vc-row-go" aria-hidden="true">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div class="vc-empty">
+                  <h3>No open positions right now</h3>
+                  <p>{company.name} has no open jobs at the moment.</p>
+                  <a class="vc-sec" href="/jobs/">Browse all jobs</a>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <aside class="vc-aside" aria-label="Company details">
+            <div class="vc-glance">
+              <h2>At a glance</h2>
+              <dl>
+                {company.location && (
+                  <div>
+                    <span class="vc-glance-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+                    </span>
+                    <div>
+                      <dt>Based in</dt>
+                      <dd>{company.location}</dd>
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <span class="vc-glance-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path></svg>
+                  </span>
+                  <div>
+                    <dt>Open roles</dt>
+                    <dd>
+                      <span class="vc-fig">{jobs.length}</span>
+                      {areas && ` · ${areas}`}
+                    </dd>
+                  </div>
+                </div>
+                {waysToWork && (
+                  <div>
+                    <span class="vc-glance-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
+                    </span>
+                    <div>
+                      <dt>Ways to work</dt>
+                      <dd>{waysToWork}</dd>
+                    </div>
+                  </div>
+                )}
+                {latest && (
+                  <div>
+                    <span class="vc-glance-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                    </span>
+                    <div>
+                      <dt>Latest role</dt>
+                      <dd>Posted {postedAgo(latest)}</dd>
+                    </div>
+                  </div>
+                )}
+                {company.socials.length > 0 && (
+                  <div>
+                    <span class="vc-glance-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><path d="M8 12h8"></path></svg>
+                    </span>
+                    <div>
+                      <dt>Find them on</dt>
+                      <dd class="vc-socials">
+                        {company.socials.map(s => (
+                          <a href={s.url} target="_blank" rel="noopener noreferrer nofollow">
+                            {s.label}
+                            <span class="visually-hidden"> (opens in a new tab)</span>
+                          </a>
+                        ))}
+                      </dd>
+                    </div>
+                  </div>
+                )}
+              </dl>
+            </div>
+            <div class="vc-join" data-guest-only hidden={viewer.state === 'user'}>
+              <h2>Apply in one click</h2>
+              <p>Make a free profile once, then apply to any {company.name} role with your saved CV.</p>
+              <a class="vc-pri" href="/account/register/?as=applicant">Create a free account</a>
+            </div>
+            <div class="vc-safe">
+              <span class="vc-safe-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"></path></svg>
+              </span>
+              <p><b>Stay safe.</b> Never pay to apply for a job or share bank details during an application.</p>
+            </div>
+          </aside>
+        </div>
       </main>
     </Base>
   ) : missing ? (
@@ -122,3 +307,20 @@ const description = company
     </Base>
   )
 }
+
+<script>
+  // The open roles' workplace switch (the design's tabs): filters the rows in place.
+  document.addEventListener('astro:page-load', () => {
+    const roles = document.querySelector<HTMLElement>('[data-roles]');
+    const tabs = roles ? [...roles.querySelectorAll<HTMLButtonElement>('.vc-tabs button')] : [];
+    if (!roles || !tabs.length) return;
+    const rows = [...roles.querySelectorAll<HTMLElement>('.vc-row')];
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => {
+        const wp = tab.dataset.wp ?? '';
+        for (const t of tabs) t.setAttribute('aria-pressed', String(t === tab));
+        for (const row of rows) row.hidden = wp !== '' && row.dataset.wp !== wp;
+      });
+    }
+  });
+</script>

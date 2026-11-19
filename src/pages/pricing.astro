@@ -1,8 +1,10 @@
 ---
 /**
- * Pricing: the active listing tiers (1–3) from `GET /site-api/board/tiers`. The amount charged at
- * checkout is the platform catalogue price; this shows the tier's display copy. Free posting
- * shows every tier at no cost. Single-company boards do not sell listings: 404 (F39).
+ * Pricing, in the "Vela" design (src/styles/pricing-vela.css, `skin="vela"`; docs: ~/Downloads/Pricing-html):
+ * the active listing tiers (1–3) from `GET /site-api/board/tiers`. The amount charged at checkout
+ * is the platform catalogue price; this shows the tier's display copy. A tier that includes
+ * featuring gets the dark card. Free posting shows every tier at no cost. Single-company boards
+ * do not sell listings: 404 (F39).
  */
 import NotFound from '../components/NotFound.astro';
 import Base from '../layouts/Base.astro';
@@ -10,7 +12,8 @@ import {formatMoney} from '../lib/format';
 import type {PublicTier} from '../lib/types-public';
 import {backend} from '../server/backend';
 import {boardPage} from '../server/board/public-page';
-import '../styles/board-pages.css';
+import '../styles/home-vela.css';
+import '../styles/pricing-vela.css';
 
 const [{site, viewer, board}, answer] = await Promise.all([
   boardPage(Astro.request, Astro.response),
@@ -23,22 +26,32 @@ const data = answer?.ok ? ((await answer.json().catch(() => null)) as {tiers: Pu
 if (missing) Astro.response.status = 404;
 else if (!data) Astro.response.status = 503;
 const name = board?.name ?? site?.name ?? 'our board';
+const tiers = data?.tiers ?? [];
+
+/** Every listing includes: label + icon (index into the design's six icon tiles). */
 const INCLUDED = [
   'Listed in search and on the home page',
-  'Structured data so it can show in Google for Jobs',
-  'Apply on this site, on your website or by email',
+  'Structured data for Google for Jobs',
+  'Apply here, on your website or by email',
   'Applicants and resumes in your dashboard',
   'Close it any time once the role is filled',
+  'Reviewed by a person before it goes live',
 ];
 const perks = (tier: PublicTier) => [
   {label: 'One job listing', included: true},
   {label: `Live for ${tier.durationDays} days`, included: true},
   {label: 'Featured badge and highlight', included: tier.includesFeatured},
   {label: 'Pinned above regular listings', included: tier.includesFeatured},
-  {label: 'Shown in featured jobs on the home page', included: tier.includesFeatured},
+  {label: 'Featured jobs on the home page', included: tier.includesFeatured},
 ];
+/** "$49" for a whole amount, "$49.50" otherwise. */
+const price = (tier: PublicTier) => formatMoney(tier.priceCents, tier.currency).replace(/[.,]00(?=\D*$)/, '');
 const perDay = (tier: PublicTier) => (tier.durationDays > 0 ? formatMoney(Math.round(tier.priceCents / tier.durationDays), tier.currency) : null);
 const start = viewer.state === 'user' ? '/dashboard/post-a-job' : `/account/register/?next=${encodeURIComponent('/dashboard/post-a-job')}`;
+
+// The hero's "live for N days": the tiers' one duration, or the longest when they differ.
+const days = [...new Set(tiers.map(tier => tier.durationDays))];
+const liveFor = days.length === 0 ? null : days.length === 1 ? `${days[0]} days` : `up to ${Math.max(...days)} days`;
 ---
 
 {
@@ -47,52 +60,107 @@ const start = viewer.state === 'user' ? '/dashboard/post-a-job' : `/account/regi
       <NotFound site={site} />
     </Base>
   ) : (
-    <Base site={site} viewer={viewer} board={board} title="Pricing" description={`Job posting prices at ${name}: pick how long your listing runs and whether it is featured. Candidates always apply for free.`}>
-      <main id="main" tabindex="-1" class="wrap bp-page">
-        <header class="bp-header">
-          <div>
-            <p class="bp-eyebrow">Pricing</p>
-            <h1>Simple pricing for employers</h1>
-            <p class="bp-desc">Candidates never pay. You pay once per listing, with no subscription.</p>
+    <Base
+      site={site}
+      viewer={viewer}
+      board={board}
+      title="Pricing"
+      description={`Job posting prices at ${name}: pick how long your listing runs and whether it is featured. Candidates always apply for free.`}
+      skin="vela">
+      <main id="main" tabindex="-1" class="v-home v-pr">
+        <section class="v-pr-hero" aria-labelledby="pr-title">
+          <div class="v-pr-hero-grid" aria-hidden="true" />
+          <div class="v-pr-hero-inner">
+            <span class="v-pr-badge">
+              <span class="v-pr-badge-dot" aria-hidden="true" />
+              Candidates never pay
+            </span>
+            <h1 id="pr-title" class="v-pr-title">
+              Simple pricing.{' '}
+              <span class="v-pr-title-hi">
+                Pay once.
+                <svg class="v-pr-title-line" viewBox="0 0 220 24" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                  <path d="M4 12 C 50 4, 120 2, 216 9" fill="none" stroke="#a3acfc" stroke-width="5" stroke-linecap="round" />
+                  <path d="M40 20 C 90 14, 140 14, 178 17" fill="none" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round" />
+                </svg>
+              </span>
+            </h1>
+            <p class="v-pr-lead">
+              {liveFor ? `One listing, live for ${liveFor}.` : 'You pay once per listing.'}
+              <br />
+              No subscription, and nothing renews on its own.
+              {data?.freePosting && tiers.length > 0 && (
+                <>
+                  <br />
+                  Posting is free right now: every plan below costs nothing.
+                </>
+              )}
+            </p>
+            <ul class="v-pr-chips">
+              {[liveFor ? `Live for ${liveFor}` : null, 'No subscription', 'Reviewed by a person'].filter(Boolean).map(chip => (
+                <li>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="m5 12 5 5L20 7" />
+                  </svg>
+                  {chip}
+                </li>
+              ))}
+            </ul>
           </div>
-        </header>
-        {!data ? (
-          <div class="bp-alert pr-closed" role="alert">
-            <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
-            <p class="bp-alert-title">Prices are not available right now</p>
-            <p>Try again in a minute.</p>
-          </div>
-        ) : data.tiers.length === 0 ? (
-          <section class="bp-panel bp-pad pr-closed">
-            <h2 class="bp-heading">Job listing</h2>
-            <p>Posting isn’t open yet. Please check back soon.</p>
-          </section>
-        ) : (
-          <>
-            {data.freePosting && <p class="pr-free">Posting is free right now: every plan below costs nothing.</p>}
-            <ul class:list={['pr-tiers', `pr-${Math.min(data.tiers.length, 3)}`]}>
-              {data.tiers.map(tier => {
+        </section>
+
+        <section class="v-pr-plans" aria-label="Plans">
+          {!data ? (
+            <div class="v-pr-panel" role="alert">
+              <h2>Prices are not available right now</h2>
+              <p>Try again in a minute.</p>
+            </div>
+          ) : tiers.length === 0 ? (
+            <div class="v-pr-panel">
+              <h2>Job listing</h2>
+              <p>Posting isn’t open yet. Please check back soon.</p>
+            </div>
+          ) : (
+            <ul class:list={['v-pr-grid', `v-pr-grid-${Math.min(tiers.length, 3)}`]}>
+              {tiers.map(tier => {
                 const free = tier.priceCents === 0;
                 const daily = perDay(tier);
+                const f = tier.includesFeatured;
                 return (
                   <li>
-                    <section class:list={['pr-tier', {'pr-tier-featured': tier.includesFeatured}]} aria-labelledby={`tier-${tier.id}`}>
-                      <div class="pr-tier-head">
-                        <h2 id={`tier-${tier.id}`}>{tier.name}</h2>
-                        {tier.includesFeatured && <span class="bp-badge bp-badge-brand">Featured</span>}
+                    <article class:list={['v-pr-plan', f && 'v-pr-plan-f']} aria-labelledby={`tier-${tier.id}`}>
+                      <div class="v-pr-plan-head">
+                        <div class="v-pr-plan-name">
+                          <h2 id={`tier-${tier.id}`}>{tier.name}</h2>
+                          {f && (
+                            <span class="v-pr-tag">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="#c6cdff" aria-hidden="true" focusable="false">
+                                <path d="m12 2 2.9 6.9L22 9.5l-5.5 4.8L18.2 22 12 18.1 5.8 22l1.7-7.7L2 9.5l7.1-.6z" />
+                              </svg>
+                              Most visible
+                            </span>
+                          )}
+                        </div>
+                        <p class="v-pr-desc">{f ? 'Top of search, highlighted, and on the home page.' : 'A clean listing in search and on the home page.'}</p>
                       </div>
-                      <p class="pr-price">
-                        <span class="pr-amount">{free ? 'Free' : formatMoney(tier.priceCents, tier.currency)}</span>
-                        {!free && <span class="pr-per">per listing</span>}
-                      </p>
-                      <p class="pr-day">{free || !daily ? `${tier.durationDays} days live` : `About ${daily} a day`}</p>
-                      <ul class="pr-perks">
+                      <div class="v-pr-price">
+                        <span class="v-pr-price-line">
+                          <span class="v-pr-amount">{free ? 'Free' : price(tier)}</span>
+                          {!free && <span class="v-pr-per">per listing</span>}
+                        </span>
+                        <span class="v-pr-day">{free || !daily ? `${tier.durationDays} days live` : `About ${daily} a day`}</span>
+                      </div>
+                      <ul class="v-pr-perks">
                         {perks(tier).map(perk => (
-                          <li class:list={{'pr-off': !perk.included}}>
+                          <li class:list={{'v-pr-off': !perk.included}}>
                             {perk.included ? (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+                              <svg class="v-pr-check" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                <path d="m5 12 5 5L20 7" />
+                              </svg>
                             ) : (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false">
+                                <path d="M7 12h10" />
+                              </svg>
                             )}
                             <span>
                               {perk.label}
@@ -101,31 +169,86 @@ const start = viewer.state === 'user' ? '/dashboard/post-a-job' : `/account/regi
                           </li>
                         ))}
                       </ul>
-                      <div class="pr-cta">
-                        <a class:list={['button', 'bp-lg', 'bp-block', {'bp-outline': !tier.includesFeatured}]} href={start}>Post a job</a>
-                      </div>
-                    </section>
+                      <a class:list={['v-btn', 'v-btn-lg', 'v-pr-btn', f ? 'v-pr-btn-w' : 'v-pr-btn-2']} href={start}>
+                        Post a {tier.name} listing
+                        {f && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M5 12h14M13 6l6 6-6 6" />
+                          </svg>
+                        )}
+                      </a>
+                    </article>
                   </li>
                 );
               })}
             </ul>
-            <section class="pr-included" aria-labelledby="included-title">
-              <div>
-                <h2 id="included-title">Every listing includes</h2>
-                <p>Whichever plan you pick. Pay once, no subscription and nothing renews on its own.</p>
+          )}
+        </section>
+
+        {tiers.length > 0 && (
+          <section class="v-pr-every" aria-labelledby="pr-every">
+            <div class="v-pr-every-card">
+              <div class="v-pr-every-text">
+                <h2 id="pr-every">Every listing includes</h2>
+                <p>Whichever plan you pick. Pay once, and nothing renews on its own.</p>
               </div>
-              <ul>
-                {INCLUDED.map(item => (
+              <ul class="v-pr-inc">
+                {INCLUDED.map((item, i) => (
                   <li>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+                    <span class:list={['v-pr-inc-icon', `v-pr-inc-icon-${i}`]} aria-hidden="true">
+                      {i === 0 && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" focusable="false">
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="m20 20-3.5-3.5" />
+                        </svg>
+                      )}
+                      {i === 1 && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="m8 8-4 4 4 4M16 8l4 4-4 4" />
+                        </svg>
+                      )}
+                      {i === 2 && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+                          <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+                        </svg>
+                      )}
+                      {i === 3 && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                          <circle cx="9" cy="7" r="4" />
+                          <path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" />
+                        </svg>
+                      )}
+                      {i === 4 && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="m5 12 5 5L20 7" />
+                        </svg>
+                      )}
+                      {i === 5 && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3z" />
+                          <path d="m9 12 2 2 4-4" />
+                        </svg>
+                      )}
+                    </span>
                     {item}
                   </li>
                 ))}
               </ul>
-            </section>
-          </>
+            </div>
+          </section>
         )}
-        <p class="pr-note">Prices include everything shown; taxes may apply at checkout. Every listing is reviewed before it goes live.</p>
+
+        <div class="v-pr-note-wrap">
+          <p class="v-pr-note">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v4M12 16h.01" />
+            </svg>
+            Prices include everything shown. Taxes may apply at checkout.
+          </p>
+        </div>
       </main>
     </Base>
   )

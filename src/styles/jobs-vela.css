@@ -358,6 +358,13 @@
     background: var(--v-surface-card);
     border: 1px solid var(--v-border-subtle);
     border-radius: 20px;
+    /* Stays in view below the sticky 64px header while the results scroll; a tall card
+       scrolls inside itself on short viewports. */
+    position: sticky;
+    top: 88px;
+    max-height: calc(100vh - 112px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .v-jobs .fgroup:first-child {
@@ -604,5 +611,83 @@
     justify-content: center;
     gap: 6px;
     padding: 0 8px;
+    white-space: nowrap;
   }
+
+  .v-jobs .vj-sort {
+    width: 100%;
+  }
+}
+
+/* Small phones (≤ 399px): the four tabs with their counts don't fit one line, so the counts go
+   (each tab still leads to the same list) and the tabs tighten. */
+@media (max-width: 399px) {
+  .v-jobs .vj-tools .v-tab {
+    gap: 4px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+
+  .v-jobs .vj-tools .v-tab-count {
+    display: none;
+  }
+}
+
+/* Tablets: beside the filters the results panel is narrow (about 420–600px), too narrow for
+   title | pay side by side, so the rows take the phone layout (icon | title + meta, then pay ·
+   posted under them) whenever the panel is under 600px, whatever the window. */
+.v-jobs .vj-panel {
+  container-type: inline-size;
+}
+
+@container (max-width: 599px) {
+  .v-jobs .v-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    column-gap: 14px;
+    row-gap: 6px;
+    align-items: start;
+    padding: 16px 24px;
+  }
+
+  .v-jobs .v-row-icon {
+    grid-row: 1 / span 2;
+  }
+
+  .v-jobs .v-row-body,
+  .v-jobs .v-row-side {
+    grid-column: 2;
+  }
+
+  .v-jobs .v-row-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    min-width: 0;
+  }
+
+  .v-jobs .v-row .save-job {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .v-jobs .v-row-go {
+    display: none;
+  }
+}
+
+/* Phones: rows line up with the panel head's 16px. */
+@media (max-width: 639px) {
+  .v-jobs .v-row {
+    padding: 16px;
+  }
+}
+
+/* ---------------------------------------------------------------- below the results */
+/* "Companies hiring now" (home's Who's hiring card, laid out as a grid) and the employer band. */
+.vj-hire {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 12px;
 }

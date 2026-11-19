@@ -1,0 +1,149 @@
+/*
+ * Sign in (/account/login/, `.v-si`) and sign up (/account/register/, `.v-su`) without the site
+ * header and footer (`<Base bare>`, `body.bare`): the page fills the screen, the card sits in the
+ * middle, the site's logo links home from the top left. Responsive steps:
+ *   >= 960px  form and dark panel side by side (the design)
+ *   <  960px  one column, form first, card at most 560px wide and centred
+ *   <  480px  tighter padding, smaller headings (phones)
+ * Imported after signin-vela.css / signup-vela.css.
+ */
+
+body.bare {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ---------------------------------------------------------------- the logo, top left */
+.bare-top {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 16px 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.bare-top .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--v-text-strong);
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+.bare-top .brand-plate {
+  padding: 0;
+  background: transparent;
+}
+
+.bare-top .brand-logo[class*='brand-size-'] {
+  height: 28px;
+}
+
+@media (min-width: 768px) {
+  .bare-top {
+    padding: 24px 32px 0;
+  }
+}
+
+/* ---------------------------------------------------------------- full height, card centred */
+.bare .v-si,
+.bare .v-su {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+}
+
+.bare .v-si-wrap,
+.bare .v-su-wrap {
+  width: 100%;
+  padding: 72px 16px 32px;
+}
+
+@media (min-width: 768px) {
+  .bare .v-si-wrap,
+  .bare .v-su-wrap {
+    padding: 96px 32px 56px;
+  }
+}
+
+/* ---------------------------------------------------------------- tablet and phone: one column */
+@media (max-width: 959px) {
+  .bare .v-si-card,
+  .bare .v-su-card {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .bare .v-si-main,
+  .bare .v-su-main,
+  .bare .v-si-aside,
+  .bare .v-su-aside {
+    flex: none;
+  }
+
+  .bare .v-si-aside,
+  .bare .v-su-aside {
+    gap: 28px;
+  }
+}
+
+/* ---------------------------------------------------------------- phones */
+@media (max-width: 479px) {
+  .bare .v-si,
+  .bare .v-su {
+    align-items: flex-start;
+  }
+
+  .bare .v-si-wrap,
+  .bare .v-su-wrap {
+    padding: 68px 12px 24px;
+  }
+
+  .bare .v-si-card,
+  .bare .v-su-card {
+    border-radius: 20px;
+  }
+
+  .bare .v-si-main,
+  .bare .v-su-main {
+    padding: 24px 18px;
+    gap: 24px;
+  }
+
+  .bare .v-si-aside,
+  .bare .v-su-aside {
+    padding: 28px 18px 24px;
+  }
+
+  .bare .v-si .v-si-head h1,
+  .bare .v-su .v-su-head h1 {
+    font-size: 28px;
+  }
+
+  .bare .v-si .v-si-aside-head h2,
+  .bare .v-su .v-su-aside h2 {
+    font-size: 26px;
+  }
+
+  .bare .v-su-choice {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .bare .v-su-choice-icon {
+    width: 36px;
+    height: 36px;
+  }
+}

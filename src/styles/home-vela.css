@@ -538,14 +538,17 @@
   transform: translateX(3px);
 }
 
-/* Phones: the divider goes, the button fills the row. */
+/* Phones and tablets: the button gets a row of its own, full width (not stranded at the left);
+   phones also lose the divider (the two fields stack). */
+@media (max-width: 859px) {
+  .v-search .v-search-submit {
+    flex: 1 1 100%;
+  }
+}
+
 @media (max-width: 639px) {
   .v-search-divider {
     display: none;
-  }
-
-  .v-search .v-search-submit {
-    flex: 1 1 100%;
   }
 }
 
@@ -1117,7 +1120,7 @@
   align-items: center;
   gap: 16px;
   padding: 14px;
-  border-radius: 10px;
+  border-radius: 0;
   text-decoration: none;
   color: var(--v-text-strong);
   transition:
@@ -1426,8 +1429,13 @@
 
 .v-price-list li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+}
+
+.v-price-list li svg {
+  flex: none;
+  margin-top: 2px;
 }
 
 .v-price-actions {
@@ -1461,5 +1469,53 @@
   .v-home *::before,
   .v-home *::after {
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Below 1100px the band stacks: the price card spans the band (not a lone card at the left), and
+   from 560px its price + list sit beside the buttons. */
+@media (max-width: 1099px) {
+  .v-band {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 32px;
+  }
+
+  .v-band-text,
+  .v-price {
+    flex: none;
+  }
+
+  .v-price {
+    max-width: none;
+  }
+}
+
+@media (min-width: 560px) and (max-width: 1099px) {
+  .v-price {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 32px;
+    align-items: center;
+  }
+
+  .v-price-top {
+    grid-column: 1;
+  }
+
+  .v-price-list {
+    grid-column: 1;
+  }
+
+  .v-price-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+/* Phones: the band title's forced break would strand a word on its own line; let it wrap. */
+@media (max-width: 479px) {
+  .v-band-title br {
+    display: none;
   }
 }
