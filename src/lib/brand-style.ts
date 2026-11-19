@@ -16,6 +16,8 @@
 
 /** The stylesheet prerendered pages link (and client navigations fall back to). */
 export const BRAND_CSS_HREF = '/site-api/board/brand.css';
+/** The same without the brand colours, for a page with its own palette (`data-brand-plain`: the home page). */
+export const BRAND_CSS_PLAIN_HREF = `${BRAND_CSS_HREF}?colours=0`;
 
 /** Loads a stylesheet before it is put on the page (no flash of the default colours). */
 const preloadStyle = (href: string) =>
@@ -46,12 +48,13 @@ export function keepBrandStyleAllowed(): void {
       if (!incoming) return;
       const current = document.head.querySelector('style[data-brand-style]');
       if (current && current.textContent === incoming.textContent) return; // kept by the router as it is
+      const href = incoming.hasAttribute('data-brand-plain') ? BRAND_CSS_PLAIN_HREF : BRAND_CSS_HREF;
       const link = prep.newDocument.createElement('link');
       link.rel = 'stylesheet';
-      link.href = BRAND_CSS_HREF;
+      link.href = href;
       link.dataset.brandStyle = '';
       incoming.replaceWith(link);
-      if (!document.head.querySelector(`link[rel="stylesheet"][href="${BRAND_CSS_HREF}"]`)) await preloadStyle(BRAND_CSS_HREF);
+      if (!document.head.querySelector(`link[rel="stylesheet"][href="${href}"]`)) await preloadStyle(href);
     };
   });
 }

@@ -95,7 +95,7 @@ async function homeLists(db: PrismaClient, settings: BoardSettings, workplace: s
   const now = new Date();
   const open = publicJobWhere(settings, now);
   const single = isSingleCompany(settings);
-  const [{pinned, count: featuredTotal}, latest, categories, owner, ranks] = await Promise.all([
+  const [{pinned, count: featuredTotal}, latest, categories, owner, ranks, byWorkplace] = await Promise.all([
     featuredPinsAndCount(db, settings, now),
     db.job.findMany({
       where: {
@@ -114,6 +114,8 @@ async function homeLists(db: PrismaClient, settings: BoardSettings, workplace: s
       : null,
     // "Hiring now" (marketplace only): the top of the companies directory's order.
     single ? Promise.resolve([]) : hiringRanking(db, settings, now),
+    // The workplace switch's counts: open jobs per workplace type (at most 3 groups), kept with the lists.
+    db.job.groupBy({by: ['workplaceType'], where: open, _count: {_all: true}}),
   ]);
   // Both depend on the first round only: in parallel.
   const [featured, companies] = await Promise.all([
@@ -132,6 +134,9 @@ async function homeLists(db: PrismaClient, settings: BoardSettings, workplace: s
     featuredMore: moreFeatured(featuredTotal),
     featuredCount: featuredTotal,
     workplace,
+    workplaceCounts: Object.fromEntries(
+      byWorkplace.filter(g => (WORKPLACE_TYPES as readonly string[]).includes(g.workplaceType)).map(g => [g.workplaceType, g._count._all])
+    ),
     latest: map(latest),
     categories,
     companies,
@@ -158,7 +163,9 @@ export const boardRoutes = new Hono()
   .get('/brand.css', async c => {
     const db = getDb();
     const settings = db ? await cachedBoardSettings(db).catch(() => null) : null;
-    const css = settings ? brandCss(settings, isSingleCompany(settings)) : '/* No board settings: the default theme. */\n';
+    // `?colours=0`: no brand colours (the home page's own palette, after a client navigation).
+    const colours = c.req.query('colours') !== '0';
+    const css = settings ? brandCss(settings, isSingleCompany(settings), {colours}) : '/* No board settings: the default theme. */\n';
     return c.body(css, 200, {
       'Content-Type': 'text/css; charset=utf-8',
       'Cache-Control': settings ? 'public, max-age=60, stale-while-revalidate=600' : 'public, max-age=30',

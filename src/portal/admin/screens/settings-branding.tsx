@@ -46,7 +46,7 @@ function BrandingForm({data}: {data: AdminBranding}) {
       name: [rules.required('Give the board a name.'), rules.maxLength(MANAGE_LIMITS.boardName)],
       primaryColor: [rules.required('Pick a colour.'), rules.pattern(HEX_COLOR, 'Use a colour like #4f46e5.')],
       sidebarBg: [rules.pattern(OPTIONAL_HEX, 'Use a colour like #1f1a16, or leave it empty.')],
-      sidebarText: [rules.pattern(OPTIONAL_HEX, 'Use a colour like #f3eee6, or leave it empty.')],
+      sidebarText: [rules.pattern(OPTIONAL_HEX, 'Use a colour like #0d0c22, or leave it empty.')],
       heroTitle: [rules.required('Write the home page title.'), rules.maxLength(MANAGE_LIMITS.heroTitle)],
       heroSubtitle: [rules.maxLength(MANAGE_LIMITS.heroSubtitle)],
     }
@@ -118,11 +118,11 @@ function BrandingForm({data}: {data: AdminBranding}) {
             </Field>
             <Field label="Sidebar text colour" id="f-sidebarText" error={form.error('sidebarText')} hint="Sidebar links and labels. Made readable on the background." optional>
               <span className="color-field">
-                <input {...form.field('sidebarText')} placeholder="#f3eee6" />
+                <input {...form.field('sidebarText')} placeholder="#0d0c22" />
                 <input
                   type="color"
                   aria-label="Pick the sidebar text colour"
-                  value={HEX_COLOR.test(form.values.sidebarText) ? form.values.sidebarText : '#f3eee6'}
+                  value={HEX_COLOR.test(form.values.sidebarText) ? form.values.sidebarText : '#0d0c22'}
                   onChange={e => form.set('sidebarText', e.target.value)}
                 />
               </span>

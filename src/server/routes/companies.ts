@@ -1,8 +1,8 @@
 import {Hono} from 'hono';
 import {validator} from 'hono/validator';
 
-import type {PrismaClient} from '../../generated/prisma/client';
-import type {CompaniesPage, CompanyProfileResponse, PublicCompanySummary} from '../../lib/types-public';
+import type {Prisma, PrismaClient} from '../../generated/prisma/client';
+import type {CompaniesOverview, CompaniesPage, CompanyProfileResponse, PublicCompanySummary} from '../../lib/types-public';
 import {isDbId} from '../../lib/board';
 import {getViewer} from '../../platform/auth';
 import {problem, withDb} from '../../platform/guards';
@@ -17,12 +17,19 @@ import {type BoardSettings, isSingleCompany} from '../board/settings';
  * is not found. Single-company boards (F39) have no directory (404) and only the owner's profile.
  *
  *   GET /companies?after=<count>.<id>   the directory, most open jobs first, keyset pages
+ *   GET /companies?sort=az&after=<id>   … by name instead (the cursor is the last company's id)
+ *   GET /companies?q=<text>             … only companies whose name or location contains the text
  *   GET /companies/:slug        a profile + its open jobs
  */
 
 const PAGE = 24;
 const PROFILE_JOBS = 100;
 const CURSOR = /^\d{1,6}\.\d{1,10}$/;
+const AZ_CURSOR = /^\d{1,10}$/;
+/** The directory's header strip: this many companies, most open jobs first. */
+const TOP = 24;
+/** "Hiring the most": this many companies, with a few of their open job titles. */
+const TOP_ROLES = 3;
 
 const summarySelect = {id: true, slug: true, name: true, logoUrl: true, location: true, activeJobCount: true} as const;
 type SummaryRow = {id: number; slug: string; name: string; logoUrl: string | null; location: string | null};
@@ -40,7 +47,7 @@ export async function hiringRanking(
   db: PrismaClient,
   settings: BoardSettings,
   _now = new Date(),
-  page: {after?: {count: number; id: number}; take?: number} = {}
+  page: {after?: {count: number; id: number}; take?: number; where?: Prisma.CompanyWhereInput} = {}
 ): Promise<Rank[]> {
   const after = page.after;
   const rows = await db.company.findMany({
@@ -49,6 +56,7 @@ export async function hiringRanking(
       activeJobCount: {gt: 0},
       ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {}),
       ...(after ? {OR: [{activeJobCount: {lt: after.count}}, {activeJobCount: after.count, id: {gt: after.id}}]} : {}),
+      ...(page.where ? {AND: [page.where]} : {}),
     },
     orderBy: [{activeJobCount: 'desc'}, {id: 'asc'}],
     take: Math.min(page.take ?? PAGE + 1, 100),
@@ -73,6 +81,61 @@ export async function companySummaries(db: PrismaClient, ranks: Rank[]): Promise
     const row = rank.row ?? byId.get(rank.id);
     return row ? [toCompanySummary(row, rank.count)] : [];
   });
+}
+
+/** A search's filter: the name or the location contains the text (any case). */
+const searchWhere = (q: string): Prisma.CompanyWhereInput | undefined =>
+  q ? {OR: [{name: {contains: q, mode: 'insensitive'}}, {location: {contains: q, mode: 'insensitive'}}]} : undefined;
+
+/**
+ * Companies with open jobs by name (then id), keyset after the company `afterId` (its name is read
+ * back: a cursor whose company is gone or blocked ends the list). Index `is_blocked, name, id`.
+ */
+async function byName(db: PrismaClient, afterId: number | null, where: Prisma.CompanyWhereInput | undefined): Promise<Rank[]> {
+  let after: Prisma.CompanyWhereInput | undefined;
+  if (afterId != null) {
+    const last = await db.company.findFirst({where: {id: afterId, isBlocked: false}, select: {name: true}});
+    if (!last) return [];
+    after = {OR: [{name: {gt: last.name}}, {name: last.name, id: {gt: afterId}}]};
+  }
+  const rows = await db.company.findMany({
+    where: {isBlocked: false, activeJobCount: {gt: 0}, AND: [after ?? {}, where ?? {}]},
+    orderBy: [{name: 'asc'}, {id: 'asc'}],
+    take: PAGE + 1,
+    select: summarySelect,
+  });
+  return rows.map(({activeJobCount, ...row}) => ({id: row.id, count: activeJobCount, row}));
+}
+
+/**
+ * The directory's header: totals over every listed company, the top of the ranking (reused when the
+ * page itself is that top) and a few open job titles of the first three (one small read each).
+ */
+async function companiesOverview(db: PrismaClient, settings: BoardSettings, now: Date, firstPage: Rank[] | null): Promise<CompaniesOverview> {
+  const [totals, ranks] = await Promise.all([
+    db.company.aggregate({where: {isBlocked: false, activeJobCount: {gt: 0}}, _count: {_all: true}, _sum: {activeJobCount: true}}),
+    firstPage ? Promise.resolve(firstPage.slice(0, TOP)) : hiringRanking(db, settings, now, {take: TOP}),
+  ]);
+  const lead = ranks.slice(0, TOP_ROLES);
+  const [top, titles] = await Promise.all([
+    companySummaries(db, ranks),
+    Promise.all(
+      lead.map(rank =>
+        db.job.findMany({
+          where: {AND: [publicJobWhere(settings, now), {companyId: rank.id}]},
+          orderBy: [{isFeatured: 'desc'}, ...NEWEST],
+          take: 12,
+          select: {title: true},
+        })
+      )
+    ),
+  ]);
+  const topRoles: Record<string, string[]> = {};
+  lead.forEach((rank, i) => {
+    const slug = rank.row?.slug;
+    if (slug) topRoles[slug] = [...new Set(titles[i]!.map(j => j.title))].slice(0, 3);
+  });
+  return {companyCount: totals._count._all, roleCount: totals._sum.activeJobCount ?? 0, top, topRoles};
 }
 
 export const companyRoutes = new Hono()
@@ -106,23 +169,40 @@ export const companyRoutes = new Hono()
   .get(
     '/',
     // The id part must fit the database's integer (a bigger one is no cursor, not a 500).
-    validator('query', v => ({after: typeof v.after === 'string' && CURSOR.test(v.after) && isDbId(Number(v.after.split('.')[1])) ? v.after : ''})),
+    validator('query', v => {
+      const sort = v.sort === 'az' ? 'az' : 'most';
+      const after = typeof v.after === 'string' ? v.after : '';
+      const valid = sort === 'az' ? AZ_CURSOR.test(after) && isDbId(Number(after)) : CURSOR.test(after) && isDbId(Number(after.split('.')[1]));
+      // Spaces collapsed; a longer text than any name or place is cut.
+      const q = typeof v.q === 'string' ? v.q.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      return {after: valid ? after : '', sort, q} as const;
+    }),
     withDb,
     async c => {
       const db = c.var.db;
       const now = new Date();
       const settings = await cachedBoardSettings(db);
       if (isSingleCompany(settings)) return c.json(problem('not_found', 'There is no companies directory on this board.'), 404);
-      const raw = c.req.valid('query').after;
-      // Keyset over (count desc, id asc): the rows after the cursor's position.
-      const [count, id] = raw ? raw.split('.').map(Number) : [0, 0];
-      const ranks = await hiringRanking(db, settings, now, {after: raw ? {count: count!, id: id!} : undefined, take: PAGE + 1});
+      const {after: raw, sort, q} = c.req.valid('query');
+      const where = searchWhere(q);
+      let ranks: Rank[];
+      if (sort === 'az') {
+        ranks = await byName(db, raw ? Number(raw) : null, where);
+      } else {
+        // Keyset over (count desc, id asc): the rows after the cursor's position.
+        const [count, id] = raw ? raw.split('.').map(Number) : [0, 0];
+        ranks = await hiringRanking(db, settings, now, {after: raw ? {count: count!, id: id!} : undefined, take: PAGE + 1, where});
+      }
       const slice = ranks.slice(0, PAGE);
       const more = ranks.length > PAGE;
       const last = slice.at(-1);
+      // The page itself is the ranking's top when it is the unfiltered first page by open jobs.
+      const isTop = sort === 'most' && !raw && !q;
+      const [companies, overview] = await Promise.all([companySummaries(db, slice), companiesOverview(db, settings, now, isTop ? ranks : null)]);
       const body: CompaniesPage = {
-        companies: await companySummaries(db, slice),
-        nextAfter: more && last ? `${last.count}.${last.id}` : null,
+        companies,
+        nextAfter: more && last ? (sort === 'az' ? String(last.id) : `${last.count}.${last.id}`) : null,
+        overview,
       };
       c.header('Cache-Control', 'public, max-age=60');
       return c.json(body);

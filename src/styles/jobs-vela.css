@@ -1,0 +1,608 @@
+/*
+ * /jobs/ in the "Vela" design (docs: ~/Downloads/Find jobs-html, Jobs.dc.html). Builds on
+ * home-vela.css (tokens, search bar, chips, tabs, rows, panel) and restyles the filter card
+ * (board-list.css `.fpanel`, kept for its side sheet below md). Scoped to `.v-jobs`.
+ */
+
+/* ---------------------------------------------------------------- hero */
+.vj-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--v-border-subtle);
+  background:
+    radial-gradient(38% 60% at 12% 18%, rgba(129, 140, 248, 0.22), transparent 70%),
+    radial-gradient(34% 55% at 88% 12%, rgba(240, 171, 252, 0.18), transparent 70%),
+    radial-gradient(40% 60% at 82% 92%, rgba(103, 232, 249, 0.13), transparent 70%),
+    radial-gradient(42% 60% at 18% 96%, rgba(167, 139, 250, 0.17), transparent 70%),
+    linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+}
+
+.vj-hero-inner {
+  position: relative;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 56px 16px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .vj-hero-inner {
+    padding: 76px 32px 64px;
+  }
+}
+
+.vj-hero-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.vj-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 999px;
+  background: var(--v-surface-card);
+  box-shadow: var(--v-shadow-xs);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--v-text-body);
+}
+
+.vj-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v-success-500);
+  box-shadow: 0 0 0 3px var(--v-success-100);
+}
+
+.v-jobs .vj-title {
+  font-size: clamp(42px, 6.5vw, 76px);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: var(--v-text-strong);
+  text-wrap: balance;
+}
+
+.vj-role {
+  position: relative;
+  display: inline-block;
+  font-weight: 800;
+  color: #4f46e5;
+}
+
+.v-jobs .vj-role svg {
+  position: absolute;
+  left: -4%;
+  bottom: -14px;
+  width: 108%;
+  max-width: none;
+  height: 20px;
+  overflow: visible;
+}
+
+.v-jobs .vj-lead {
+  margin-top: 6px;
+  max-width: 560px;
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--v-text-body);
+}
+
+.vj-search-wrap {
+  width: 100%;
+  max-width: 840px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+}
+
+.v-jobs .vj-search {
+  margin-top: 0;
+  box-shadow:
+    0 0 0 6px rgba(99, 102, 241, 0.06),
+    0 18px 40px -12px rgba(79, 70, 229, 0.22);
+}
+
+.v-jobs .vj-search:hover {
+  box-shadow:
+    0 1px 2px rgba(21, 25, 34, 0.04),
+    0 18px 44px -12px rgba(79, 70, 229, 0.3);
+}
+
+.v-jobs .vj-search:focus-within {
+  box-shadow:
+    0 0 0 4px rgba(99, 102, 241, 0.15),
+    0 18px 44px -12px rgba(79, 70, 229, 0.32);
+}
+
+.v-home .vj-chip {
+  gap: 6px;
+}
+
+.vj-chip-count {
+  font-family: var(--v-figtree);
+  color: var(--v-text-muted);
+}
+
+.v-home .vj-chip[aria-current='true'] {
+  border-color: #a3acfc;
+  color: #4338ca;
+  background: #eef1ff;
+}
+
+/* ---------------------------------------------------------------- body */
+.vj-body {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 16px 96px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .vj-body {
+    padding: 48px 32px 96px;
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
+}
+
+.vj-results {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------------------------------------------------------------- filters card */
+.v-jobs .fpanel-toggle {
+  align-self: flex-start;
+  height: 40px;
+  min-height: 0;
+  padding: 0 16px;
+  border: 1px solid var(--v-border-default);
+  border-radius: 8px;
+  background: var(--v-surface-card);
+  box-shadow: var(--v-shadow-xs);
+  color: var(--v-text-strong);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.v-jobs .fpanel-toggle:hover {
+  background: var(--v-surface-hover);
+}
+
+.v-jobs .fpanel-count {
+  background: var(--v-primary-600);
+  color: #ffffff;
+}
+
+.v-jobs .fpanel-head {
+  justify-content: space-between;
+  min-height: 0;
+  padding-bottom: 12px;
+}
+
+.v-jobs .fpanel-head h2 {
+  margin: 0 auto 0 0;
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--v-text-strong);
+}
+
+.v-jobs .fpanel-clear {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--v-primary-600);
+  text-decoration: none;
+}
+
+.v-jobs .fpanel-clear:hover {
+  color: var(--v-primary-700);
+}
+
+.v-jobs .fpanel-close {
+  border-radius: 8px;
+  color: var(--v-text-body);
+}
+
+.v-jobs .fpanel-close:hover {
+  background: var(--v-surface-hover);
+}
+
+.v-jobs .fgroup {
+  padding: 16px 0;
+  border-bottom: 0;
+  border-top: 1px solid rgba(21, 25, 34, 0.06);
+}
+
+.v-jobs fieldset.fgroup {
+  padding-bottom: 12px;
+}
+
+.v-jobs .fgroup:last-child {
+  padding-bottom: 4px;
+}
+
+.v-jobs .fgroup-title {
+  margin: 0;
+  padding: 0 0 8px;
+  font-family: var(--v-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.65;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v-text-muted);
+}
+
+.v-jobs .fchecks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v-jobs .fcheck {
+  gap: 10px;
+  min-height: 36px;
+  margin: 0 -10px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--v-text-body);
+  transition: background-color 140ms ease;
+}
+
+.v-jobs .fcheck:hover {
+  background: var(--v-surface-page);
+}
+
+.v-jobs .fcheck input {
+  width: 16px;
+  height: 16px;
+  accent-color: #4f46e5;
+}
+
+@media (pointer: coarse) {
+  .v-jobs .fcheck {
+    min-height: 44px;
+  }
+}
+
+/* The design's `vela-input` select (the native one and the menu button that replaces it). */
+.v-jobs .fgroup select,
+.v-jobs .fselect-trigger,
+.v-jobs .vj-sort {
+  height: 42px;
+  min-height: 0;
+  padding: 0 12px;
+  border: 1px solid var(--v-border-default);
+  border-radius: 10px;
+  background: var(--v-surface-card);
+  color: var(--v-text-strong);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  transition:
+    border-color 140ms var(--v-ease),
+    box-shadow 140ms var(--v-ease);
+}
+
+.v-jobs .fgroup select:hover,
+.v-jobs .fselect-trigger:hover,
+.v-jobs .vj-sort:hover {
+  border-color: var(--v-border-strong);
+}
+
+.v-jobs .fgroup select:focus-visible,
+.v-jobs .fselect-trigger:focus-visible,
+.v-jobs .fselect-trigger[aria-expanded='true'],
+.v-jobs .vj-sort:focus-visible {
+  outline: none;
+  border-color: var(--v-primary-500);
+  box-shadow: 0 0 0 3px var(--v-ring);
+}
+
+.v-jobs .fgroup .fselect-pop {
+  border-color: var(--v-border-subtle);
+  border-radius: 10px;
+}
+
+.v-jobs .fgroup .menu-item {
+  min-height: 36px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--v-text-body);
+}
+
+.v-jobs .fgroup .menu-item:hover,
+.v-jobs .fgroup .menu-item:focus-visible {
+  background: var(--v-surface-page);
+}
+
+.v-jobs .fgroup .menu-item[aria-checked='true'] {
+  color: var(--v-text-strong);
+}
+
+.v-jobs .fpanel-foot {
+  padding-top: 12px;
+}
+
+@media (min-width: 768px) {
+  .v-jobs .vj-filters {
+    width: auto;
+    box-sizing: border-box;
+    padding: 24px;
+    background: var(--v-surface-card);
+    border: 1px solid var(--v-border-subtle);
+    border-radius: 20px;
+  }
+
+  .v-jobs .fgroup:first-child {
+    padding-top: 16px;
+  }
+}
+
+@media (max-width: 767px) {
+  .v-jobs .fpanel-head {
+    padding: 16px 12px 16px 20px;
+    border-bottom: 1px solid var(--v-border-subtle);
+  }
+
+  .v-jobs .fpanel-body {
+    padding: 0 20px 16px;
+  }
+
+  .v-jobs .fgroup:first-child {
+    border-top: 0;
+  }
+
+  .v-jobs .fpanel-foot {
+    padding: 16px 20px;
+    border-top: 1px solid var(--v-border-subtle);
+  }
+}
+
+/* ---------------------------------------------------------------- results card */
+.v-jobs .vj-panel {
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.v-jobs .vj-panel-head {
+  padding: 22px 24px 18px;
+}
+
+.v-jobs .vj-panel-head h2:focus {
+  outline: none;
+}
+
+.v-jobs .vj-panel-head h2:focus-visible {
+  outline: 2px solid var(--v-primary-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.vj-count {
+  font-family: var(--v-figtree);
+  font-size: 14px;
+  color: var(--v-text-muted);
+}
+
+.vj-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.v-jobs .vj-sort {
+  width: auto;
+  height: 40px;
+  font-family: var(--v-figtree);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+/* Active filter chips (only filters with no control showing their value). */
+.vj-applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 24px 16px;
+}
+
+.vj-applied-list {
+  display: contents;
+  list-style: none;
+}
+
+.v-home .vj-applied-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--v-primary-200);
+  border-radius: 999px;
+  background: var(--v-primary-50);
+  color: var(--v-primary-700);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 140ms ease;
+}
+
+.v-home .vj-applied-chip:hover {
+  border-color: var(--v-primary-300);
+  color: var(--v-primary-800);
+}
+
+.vj-applied-chip svg {
+  width: 14px;
+  height: 14px;
+}
+
+.vj-applied-clear {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Rows: the design's larger tile, title and Save on this page. */
+.v-jobs .v-row {
+  gap: 10px 20px;
+}
+
+.v-jobs .v-row-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.v-jobs .v-row-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.v-jobs .v-row-title {
+  font-size: 16px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.v-jobs .v-row-link:hover {
+  color: #4338ca;
+}
+
+.v-jobs .v-row .save-job {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--v-text-muted);
+  transition: all 160ms ease;
+}
+
+.v-jobs .v-row .save-job:hover {
+  border-color: #a3acfc;
+  color: #4f46e5;
+  background: #eef1ff;
+}
+
+.v-jobs .v-row .save-job[aria-pressed='true'] {
+  border-color: #c6cdff;
+  color: #4f46e5;
+  background: #eef1ff;
+}
+
+.vj-empty h3 {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.vj-empty {
+  border-top: 1px solid var(--v-hairline);
+}
+
+.v-jobs .vj-empty .v-empty-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Footer: count + pages. */
+.v-jobs .vj-foot > span {
+  font-family: var(--v-figtree);
+  font-size: 14px;
+}
+
+.vj-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v-home .vj-page,
+.vj-page-off {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.v-home .vj-page {
+  border: 1px solid var(--v-border-subtle);
+  background: var(--v-surface-card);
+  color: var(--v-text-strong);
+  transition: all 140ms ease;
+}
+
+.v-home .vj-page:hover {
+  background: #eef1ff;
+  color: #4338ca;
+  border-color: #c6cdff;
+}
+
+.vj-page-off {
+  padding: 0 12px;
+  color: var(--v-text-subtle);
+}
+
+@media (max-width: 639px) {
+  .v-jobs .vj-panel-head {
+    padding: 20px 16px 16px;
+  }
+
+  .vj-applied {
+    padding: 0 16px 16px;
+  }
+
+  .v-jobs .v-row {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+}
+
+/* Phones: the workplace switch on one line, full width. */
+@media (max-width: 479px) {
+  .vj-tools,
+  .v-jobs .vj-tools .v-tabs {
+    width: 100%;
+  }
+
+  .v-jobs .vj-tools .v-tabs {
+    flex-wrap: nowrap;
+  }
+
+  .v-jobs .vj-tools .v-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 8px;
+  }
+}

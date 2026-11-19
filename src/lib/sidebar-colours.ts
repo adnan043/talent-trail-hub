@@ -1,19 +1,21 @@
 import {luminance, mix, toRgb, until} from './colour';
 
-/** The dashboard sidebar's default dark panel (app.css `.app-sidebar`). */
-export const DEFAULT_SIDEBAR_BG = '#1f1a16';
-export const DEFAULT_SIDEBAR_TEXT = '#f3eee6';
+/** The dashboard sidebar's default white panel (app.css `.app-sidebar`, light theme). */
+export const DEFAULT_SIDEBAR_BG = '#ffffff';
+export const DEFAULT_SIDEBAR_TEXT = '#0d0c22';
+/** The text a picked dark background starts from. */
+const LIGHT_TEXT = '#f4f4f5';
 
 const DEFAULTS: Record<string, string> = {
-  '--ink': '#f3eee6',
-  '--muted': '#b9b1a6',
-  '--subtle': '#8c857b',
-  '--line': '#3a332c',
-  '--line-strong': '#4d453c',
-  '--hover': '#2d2722',
-  '--card': '#1f1a16',
-  '--accent': '#f3eee6',
-  '--accent-ink': '#1a1714',
+  '--ink': '#0d0c22',
+  '--muted': '#5e5e6d',
+  '--subtle': '#6e6d7a',
+  '--line': '#ececee',
+  '--line-strong': '#e2e2e5',
+  '--hover': '#f3f3f4',
+  '--card': '#ffffff',
+  '--accent': '#0d0c22',
+  '--accent-ink': '#ffffff',
 };
 
 /**
@@ -26,7 +28,7 @@ export function sidebarTokens(bgPick: string | null, textPick: string | null): R
   const bg = bgPick || DEFAULT_SIDEBAR_BG;
   const dark = luminance(toRgb(bg)) < 0.18;
   const toward = dark ? '#ffffff' : '#000000';
-  const text = until(textPick || (dark ? DEFAULT_SIDEBAR_TEXT : '#1a1714'), toward, bg, 4.5);
+  const text = until(textPick || (dark ? LIGHT_TEXT : DEFAULT_SIDEBAR_TEXT), toward, bg, 4.5);
   return {
     '--ink': text,
     '--muted': mix(text, bg, 0.25),

@@ -1,22 +1,31 @@
 ---
 /**
- * The companies directory (F5): companies with at least one open job, most open jobs first, keyset pages
- * (`?after=<cursor>`). A single-company board has no directory: 404 (F39).
+ * The companies directory (F5), in the "Vela" design (src/styles/companies-vela.css, `skin="vela"`):
+ * companies with at least one open job. The header (every page) has the board-wide totals
+ * and a moving strip of the companies with the most open jobs; the first page
+ * shows the top three ("Hiring the most", with some of their job titles), then every other company,
+ * most open jobs first or by name (`?sort=az`), keyset pages (`?after=<cursor>`). A single-company
+ * board has no directory: 404 (F39).
  */
-import CompanyLogo from '../../components/board/CompanyLogo.astro';
 import NotFound from '../../components/NotFound.astro';
+import {POST_A_JOB} from '../../content/site';
 import Base from '../../layouts/Base.astro';
-import type {CompaniesPage} from '../../lib/types-public';
+import {initials} from '../../lib/format';
+import type {CompaniesPage, PublicCompanySummary} from '../../lib/types-public';
 import {backend} from '../../server/backend';
 import {boardPage} from '../../server/board/public-page';
-import '../../styles/board-pages.css';
+import '../../styles/home-vela.css';
+import '../../styles/companies-vela.css';
 
-const rawAfter = Astro.url.searchParams.get('after') ?? '';
-const after = /^\d{1,6}\.\d{1,10}$/.test(rawAfter) ? rawAfter : '';
+const params = Astro.url.searchParams;
+const sort = params.get('sort') === 'az' ? 'az' : '';
+const rawAfter = params.get('after') ?? '';
+const after = (sort === 'az' ? /^\d{1,10}$/ : /^\d{1,6}\.\d{1,10}$/).test(rawAfter) ? rawAfter : '';
+const q = (params.get('q') ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
 const [{site, viewer, board}, answer] = await Promise.all([
   boardPage(Astro.request, Astro.response),
   backend(Astro.request)
-    .companies.$get({query: {after}})
+    .companies.$get({query: {after, ...(sort ? {sort} : {}), ...(q ? {q} : {})}})
     .catch(() => null),
 ]);
 const missing = answer?.status === 404;
@@ -24,6 +33,49 @@ const page = answer?.ok ? ((await answer.json().catch(() => null)) as CompaniesP
 if (missing) Astro.response.status = 404;
 else if (!page) Astro.response.status = 503;
 const name = board?.name ?? site?.name ?? 'our board';
+
+const overview = page?.overview;
+const companyCount = overview?.companyCount ?? 0;
+const roleCount = overview?.roleCount ?? 0;
+const top = overview?.top ?? [];
+const plural = (n: number, one: string, many: string) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
+// "Hiring the most": the top three, on the first page of the whole directory (not a search).
+const firstPage = !after && !q;
+const featured = firstPage ? top.slice(0, 3) : [];
+const featuredRoles = featured.reduce((sum, co) => sum + co.openJobCount, 0);
+// By open jobs, the first page's list goes on after them; by name it lists every company.
+const featuredSlugs = new Set(sort ? [] : featured.map(co => co.slug));
+const rest = (page?.companies ?? []).filter(co => !featuredSlugs.has(co.slug));
+const listLabel = q
+  ? null
+  : firstPage && !sort
+    ? `${(companyCount - featured.length).toLocaleString('en-US')} more`
+    : plural(companyCount, 'company', 'companies');
+
+// The strip loops: the companies repeated to fill a wide screen, then twice (the animation moves by half).
+const stripBase: PublicCompanySummary[] = [];
+while (top.length > 0 && stripBase.length < 12) stripBase.push(...top);
+const strip = [...stripBase, ...stripBase];
+
+/** A link to this directory with these settings (empty ones left out). */
+const href = (next: {sort?: string; q?: string; after?: string}) => {
+  const search = new URLSearchParams();
+  if (next.q) search.set('q', next.q);
+  if (next.sort) search.set('sort', next.sort);
+  if (next.after) search.set('after', next.after);
+  const text = search.toString();
+  return text ? `/companies/?${text}` : '/companies/';
+};
+const companyHref = (co: PublicCompanySummary) => `/companies/${encodeURIComponent(co.slug)}/`;
+
+// A company without a logo gets its initials on one of the design's tile colours (the same company always the same one).
+const TILES = 13;
+const tile = (co: PublicCompanySummary) => {
+  let hash = 0;
+  for (const ch of co.name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return `v-co-tile-${hash % TILES}`;
+};
 ---
 
 {
@@ -32,69 +84,305 @@ const name = board?.name ?? site?.name ?? 'our board';
       <NotFound site={site} />
     </Base>
   ) : (
-    <Base site={site} viewer={viewer} board={board} title="Companies hiring" description={`Companies hiring on ${name}: browse employers with open roles, see how many jobs each has open and every role they have posted.`} noindexFollow={Boolean(after)}>
-      <main id="main" tabindex="-1" class="wrap bp-page">
-        <header class="bp-header">
-          <div>
-            <h1>Companies hiring now</h1>
-            <p class="bp-desc">
-              {page && page.companies.length > 0 ? 'Every company here has at least one open role.' : 'Companies with open jobs show up here.'}
-            </p>
-          </div>
-        </header>
-        {!page ? (
-          <div class="bp-alert jd-alert cdir-error" role="alert">
-            <svg class="bp-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
-            <p class="bp-alert-title">The companies are not available right now</p>
-            <p>Try again in a minute.</p>
-          </div>
-        ) : page.companies.length === 0 ? (
-          <div class="bp-empty cdir-empty">
-            <span class="bp-empty-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>
-            </span>
-            <h2>No companies are hiring right now</h2>
-            <p>New roles are posted all the time. Check back soon.</p>
-            <div class="bp-empty-actions">
-              <a class="button" href="/jobs/">Browse jobs</a>
+    <Base
+      site={site}
+      viewer={viewer}
+      board={board}
+      title="Companies hiring"
+      description={`Companies hiring on ${name}: browse employers with open roles, see how many jobs each has open and every role they have posted.`}
+      noindexFollow={Boolean(after || q || sort)}
+      skin="vela">
+      <main id="main" tabindex="-1" class="v-home v-co">
+        <section class="v-co-hero" aria-labelledby="co-title">
+          <div class="v-co-hero-glow" aria-hidden="true" />
+          <div class="v-co-hero-dots" aria-hidden="true" />
+          <div class="v-co-hero-inner">
+            <div class="v-co-hero-text">
+              {companyCount > 0 && (
+                <span class="v-co-badge">
+                  <span class="v-co-badge-dot" aria-hidden="true" />
+                  <strong>{plural(companyCount, 'company', 'companies')}</strong> · {plural(roleCount, 'open role', 'open roles')}
+                </span>
+              )}
+              <h1 id="co-title" class="v-co-title">
+                Companies{' '}
+                <span class="v-role">
+                  hiring
+                  <svg class="v-co-title-line" viewBox="0 0 220 24" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    <path d="M4 12 C 50 4, 120 2, 216 9" fill="none" stroke="#4f46e5" stroke-width="5" stroke-linecap="round" />
+                    <path d="M40 20 C 90 14, 140 14, 178 17" fill="none" stroke="#a3acfc" stroke-width="3.5" stroke-linecap="round" />
+                  </svg>
+                </span>{' '}
+                now
+              </h1>
+              <p class="v-co-lead">
+                {companyCount > 0 ? (
+                  <>
+                    Every company here has at least one open role today.
+                    <br class="v-co-lead-break" /> See who’s hiring and what they’re looking for.
+                  </>
+                ) : (
+                  'Companies with open jobs show up here.'
+                )}
+              </p>
             </div>
           </div>
+
+          {strip.length > 0 && (
+            <div class="v-co-marquee" aria-hidden="true">
+              <div class="v-co-marquee-track">
+                {strip.map(co => (
+                  <span class="v-co-pill">
+                    {co.logoUrl ? (
+                      <span class="v-co-logo v-co-logo-42 v-co-logo-img">
+                        <img src={co.logoUrl} alt="" width="42" height="42" loading="lazy" decoding="async" />
+                      </span>
+                    ) : (
+                      <span class:list={['v-co-logo', 'v-co-logo-42', tile(co)]}>{initials(co.name)}</span>
+                    )}
+                    <span class="v-co-pill-text">
+                      <span class="v-co-pill-name">{co.name}</span>
+                      <span class="v-co-pill-roles">{plural(co.openJobCount, 'open role', 'open roles')}</span>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {!page ? (
+          <section class="v-co-section">
+            <div class="v-co-panel v-co-empty" role="alert">
+              <h2>The companies are not available right now</h2>
+              <p>Try again in a minute.</p>
+            </div>
+          </section>
         ) : (
-          <ul class="cdir-grid">
-            {page.companies.map(co => (
-              <li>
-                <article class="cdir-card">
-                  <div class="cdir-card-top">
-                    <CompanyLogo name={co.name} logoUrl={co.logoUrl} />
-                    <div class="cdir-card-text">
-                      <h2 class="cdir-card-name">
-                        <a href={`/companies/${encodeURIComponent(co.slug)}/`}>{co.name}</a>
-                      </h2>
-                      {co.location && (
-                        <p class="cdir-card-loc">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                          <span>{co.location}</span>
-                        </p>
+          <>
+            {featured.length > 0 && (
+              <section class="v-co-section" aria-labelledby="co-most">
+                <div class="v-co-head">
+                  <h2 id="co-most">Hiring the most</h2>
+                  <span class="v-co-count">
+                    {featuredRoles.toLocaleString('en-US')} of {plural(roleCount, 'open role', 'open roles')}
+                  </span>
+                </div>
+                <ul class="v-co-feats">
+                  {featured.map(co => {
+                    const titles = overview?.topRoles[co.slug] ?? [];
+                    const more = co.openJobCount - titles.length;
+                    return (
+                      <li>
+                        <a class="v-co-feat" href={companyHref(co)}>
+                          <span class="v-co-feat-top">
+                            {co.logoUrl ? (
+                              <span class="v-co-logo v-co-logo-56 v-co-logo-img" aria-hidden="true">
+                                <img src={co.logoUrl} alt="" width="56" height="56" loading="lazy" decoding="async" />
+                              </span>
+                            ) : (
+                              <span class:list={['v-co-logo', 'v-co-logo-56', tile(co)]} aria-hidden="true">
+                                {initials(co.name)}
+                              </span>
+                            )}
+                            <span class="v-co-feat-text">
+                              <span class="v-co-feat-name">{co.name}</span>
+                              {co.location && <span class="v-co-feat-loc">{co.location}</span>}
+                            </span>
+                          </span>
+                          {titles.length > 0 && (
+                            <span class="v-co-chips">
+                              {titles.map(title => (
+                                <span class="v-co-chip">{title}</span>
+                              ))}
+                              {more > 0 && <span class="v-co-chip v-co-chip-more">+{more} more</span>}
+                            </span>
+                          )}
+                          <span class="v-co-feat-foot">
+                            <span class="v-co-feat-roles">{plural(co.openJobCount, 'open role', 'open roles')}</span>
+                            <span class="v-co-feat-go">
+                              View roles
+                              <svg class="v-co-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                <path d="M5 12h14M13 6l6 6-6 6" />
+                              </svg>
+                            </span>
+                          </span>
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+
+            {(rest.length > 0 || !firstPage || featured.length === 0) && (
+              <section class="v-co-section" aria-labelledby="co-all">
+                <div class="v-co-panel">
+                  <div class="v-co-panel-head">
+                    <div class="v-co-panel-title">
+                      <h2 id="co-all">{q ? 'Search results' : 'All companies'}</h2>
+                      {listLabel && <span class="v-co-count">{listLabel}</span>}
+                      {q && (
+                        <span class="v-co-count">
+                          for “{q}” · <a href={href({sort})}>Clear</a>
+                        </span>
                       )}
                     </div>
+                    {companyCount > 0 && (
+                      <nav class="v-co-sort" aria-label="Sort companies">
+                        <a class="v-co-sort-opt" href={href({q})} aria-current={!sort ? 'true' : undefined}>
+                          Most roles
+                        </a>
+                        <a class="v-co-sort-opt" href={href({q, sort: 'az'})} aria-current={sort ? 'true' : undefined}>
+                          A–Z
+                        </a>
+                      </nav>
+                    )}
                   </div>
-                  <p class="cdir-card-foot">
-                    <span>
-                      <strong>{co.openJobCount}</strong> open {co.openJobCount === 1 ? 'position' : 'positions'}
-                    </span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
-                  </p>
-                </article>
-              </li>
-            ))}
-          </ul>
+
+                  {rest.length > 0 ? (
+                    <ul class="v-co-grid">
+                      {rest.map(co => (
+                        <li>
+                          <a class="v-co-card" href={companyHref(co)}>
+                            {co.logoUrl ? (
+                              <span class="v-co-logo v-co-logo-44 v-co-logo-img" aria-hidden="true">
+                                <img src={co.logoUrl} alt="" width="44" height="44" loading="lazy" decoding="async" />
+                              </span>
+                            ) : (
+                              <span class:list={['v-co-logo', 'v-co-logo-44', tile(co)]} aria-hidden="true">
+                                {initials(co.name)}
+                              </span>
+                            )}
+                            <span class="v-co-card-text">
+                              <span class="v-co-card-name">{co.name}</span>
+                              <span class="v-co-card-meta">
+                                {co.location && <>{co.location} · </>}
+                                <span class="v-co-card-roles">{plural(co.openJobCount, 'role', 'roles')}</span>
+                              </span>
+                            </span>
+                            <svg class="v-co-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                              <path d="M7 17 17 7M8 7h9v9" />
+                            </svg>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : q ? (
+                    <div class="v-co-empty">
+                      <h3>No companies match “{q}”</h3>
+                      <p>Try another name or city, or see every company.</p>
+                      <a class="v-btn v-btn-secondary" href={href({sort})}>
+                        All companies
+                      </a>
+                    </div>
+                  ) : (
+                    <div class="v-co-empty">
+                      <h3>No companies are hiring right now</h3>
+                      <p>New roles are posted all the time. Check back soon.</p>
+                      <a class="v-btn v-btn-secondary" href="/jobs/">
+                        Browse jobs
+                      </a>
+                    </div>
+                  )}
+
+                  {(page.nextAfter || after) && (
+                    <nav class="v-co-pager" aria-label="Pages">
+                      {after && (
+                        <a class="v-btn v-btn-secondary" href={href({q, sort})}>
+                          ← First page
+                        </a>
+                      )}
+                      {page.nextAfter && (
+                        <a class="v-btn v-btn-secondary" href={href({q, sort, after: page.nextAfter})}>
+                          Next page →
+                        </a>
+                      )}
+                    </nav>
+                  )}
+                </div>
+              </section>
+            )}
+          </>
         )}
-        {(page?.nextAfter || after) && (
-          <nav class="bp-pager" aria-label="Pages">
-            {after && <a class="button bp-quiet" href="/companies/">← First page</a>}
-            {page?.nextAfter && <a class="button bp-quiet" href={`/companies/?after=${encodeURIComponent(page.nextAfter)}`}>Next page →</a>}
-          </nav>
-        )}
+
+        <section class="v-co-section v-co-section-last" aria-labelledby="co-employers">
+          <div class="v-co-band">
+            <div class="v-co-band-text">
+              <p class="v-co-band-kicker">For employers</p>
+              <h2 id="co-employers" class="v-co-band-title">
+                Hiring? Your company
+                <br />
+                shows up here.
+              </h2>
+              <p class="v-co-band-lead">It appears as soon as your first listing goes live. Pay once per listing, with no subscription.</p>
+              <div class="v-co-band-actions">
+                <a class="v-btn v-btn-lg v-co-cta-w" href={POST_A_JOB.href}>
+                  Post a job
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                </a>
+                <a class="v-btn v-btn-lg v-co-cta-g" href="/pricing/">
+                  See pricing
+                </a>
+              </div>
+            </div>
+            <div class="v-co-art" aria-hidden="true">
+              <div class="v-co-art-back" />
+              <div class="v-co-art-card">
+                <div class="v-co-art-top">
+                  <span class="v-co-art-plus">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" focusable="false">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                  </span>
+                  <span class="v-co-art-who">
+                    <span class="v-co-art-name">Your company</span>
+                    <span class="v-co-art-city">Your city</span>
+                  </span>
+                  <span class="v-co-art-live">
+                    <span class="v-co-art-live-dot" />
+                    Live
+                  </span>
+                </div>
+                <div class="v-co-art-chips">
+                  <span>Your first role</span>
+                  <span>Full-time</span>
+                  <span>Remote</span>
+                </div>
+                <div class="v-co-art-foot">
+                  <span class="v-co-art-roles">1 open role</span>
+                  <span class="v-co-art-go">
+                    View roles
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              <div class="v-co-art-ok">
+                <span class="v-co-art-ok-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                    <path d="m5 12 5 5L20 7" />
+                  </svg>
+                </span>
+                <span class="v-co-art-ok-text">
+                  <span class="v-co-art-ok-title">Listing approved</span>
+                  <span class="v-co-art-ok-sub">Reviewed by a person</span>
+                </span>
+              </div>
+              <div class="v-co-art-tag">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c6cdff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" />
+                </svg>
+                Applicants in your dashboard
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
     </Base>
   )
