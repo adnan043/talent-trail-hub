@@ -1898,6 +1898,12 @@ a.vd-t:hover {
   padding-top: 0;
 }
 
+/* A list straight in a flush card (activity, account devices): rows keep the card's side padding. */
+[data-skin='vela'] .card-flush > .list > .list-row,
+[data-skin='vela'] .card-flush > .list > .list-row:first-child {
+  padding: 14px 24px;
+}
+
 [data-skin='vela'] .list-row-icon {
   width: 36px;
   height: 36px;
