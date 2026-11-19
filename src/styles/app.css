@@ -1839,11 +1839,18 @@
   color: var(--ink);
 }
 
+/* Link tabs (one route per tab, admin/screens/settings-tabs.tsx): no underline, active by aria-current. */
+a.tab {
+  text-decoration: none;
+}
+
+.tab[aria-current='page'],
 .tab[aria-selected='true'] {
   color: var(--ink);
   font-weight: 600;
 }
 
+.tab[aria-current='page']::after,
 .tab[aria-selected='true']::after {
   content: '';
   position: absolute;
@@ -3922,5 +3929,161 @@ html:root .app-shell[data-side='light'] .app-sidebar {
 @media (max-width: 380px) {
   .applied-tile-label {
     font-size: 0.75rem;
+  }
+}
+
+/* ------------------------------------------------ review a job (admin/screens/review.tsx) --
+   The job (its listing facts in a row on top) beside one Employer card that stays in view. */
+.review-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+}
+
+.review-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 4px 0;
+  margin: 0;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--hover);
+}
+
+.review-facts > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 8px 14px;
+}
+
+.review-facts dt,
+.review-stats dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1101px) {
+  .review-employer {
+    position: sticky;
+    top: 84px;
+  }
+}
+
+.review-employer .card-body {
+  display: grid;
+  gap: 18px;
+}
+
+.review-employer-head p {
+  margin: 0;
+}
+
+.review-employer-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.review-employer-head .muted {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+
+.review-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.review-stats > div {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.review-stats dd {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.review-stats dd small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.review-recent h4 {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.review-recent ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-recent li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.review-recent li:first-child {
+  border-top: 0;
+}
+
+.review-recent-text {
+  display: grid;
+  min-width: 0;
+}
+
+.review-recent-text b {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-recent-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-employer-actions {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 1100px) {
+  .review-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

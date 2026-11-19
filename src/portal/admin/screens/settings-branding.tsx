@@ -8,20 +8,20 @@ import {putFile} from '../../../platform/files-browser';
 import {imageForStorage} from '../../board/image';
 import {type UploadGrant} from '../../../platform/files-browser';
 import {api, ApiError, read} from '../../api';
-import {Button, Card, ErrorNote, Field, IconButton, LoadingBlock, Notice, PageHeader, rules, Select, useConfirm, useForm, useToast} from '../../ui';
+import {Button, Card, ErrorNote, Field, IconButton, LoadingBlock, Notice, rules, Select, useConfirm, useForm, useToast} from '../../ui';
 import {brandingQuery} from '../queries';
+import {SettingsPage} from './settings-tabs';
 
 const FONT_LABELS: Record<FontPreset, string> = {inter: 'Sans (Inter)', serif: 'Serif', mono: 'Monospace'};
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
-/** `/manage/settings/branding` (site:board:settings): name, logo, colour, font, home page text, footer links (F30). */
+/** `/manage/settings/branding` (site:board:settings): name, logo, font, home page text (the main colour is kept, no longer edited here), footer links (F30). */
 export function Branding() {
   const branding = useQuery(brandingQuery);
   return (
-    <div className="app-page screen-branding">
-      <PageHeader title="Branding" description="How the public board looks: its logo, colour, font and home page." />
+    <SettingsPage className="screen-branding">
       {branding.isPending ? <LoadingBlock rows={6} /> : branding.error ? <ErrorNote error={branding.error} /> : <BrandingForm data={branding.data} />}
-    </div>
+    </SettingsPage>
   );
 }
 
@@ -76,19 +76,8 @@ function BrandingForm({data}: {data: AdminBranding}) {
         <FaviconCard faviconUrl={data.faviconUrl} />
       </div>
       <form noValidate onSubmit={submit}>
-        <Card title="Colour and home page" footer={<Button type="submit" pending={save.isPending} pendingLabel="Saving…">Save branding</Button>}>
+        <Card title="Font and home page" footer={<Button type="submit" pending={save.isPending} pendingLabel="Saving…">Save branding</Button>}>
           <div className="form-stack">
-            <Field label="Main colour" id="f-primaryColor" error={form.error('primaryColor')} hint="The public site’s buttons and links. A hex colour like #4f46e5. The dashboard keeps its own indigo.">
-              <span className="color-field">
-                <input {...form.field('primaryColor')} placeholder="#4f46e5" />
-                <input
-                  type="color"
-                  aria-label="Pick the main colour"
-                  value={HEX_COLOR.test(form.values.primaryColor) ? form.values.primaryColor : '#4f46e5'}
-                  onChange={e => form.set('primaryColor', e.target.value)}
-                />
-              </span>
-            </Field>
             <Field label="Font" id="f-fontPreset" hint="The public site’s font.">
               <Select {...form.field('fontPreset')} options={FONT_PRESETS.map(f => ({value: f, label: FONT_LABELS[f]}))} />
             </Field>

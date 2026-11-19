@@ -13,7 +13,6 @@ import {
   buttonClass,
   Card,
   Checkbox,
-  DefinitionList,
   EmptyState,
   ErrorNote,
   Field,
@@ -147,9 +146,29 @@ export function Review() {
           The employer changed a live job, and its listing period ended while it waited for review. Approving keeps it expired: the employer is emailed and renews it to list it again.
         </Notice>
       )}
-      <div className="grid-main-side">
+      <div className="grid-main-side review-layout">
         <Card title="The job as it will appear">
           <div className="form-stack">
+            {/* The listing's facts, in one row above the job (they used to be a card of their own). */}
+            <dl className="review-facts">
+              {[
+                {label: 'Location', value: job.location ?? (job.workplaceType === 'remote' ? 'Remote' : '—')},
+                {
+                  label: 'Salary',
+                  value: salary
+                    ? `${[salary.minCents, salary.maxCents].filter((v): v is number => v !== null).map(v => money(v, salary.currency ?? 'USD')).join(' – ')} / ${SALARY_PERIOD_LABELS[(salary.period ?? 'YEAR') as SalaryPeriod]}`
+                    : 'Not shown',
+                },
+                {label: 'Apply', value: job.applyMethod === 'onsite' ? 'On this board' : (job.applyTarget ?? '—')},
+                {label: 'Listing', value: `${job.durationDays} days${job.listingFeatured ? ', featured' : ''}`},
+                {label: 'Payment', value: item.payment ? money(item.payment.amountCents, item.payment.currency) : 'None'},
+              ].map(fact => (
+                <div key={fact.label}>
+                  <dt>{fact.label}</dt>
+                  <dd>{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
             <span className="badges">
               <Badge>{job.category}</Badge>
               <Badge>{EMPLOYMENT_LABELS[job.employmentType as EmploymentType] ?? job.employmentType}</Badge>
@@ -164,76 +183,75 @@ export function Review() {
             <div className="job-description" dangerouslySetInnerHTML={{__html: sanitizeRichText(job.descriptionHtml)}} />
           </div>
         </Card>
-        <div className="form-stack">
-          <Card title="Listing">
-            <DefinitionList
-              items={[
-                {label: 'Location', value: job.location ?? (job.workplaceType === 'remote' ? 'Remote' : '—')},
-                {
-                  label: 'Salary',
-                  value: salary
-                    ? `${[salary.minCents, salary.maxCents].filter((v): v is number => v !== null).map(v => money(v, salary.currency ?? 'USD')).join(' – ')} per ${SALARY_PERIOD_LABELS[(salary.period ?? 'YEAR') as SalaryPeriod]}`
-                    : 'Not shown',
-                },
-                {label: 'Apply', value: job.applyMethod === 'onsite' ? 'On this board' : (job.applyTarget ?? '—')},
-                {label: 'Listing', value: `${job.durationDays} days${job.listingFeatured ? ', featured' : ''}`},
-                {label: 'Payment', value: item.payment ? money(item.payment.amountCents, item.payment.currency) : 'None'},
-              ]}
-            />
-          </Card>
-          <Card title="Employer history" description={`On the board since ${day(history.companySince)}.`}>
-            <DefinitionList
-              items={[
-                {label: 'Jobs', value: `${history.jobs}${history.more ? '+' : ''}`},
-                {label: 'Live', value: history.live},
-                {label: 'Rejected', value: history.rejected},
-                {label: 'Paid orders', value: history.paidOrders},
-                {label: 'Spent', value: money(history.spentCents, history.spentCurrency)},
-              ]}
-            />
-            {history.recent.length > 0 && (
-              <ul className="list">
-                {history.recent.map(r => (
-                  <li key={r.id} className="list-row">
-                    <div className="list-row-text">
-                      <p className="list-row-title">{r.title}</p>
-                      <p className="list-row-sub">{day(r.createdAt)}</p>
-                    </div>
-                    <span className="list-row-end">
-                      <StatusBadge tone={JOB_STATUS_TONES[r.status]}>{jobStatusLabel(r.status)}</StatusBadge>
+        {/* The employer in one card: its standing, its history, then what you can do about it. */}
+        <Card title="Employer" className="review-employer">
+          <div className="review-employer-head">
+            <p className="review-employer-name">
+              {item.company.name}
+              {item.company.isTrusted && <Badge tone="success">Trusted</Badge>}
+              {item.company.isBlocked && <Badge tone="danger">Blocked</Badge>}
+            </p>
+            <p className="muted">On the board since {day(history.companySince)}</p>
+          </div>
+          <dl className="review-stats">
+            <div>
+              <dt>Jobs</dt>
+              <dd>{`${history.jobs}${history.more ? '+' : ''}`}</dd>
+            </div>
+            <div>
+              <dt>Live</dt>
+              <dd>{history.live}</dd>
+            </div>
+            <div>
+              <dt>Rejected</dt>
+              <dd>{history.rejected}</dd>
+            </div>
+            <div>
+              <dt>Spent</dt>
+              <dd>
+                {money(history.spentCents, history.spentCurrency)}
+                <small>{history.paidOrders === 1 ? '1 order' : `${history.paidOrders} orders`}</small>
+              </dd>
+            </div>
+          </dl>
+          {history.recent.length > 0 && (
+            <div className="review-recent">
+              <h4>Recent jobs</h4>
+              <ul>
+                {history.recent.slice(0, 3).map(r => (
+                  <li key={r.id}>
+                    <span className="review-recent-text">
+                      <b>{r.title}</b>
+                      <small>{day(r.createdAt)}</small>
                     </span>
+                    <StatusBadge tone={JOB_STATUS_TONES[r.status]}>{jobStatusLabel(r.status)}</StatusBadge>
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          <div className="review-employer-actions">
+            {!item.company.isTrusted && (
+              <Checkbox
+                label="Trust this company when I approve"
+                description="Its next jobs go live without review."
+                checked={trust}
+                onChange={setTrust}
+                disabled={busy || item.company.isBlocked}
+              />
             )}
-          </Card>
-          <Card title="Company" description={item.company.name}>
-            <div className="form-stack">
-              {(item.company.isTrusted || item.company.isBlocked) && (
-                <span className="badges">
-                  {item.company.isTrusted && <Badge tone="success">Trusted</Badge>}
-                  {item.company.isBlocked && <Badge tone="danger">Blocked</Badge>}
-                </span>
-              )}
-              {item.company.isTrusted ? (
+            <span className="toolbar-group">
+              {item.company.isTrusted && (
                 <Button variant="secondary" size="sm" onClick={() => void changeCompany('trust', false)} disabled={busy}>
                   Stop trusting
                 </Button>
-              ) : (
-                <Checkbox
-                  label="Trust this company when I approve"
-                  description="Its next jobs go live without review."
-                  checked={trust}
-                  onChange={setTrust}
-                  disabled={busy || item.company.isBlocked}
-                />
               )}
               <Button variant={item.company.isBlocked ? 'secondary' : 'danger'} size="sm" icon="ban" onClick={() => void changeCompany('block', !item.company.isBlocked)} disabled={busy}>
                 {item.company.isBlocked ? 'Unblock company' : 'Block company'}
               </Button>
-            </div>
-          </Card>
-        </div>
+            </span>
+          </div>
+        </Card>
       </div>
       {rejecting && <RejectDialog
           id={id}
