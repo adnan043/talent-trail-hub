@@ -1,0 +1,165 @@
+---
+/**
+ * One job as a row in the "Vela" design (home's latest roles, the /jobs/ results): a coloured icon
+ * tile picked from words in the title, title (+ Featured / Closed label), company · place · type,
+ * pay and "posted" on the right, then Save. The title link covers the row; Save sits above it.
+ * Styles: src/styles/home-vela.css (`.v-row`), sized up on /jobs/ by src/styles/jobs-vela.css.
+ */
+import {employmentLabel, formatSalary, postedAgo, workplaceAndPlace} from '../../lib/job-display';
+import type {PublicJobSummary} from '../../lib/types-public';
+import SaveButton from './SaveButton.astro';
+
+interface Props {
+  job: PublicJobSummary;
+  /** Show the Featured label (pinned featured jobs). */
+  pinned?: boolean;
+  /** The arrow that slides in on hover (home). */
+  go?: boolean;
+}
+
+const {job, pinned = false, go = false} = Astro.props;
+
+/** The row's icon tile, from words in the title (the design's mapping; unknown titles get a briefcase). */
+type RowIcon = 'code' | 'design' | 'write' | 'support' | 'coach' | 'finance' | 'marketing' | 'ops' | 'sales';
+const ROW_ICONS: [RegExp, RowIcon][] = [
+  [/engineer|developer|programm|devops|software/i, 'code'],
+  [/design/i, 'design'],
+  [/writ|copy|content|editor/i, 'write'],
+  [/customer|support|success/i, 'support'],
+  [/coach|teach|tutor|trainer/i, 'coach'],
+  [/financ|analyst|accountant/i, 'finance'],
+  [/social|marketing|seo\b|growth/i, 'marketing'],
+  [/operations|logistics/i, 'ops'],
+];
+const icon: RowIcon = ROW_ICONS.find(([re]) => re.test(job.title))?.[1] ?? 'sales';
+
+/** The design's short range: "$45 – $55/hr" → "$45–55/hr" (same symbol on both ends only). */
+const salary = formatSalary(job.salary)?.replace(/^([^\d\s]*)([\d.,]+[KMBT]?) – \1([\d.,]+[KMBT]?)/, '$1$2–$3') ?? null;
+const posted = job.publishedAt ? postedAgo(job.publishedAt) : '';
+---
+
+<li class="v-row">
+  <span class:list={['v-row-icon', `cat-${icon}`]} aria-hidden="true">
+    {
+      icon === 'code' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" />
+        </svg>
+      )
+    }
+    {
+      icon === 'design' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="m12 19 7-7 3 3-7 7-3-3z" />
+          <path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+          <path d="m2 2 7.6 7.6" />
+          <circle cx="11" cy="11" r="2" />
+        </svg>
+      )
+    }
+    {
+      icon === 'write' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+        </svg>
+      )
+    }
+    {
+      icon === 'support' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
+        </svg>
+      )
+    }
+    {
+      icon === 'coach' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M22 10 12 5 2 10l10 5 10-5z" />
+          <path d="M6 12v5c3 3 9 3 12 0v-5" />
+        </svg>
+      )
+    }
+    {
+      icon === 'finance' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M3 3v18h18" />
+          <path d="M7 16v-4M12 16V8M17 16V9" />
+        </svg>
+      )
+    }
+    {
+      icon === 'marketing' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z" />
+          <path d="M16 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11" />
+        </svg>
+      )
+    }
+    {
+      icon === 'ops' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1" />
+        </svg>
+      )
+    }
+    {
+      icon === 'sales' && (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <rect x="2" y="7" width="20" height="14" rx="2" />
+          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+        </svg>
+      )
+    }
+  </span>
+  <div class="v-row-body">
+    <div class="v-row-head">
+      <h3 class="v-row-title">
+        <a class="v-row-link" href={`/jobs/${encodeURIComponent(job.slug)}/`}>
+          {job.title}
+        </a>
+      </h3>
+      {
+        job.state !== 'active' ? (
+          <span class="v-badge v-badge-muted">{job.state === 'closed' ? 'Closed' : 'Expired'}</span>
+        ) : (
+          job.featured &&
+          pinned && (
+            <span class="v-badge">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                <path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />
+              </svg>
+              Featured
+            </span>
+          )
+        )
+      }
+    </div>
+    <span class="v-row-meta">
+      <span class="v-row-company">{job.company.name}</span>
+      <span aria-hidden="true">·</span>
+      <span>{workplaceAndPlace(job)}</span>
+      <span aria-hidden="true">·</span>
+      <span>{employmentLabel(job.employmentType)}</span>
+    </span>
+  </div>
+  <div class="v-row-side">
+    {salary && <span class="v-row-pay">{salary}</span>}
+    {
+      posted && job.publishedAt && (
+        <time class="v-row-posted" datetime={job.publishedAt}>
+          {posted}
+        </time>
+      )
+    }
+  </div>
+  <SaveButton slug={job.slug} title={job.title} />
+  {
+    go && (
+      <svg class="v-row-go" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M5 12h14M13 6l6 6-6 6" />
+      </svg>
+    )
+  }
+</li>

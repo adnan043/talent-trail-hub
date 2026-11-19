@@ -57,15 +57,15 @@ export const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value);
 
 /**
  * The surfaces brand colours must read on, per scheme (global.css: `--bg`, `--hover` (the
- * old design's `secondary` tint, the darkest tinted surface in light mode) and `--card`).
+ * `secondary` grey, the darkest tinted surface in light mode) and `--card`).
  */
-const LIGHT = {bg: '#faf7f2', secondary: '#f3eee6', card: '#ffffff'};
-const DARK = {bg: '#161310', secondary: '#29241f', card: '#1f1b17'};
+const LIGHT = {bg: '#ffffff', secondary: '#f3f3f4', card: '#ffffff'};
+const DARK = {bg: '#0e0e10', secondary: '#222225', card: '#161618'};
 
 /** Ink: the fill of primary buttons while the brand is a neutral or the default terracotta. */
-const INK = '#1a1714';
+const INK = '#0d0c22';
 /** Paper: the same fill in dark mode (ink buttons invert). */
-const PAPER = '#f3eee6';
+const PAPER = '#f4f4f5';
 /** Terracotta: the design's accent (dots, Featured, link hovers, focus ring) and the default brand colour. */
 export const DEFAULT_BRAND = '#a63d23';
 /** Share of the accent in its tint (`--brand-soft`), light and dark. */
@@ -109,6 +109,9 @@ export function accentTokens(primary: string, scheme: 'light' | 'dark'): Record<
   const soft = mix(surfaces.bg, accent, SOFT_TINT[scheme]);
   // Readable on the page, the secondary surface AND the tint (Featured badges, active nav items).
   const brandText = readableOn(readableOn(readableOn(accent, surfaces.bg), surfaces.secondary), soft);
+  // A solid brand fill that white text reads on (the dashboard sidebar's selected item), on any
+  // sidebar colour: the brand itself (terracotta while it is a neutral), darkened until white is AA.
+  const brandFill = readableOn(accent, '#ffffff');
   return {
     '--accent': fill,
     '--accent-hover': mix(fill, surfaces.bg, 0.15),
@@ -119,6 +122,8 @@ export function accentTokens(primary: string, scheme: 'light' | 'dark'): Record<
     '--brand-text': brandText,
     '--brand-soft': soft,
     '--brand-soft-ink': readableOn(accent, soft, 7),
+    '--brand-fill': brandFill,
+    '--brand-fill-ink': '#ffffff',
     '--ring': brandText,
   };
 }
@@ -141,9 +146,25 @@ const block = (selector: string, tokens: Record<string, string>) =>
  * which reaches prerendered pages too. `html:root` outranks global.css's `:root` whatever the
  * order of the stylesheets. Only validated values reach the CSS (hex, fixed font stacks).
  */
-export function brandCss(settings: Pick<BoardSettings, 'primaryColor' | 'fontPreset' | 'sidebarBg' | 'sidebarText'>, singleCompany: boolean): string {
+export function brandCss(
+  settings: Pick<BoardSettings, 'primaryColor' | 'fontPreset' | 'sidebarBg' | 'sidebarText'>,
+  singleCompany: boolean,
+  options: {colours?: boolean} = {}
+): string {
+  // `colours: false`: a page with its own fixed palette (the home page's design) takes only the
+  // font preset and the single-company rule; the brand colour stays out of it.
+  const colours = options.colours ?? true;
   const font = FONTS[settings.fontPreset] ?? null;
-  const light = {...accentTokens(settings.primaryColor, 'light'), ...(font ? {'--font-sans': font, '--font-display': font} : {})};
+  const fontTokens = font ? {'--font-sans': font, '--font-display': font} : {};
+  if (!colours) {
+    return [
+      '/* Board branding (F30): generated from the board settings (no colours on this page). */',
+      ...(font ? [block('html:root', fontTokens)] : []),
+      ...(singleCompany ? ['[data-marketplace-only] {\n  display: none !important;\n}'] : []),
+      '',
+    ].join('\n\n');
+  }
+  const light = {...accentTokens(settings.primaryColor, 'light'), ...fontTokens};
   const dark = accentTokens(settings.primaryColor, 'dark');
   const sidebar = settings.sidebarBg || settings.sidebarText ? sidebarTokens(settings.sidebarBg, settings.sidebarText) : null;
   return [

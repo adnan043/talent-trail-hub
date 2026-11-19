@@ -156,6 +156,9 @@ describe('brand colours', () => {
       expect(contrast(light['--accent-ink'], light['--accent'])).toBeGreaterThanOrEqual(4.5);
       expect(contrast(dark['--accent'], '#0d1110')).toBeGreaterThanOrEqual(4.5);
       expect(contrast(dark['--accent-ink'], dark['--accent'])).toBeGreaterThanOrEqual(4.5);
+      // The sidebar's selected item: white on the brand fill.
+      expect(contrast('#ffffff', light['--brand-fill'])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('#ffffff', dark['--brand-fill'])).toBeGreaterThanOrEqual(4.5);
     }
   });
 });

@@ -95,18 +95,8 @@
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.25rem 0.875rem;
-  /* A dark panel in both themes: tokens re-scoped so children follow. */
-  --ink: #f3eee6;
-  --muted: #b9b1a6;
-  --subtle: #8c857b;
-  --line: #3a332c;
-  --line-strong: #4d453c;
-  --hover: #2d2722;
-  --card: #1f1a16;
-  --accent: #f3eee6;
-  --accent-ink: #1a1714;
-  --accent-text: #e8957f;
-  background: #1f1a16;
+  /* A white panel beside the grey content area, on the page's own tokens (both themes). */
+  background: var(--card);
   color: var(--ink);
   border-right: 1px solid var(--line);
   scrollbar-width: thin;
@@ -235,15 +225,17 @@
   color: var(--ink);
 }
 
-/* Selected item: the neutral tint and ink text, as in the old section nav. */
-.app-nav-link.active {
-  background: var(--hover);
-  color: var(--ink);
+/* Selected item: a solid fill in the board's brand colour (Settings › Branding), white text, on any
+   sidebar colour (`--brand-fill` is darkened until white reads on it). */
+.app-nav-link.active,
+.app-nav-link.active:hover {
+  background: var(--brand-fill);
+  color: var(--brand-fill-ink);
   font-weight: 600;
 }
 
 .app-nav-link.active .icon {
-  color: var(--accent-text);
+  color: inherit;
 }
 
 .app-nav-link:focus-visible,
@@ -3620,8 +3612,8 @@
 }
 
 /* ------------------------------------------- the job seeker's light shell --
-   An applicant account's sidebar is a white card with a grey border (routes.tsx
-   `data-side="light"`): the dark sidebar's re-scoped tokens go back to the page's
+   An applicant account's sidebar is a floating white card with a grey border (routes.tsx
+   `data-side="light"`): a brand sidebar's re-scoped tokens go back to the page's
    own (custom properties take `inherit`). Beats the brand sheet's `html:root .app-sidebar`. */
 html:root .app-shell[data-side='light'] .app-sidebar {
   --ink: inherit;
@@ -3641,7 +3633,7 @@ html:root .app-shell[data-side='light'] .app-sidebar {
 /* Wide screens: ONE centred container, the sidebar card and the screen side by side with a
    fixed gap (no empty band between them), the page's grey all around. */
 .app-body:has(.app-shell[data-side='light']) {
-  background: var(--bg);
+  background: var(--surface);
 }
 @media (min-width: 961px) {
   .app-shell[data-side='light'] {

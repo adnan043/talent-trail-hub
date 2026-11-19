@@ -1,46 +1,82 @@
 ---
 /**
- * The home page (F1), rendered per visit from `GET /site-api/board/home`: the hero from the board
- * settings (live status, headline, search → /jobs/?q=&location=), "Popular" chips (Remote + the 4
- * biggest categories), the categories with counts, ONE raised panel with up to 5 pinned featured
- * jobs (rotated hourly) then the latest (workplace switch: `/?workplace=remote#latest`), a safety
- * note, companies hiring now and the employer band. Single-company boards (F39) show the owner
- * company instead of the companies strip and no employer calls to action.
+ * The home page (F1), rendered per visit from `GET /site-api/board/home`, in the "Vela" design
+ * (src/styles/home-vela.css, `skin="vela"` on the layout): the hero from the board settings
+ * (headline, search → /jobs/?q=&location=), "Popular" chips (Remote + the 4 biggest categories),
+ * ONE raised panel with up to 5 pinned featured jobs (rotated hourly) then the latest (workplace
+ * switch with board-wide counts: `/?workplace=remote#latest`), a safety note, the categories with
+ * counts beside the companies hiring now, and the employer band with the cheapest listing price.
+ * Single-company boards (F39) show the owner company instead of the companies and no employer
+ * calls to action.
  */
-import CategoryIcon from '../components/board/CategoryIcon.astro';
 import CompanyLogo from '../components/board/CompanyLogo.astro';
-import Icon from '../components/board/Icon.astro';
-import JobList from '../components/board/JobList.astro';
+import VelaJobRow from '../components/board/VelaJobRow.astro';
 import {HOME, withName} from '../content/site';
 import Base from '../layouts/Base.astro';
 import {companyJsonLd} from '../lib/json-ld';
 import {WORKPLACE_LABELS, WORKPLACE_TYPES, type WorkplaceType} from '../lib/board';
 import {postedAgo} from '../lib/job-display';
-import type {HomeResponse} from '../lib/types-public';
+import type {HomeResponse, PublicTier} from '../lib/types-public';
 import {sanitizeHtml} from '../platform/sanitize';
 import {backend, read} from '../server/backend';
 import {boardPage} from '../server/board/public-page';
 import '../styles/board-list.css';
+import '../styles/home-vela.css';
 
 // The latest list's workplace switch: '' = all. Remote first (the most common filter).
 const SWITCH_ORDER: WorkplaceType[] = ['remote', 'hybrid', 'onsite'];
-const WORKPLACE_SWITCH = [{value: '', label: 'All'}, ...SWITCH_ORDER.map(w => ({value: w, label: WORKPLACE_LABELS[w]}))];
+const WORKPLACE_SWITCH = [{value: '' as const, label: 'All'}, ...SWITCH_ORDER.map(w => ({value: w, label: WORKPLACE_LABELS[w]}))];
+/** The home API sends at most this many companies: with fewer, the count is exact. */
+const HOME_COMPANIES = 6;
 const workplaceParam = Astro.url.searchParams.get('workplace') ?? '';
 const workplace = (WORKPLACE_TYPES as readonly string[]).includes(workplaceParam) ? (workplaceParam as WorkplaceType) : '';
-const [{site, viewer, board}, home] = await Promise.all([
+const api = backend(Astro.request);
+const [{site, viewer, board}, home, tiers] = await Promise.all([
   boardPage(Astro.request, Astro.response),
-  read<HomeResponse>(backend(Astro.request).board.home.$get({query: {workplace}})),
+  read<HomeResponse>(api.board.home.$get({query: {workplace}})),
+  // The employer band's "from" price (cached a day by the API; 404 on single-company boards).
+  read<{tiers: PublicTier[]; freePosting: boolean}>(api.board.tiers.$get()),
 ]);
 if (!home) Astro.response.status = 503;
 const name = board?.name ?? site?.name ?? 'Talent Trail Hub';
 const single = board?.singleCompany ?? false;
 const owner = home?.ownerCompany ?? null;
 const withJobs = (home?.categories ?? []).filter(c => c.jobCount > 0);
+// "Browse by field" lists eight at most; "All jobs" leads to the rest.
+// Biggest first (the sort is stable: equal counts keep the admin's order).
+const fieldList = [...withJobs].sort((a, b) => b.jobCount - a.jobCount).slice(0, 8);
 const popular = [...withJobs].sort((a, b) => b.jobCount - a.jobCount).slice(0, 4);
-// `*phrase*` in the hero title is emphasised (the odd parts of the split).
-const heroParts = (board?.heroTitle ?? 'Find your next role').split(/\*([^*]+)\*/);
+
+// The hero title: `*phrase*` is emphasised (the odd parts of the split); without one, the last word.
+// The first word gets the magnifier that appears on hover.
+const heroTitle = board?.heroTitle ?? 'Find your next role';
+const heroSplit = heroTitle.split(/\*([^*]+)\*/);
+const lastSpace = heroTitle.trimEnd().lastIndexOf(' ');
+const marked =
+  heroSplit.length > 1
+    ? heroSplit.map((text, i) => ({text, mark: i % 2 === 1}))
+    : [
+        {text: heroTitle.slice(0, lastSpace + 1), mark: false},
+        {text: heroTitle.slice(lastSpace + 1).trim(), mark: true},
+      ];
+const firstWord = !marked[0].mark ? (/^\S+/.exec(marked[0].text)?.[0] ?? '') : '';
+const heroParts = firstWord ? [{text: firstWord, mark: false, find: true}, ...marked.map((p, i) => ({...p, text: i === 0 ? p.text.slice(firstWord.length) : p.text, find: false}))] : marked.map(p => ({...p, find: false}));
+
+const heroSubtitle = board?.heroSubtitle ?? withName('Hand-picked jobs at {name}.', name);
+// The design's second line, unless the board's own subtitle already says so.
+const heroSecondLine = /\bapply\b/i.test(heroSubtitle) ? '' : 'Search, save and apply in minutes.';
+
 const openRoles = withJobs.reduce((sum, c) => sum + c.jobCount, 0);
 const roles = (n: number) => `${n.toLocaleString('en-US')} open ${n === 1 ? 'role' : 'roles'}`;
+const companies = home?.companies ?? [];
+const hiringLine = single
+  ? (owner?.name ?? '')
+  : companies.length === 0
+    ? ''
+    : companies.length > 2
+      ? `${companies[0].name}, ${companies[1].name} and ${companies.length >= HOME_COMPANIES ? 'more' : `${companies.length - 2} more`}`
+      : companies.map(c => c.name).join(' and ');
+const proofHref = single && owner ? `/companies/${encodeURIComponent(owner.slug)}/` : '/companies/';
 
 // One list: the pinned featured jobs (the switch applies to them too), then the latest without them.
 const featured = (home?.featured ?? []).filter(j => !workplace || j.workplaceType === workplace);
@@ -55,260 +91,394 @@ const newest = [...(home?.featured ?? []), ...(home?.latest ?? [])]
 const nothing = home && jobs.length === 0 && !workplace;
 const viewLabel = workplace ? WORKPLACE_LABELS[workplace].toLowerCase() : '';
 const countLabel = `${jobs.length} ${viewLabel ? `${viewLabel} ` : ''}${jobs.length === 1 ? 'role' : 'roles'}`;
+const counts = home?.workplaceCounts;
+const switchCount = (value: WorkplaceType | '') =>
+  !counts ? null : value ? (counts[value] ?? 0) : SWITCH_ORDER.reduce((sum, w) => sum + (counts[w] ?? 0), 0);
+const allRoles = counts ? (switchCount('') ?? openRoles) : openRoles;
+
+// "Who's hiring": a company's place, else the titles of its jobs on this page.
+const companySub = (slug: string, location: string | null) => {
+  if (location) return location;
+  const titles = [...new Set((home?.latest ?? []).filter(j => j.company.slug === slug).map(j => j.title))];
+  return titles.length > 2 ? `${titles[0]}, ${titles[1]} and more` : titles.join(', ');
+};
+const allCompaniesLabel = companies.length < HOME_COMPANIES ? `All ${companies.length} ${companies.length === 1 ? 'company' : 'companies'}` : HOME.allCompanies;
+
+// The employer band's price card: the cheapest active tier (free posting shows "Free").
+const cheapest = (tiers?.tiers ?? []).reduce<PublicTier | null>((low, t) => (!low || t.priceCents < low.priceCents ? t : low), null);
+const shortest = (tiers?.tiers ?? []).reduce<number | null>((low, t) => (low == null || t.durationDays < low ? t.durationDays : low), null);
+const money = (cents: number, currency: string) => {
+  try {
+    return new Intl.NumberFormat('en-US', {style: 'currency', currency, maximumFractionDigits: cents % 100 === 0 ? 0 : 2}).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency}`;
+  }
+};
+const priceLabel = tiers?.freePosting ? 'Free' : cheapest ? money(cheapest.priceCents, cheapest.currency) : null;
+
 const description = single && owner ? `Open roles at ${owner.name}. ${board?.heroSubtitle ?? ''}`.trim() : undefined;
 ---
 
-<Base site={site} viewer={viewer} board={board} description={description} jsonLd={single && owner ? companyJsonLd(owner) : undefined}>
-  <main id="main" tabindex="-1">
-    <section class="home-hero" aria-labelledby="hero-title">
-      <svg class="orbits orbits-hero" viewBox="0 0 600 600" fill="none" aria-hidden="true" focusable="false">
-        <g transform="rotate(-24 300 300)" stroke="currentColor" stroke-width="1.25">
-          <ellipse cx="300" cy="300" rx="290" ry="150"></ellipse>
-          <ellipse cx="300" cy="300" rx="215" ry="108"></ellipse>
-          <ellipse cx="300" cy="300" rx="140" ry="66"></ellipse>
-        </g>
-        <circle class="orbit-dot" cx="398" cy="186" r="8"></circle>
-        <circle class="orbit-dot" cx="226" cy="398" r="4.5"></circle>
-      </svg>
-      <div class="wrap home-hero-inner">
+<Base site={site} viewer={viewer} board={board} description={description} jsonLd={single && owner ? companyJsonLd(owner) : undefined} skin="vela">
+  <main id="main" class="v-home" tabindex="-1">
+    <section class="v-hero" aria-labelledby="hero-title">
+      <div class="v-hero-glow" aria-hidden="true"></div>
+      <div class="v-hero-grid" aria-hidden="true"></div>
+      <div class="v-hero-inner">
+        <div class="v-hero-text">
+          <a class="v-hero-pill" href="/jobs/">
+            <span class="v-hero-pill-dot" aria-hidden="true"></span>Candidates never pay to apply<span class="v-hero-pill-tag">Browse jobs</span>
+          </a>
+          <h1 id="hero-title" class="v-hero-title" data-hero-title>
+            {heroParts.map(part =>
+              part.find ? (
+                <span class="v-find">
+                  {part.text}
+                  <svg class="v-find-icon" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2.6" stroke-linecap="round" aria-hidden="true" focusable="false">
+                    <circle cx="10.5" cy="10.5" r="6.5"></circle>
+                    <path d="m20 20-4.6-4.6"></path>
+                  </svg>
+                </span>
+              ) : part.mark && part.text ? (
+                <span class="v-role" data-hero-role>
+                  {part.text}
+                  <svg class="v-role-line" viewBox="0 0 220 24" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    <path d="M4 12 C 50 4, 120 2, 216 9" fill="none" stroke="#4f46e5" stroke-width="5" stroke-linecap="round"></path>
+                    <path d="M40 20 C 90 14, 140 14, 178 17" fill="none" stroke="#a3acfc" stroke-width="3.5" stroke-linecap="round"></path>
+                  </svg>
+                </span>
+              ) : (
+                part.text
+              )
+            )}
+          </h1>
+          <p class="v-hero-lead">
+            {heroSubtitle}
+            {heroSecondLine && (
+              <>
+                <br class="v-hero-lead-break" /> {heroSecondLine}
+              </>
+            )}
+          </p>
+        </div>
+
+        <form class="v-search-form" action="/jobs/" method="get" role="search" aria-label={HOME.searchLabel} novalidate>
+          <div class="v-search">
+            <div class="v-field v-field-what">
+              <svg class="v-field-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-3.5-3.5"></path>
+              </svg>
+              <span class="v-field-control">
+                <label for="home-q">What</label>
+                <input id="home-q" type="search" name="q" maxlength="100" enterkeyhint="search" autocomplete="off" placeholder="Job title, skill or company" />
+              </span>
+            </div>
+            <span class="v-search-divider" aria-hidden="true"></span>
+            <div class="v-field v-field-where">
+              <svg class="v-field-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path>
+                <circle cx="12" cy="9.5" r="2.5"></circle>
+              </svg>
+              <span class="v-field-control">
+                <label for="home-location">Where</label>
+                <input id="home-location" type="text" name="location" maxlength="80" autocomplete="address-level2" placeholder="City, country or “Remote”" />
+              </span>
+            </div>
+            <button class="v-btn v-btn-primary v-btn-lg v-search-submit" type="submit">
+              Search jobs
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M5 12h14M13 6l6 6-6 6"></path>
+              </svg>
+            </button>
+          </div>
+          {
+            home && openRoles > 0 && (
+              <nav class="v-chips" aria-label="Popular searches">
+                <span class="v-chips-label">{HOME.popular}</span>
+                <a class="v-chip" href="/jobs/?workplace=remote">
+                  Remote
+                </a>
+                {popular.map(c => (
+                  <a class="v-chip" href={`/jobs/?category=${encodeURIComponent(c.slug)}`}>
+                    {c.name}
+                  </a>
+                ))}
+              </nav>
+            )
+          }
+        </form>
+
         {
           openRoles > 0 && (
-            <p class="live-pill">
-              <span class="live-dot" aria-hidden="true" />
+            <a class="v-proof" href={proofHref}>
+              <span class="v-faces" aria-hidden="true">
+                {[1, 2, 3, 4].map(n => (
+                  <img class="v-face" src={`/images/home/face-${n}.jpg`} alt="" width="34" height="34" decoding="async" />
+                ))}
+              </span>
               <span>
                 <strong>{roles(openRoles)}</strong>
+                {hiringLine && <> at {hiringLine}</>}
                 {newest && (
-                  <>
+                  <span class="v-proof-time">
                     {' · updated '}
                     <time datetime={newest}>{postedAgo(newest)}</time>
-                  </>
+                  </span>
                 )}
               </span>
-            </p>
-          )
-        }
-        <h1 id="hero-title" class="display">{heroParts.map((part, i) => (i % 2 ? <em>{part}</em> : part))}</h1>
-        <p class="home-lead">{board?.heroSubtitle ?? withName('Hand-picked jobs at {name}.', name)}</p>
-        <form class="searchbar searchbar-lg" action="/jobs/" method="get" role="search" aria-label={HOME.searchLabel} novalidate>
-          <div class="searchbar-field searchbar-what">
-            <Icon name="search" class="searchbar-icon" />
-            <span class="searchbar-control">
-              <label for="home-q">What</label>
-              <input id="home-q" type="search" name="q" maxlength="100" enterkeyhint="search" autocomplete="off" placeholder="Job title, skill or company" />
-            </span>
-          </div>
-          <span class="searchbar-divider" aria-hidden="true"></span>
-          <div class="searchbar-field searchbar-where">
-            <Icon name="map-pin" class="searchbar-icon" />
-            <span class="searchbar-control">
-              <label for="home-location">Where</label>
-              <input id="home-location" type="text" name="location" maxlength="80" autocomplete="address-level2" placeholder="City, country or “Remote”" />
-            </span>
-          </div>
-          <button class="button searchbar-submit" type="submit">
-            Search jobs
-            <Icon name="arrow-right" class="button-icon" />
-          </button>
-        </form>
-        {
-          home && openRoles > 0 && (
-            <nav class="popular-chips" aria-label="Popular searches">
-              <span>{HOME.popular}</span>
-              <a class="pill" href="/jobs/?workplace=remote">Remote</a>
-              {popular.map(c => (
-                <a class="pill" href={`/jobs/?category=${encodeURIComponent(c.slug)}`}>
-                  {c.name}
-                </a>
-              ))}
-            </nav>
+            </a>
           )
         }
       </div>
     </section>
+    <div class="v-gap"></div>
 
     {
       !home ? (
-        <section class="home-section">
-          <div class="wrap">
-            <p class="notice">The job board is not available right now. Try again in a minute.</p>
-          </div>
+        <section class="v-section">
+          <p class="v-notice">The job board is not available right now. Try again in a minute.</p>
         </section>
       ) : (
         <>
-          {single && owner && (
-            <section class="home-section home-owner" aria-labelledby="owner-title">
-              <div class="wrap">
-                <div class="owner-card">
-                  <div class="owner-head">
-                    <CompanyLogo name={owner.name} logoUrl={owner.logoUrl} size="lg" />
-                    <div>
-                      <h2 id="owner-title">{owner.name}</h2>
-                      {owner.location && <p class="home-muted">{owner.location}</p>}
-                    </div>
-                    <a class="button ghost owner-link" href={`/companies/${encodeURIComponent(owner.slug)}/`}>
-                      About {owner.name}
-                    </a>
-                  </div>
-                  {owner.aboutHtml && <div class="prose" set:html={sanitizeHtml(owner.aboutHtml)} />}
-                </div>
-              </div>
-            </section>
-          )}
-
-          {withJobs.length > 0 && (
-            <section class="home-section" aria-labelledby="categories-title">
-              <div class="wrap">
-                <div class="home-section-head">
-                  <div>
-                    <h2 id="categories-title" class="title">{HOME.categoriesTitle}</h2>
-                    <p class="home-section-desc">
-                      {roles(openRoles)} across {withJobs.length} {withJobs.length === 1 ? 'category' : 'categories'}
-                    </p>
-                  </div>
-                  <a class="link-action" href="/jobs/">{HOME.allJobs}</a>
-                </div>
-                <ul class="cat-grid">
-                  {withJobs.map(c => (
-                    <li>
-                      <a class="cat-card" href={`/jobs/?category=${encodeURIComponent(c.slug)}`}>
-                        <span class="cat-card-top">
-                          <CategoryIcon slug={c.slug} />
-                          <span class="round-arrow" aria-hidden="true">
-                            <Icon name="arrow-up-right" />
-                          </span>
-                        </span>
-                        <span class="cat-card-text">
-                          <span class="cat-card-name">{c.name}</span>
-                          <span class="cat-card-count">{roles(c.jobCount)}</span>
-                        </span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-          )}
-
-          <div class:list={['wrap', 'home-latest', {'home-latest-first': withJobs.length === 0}]}>
+          <section class="v-section v-latest" id="latest" aria-labelledby="latest-title">
             {nothing ? (
-              single ? (
-                <div class="empty-box">
-                  <span class="empty-box-icon" aria-hidden="true"><Icon name="briefcase" /></span>
-                  <h2 id="latest-title">{HOME.emptySingle.title}</h2>
-                  <p>{HOME.emptySingle.body.replace('{company}', owner?.name ?? name)}</p>
-                </div>
-              ) : (
-                <div class="empty-box">
-                  <span class="empty-box-icon" aria-hidden="true"><Icon name="briefcase" /></span>
-                  <h2 id="latest-title">{HOME.empty.title}</h2>
-                  <p>{HOME.empty.body}</p>
-                  <div class="empty-box-actions">
-                    <a class="button" href="/post-a-job/">{HOME.empty.action}</a>
-                  </div>
-                </div>
-              )
+              <div class="v-panel v-empty">
+                <span class="v-empty-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                    <rect x="2" y="7" width="20" height="14" rx="2"></rect>
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                  </svg>
+                </span>
+                {single ? (
+                  <>
+                    <h2 id="latest-title">{HOME.emptySingle.title}</h2>
+                    <p>{HOME.emptySingle.body.replace('{company}', owner?.name ?? name)}</p>
+                  </>
+                ) : (
+                  <>
+                    <h2 id="latest-title">{HOME.empty.title}</h2>
+                    <p>{HOME.empty.body}</p>
+                    <a class="v-btn v-btn-primary" href="/post-a-job/">
+                      {HOME.empty.action}
+                    </a>
+                  </>
+                )}
+              </div>
             ) : (
               <>
-                <section class="panel" id="latest" aria-labelledby="latest-title">
-                  <div class="panel-head">
-                    <div class="panel-title">
-                      <h2 id="latest-title">{HOME.latestTitle}</h2>
-                      <span class="count-badge">{countLabel}</span>
+                <div class="v-panel">
+                  <div class="v-panel-head">
+                    <div class="v-panel-title">
+                      <h2 id="latest-title">Latest roles</h2>
+                      <span class="v-panel-count">{countLabel}</span>
                     </div>
-                    <nav class="segmented" aria-label="Workplace">
+                    <nav class="v-tabs" aria-label="Filter by workplace">
                       {WORKPLACE_SWITCH.map(w => (
-                        <a href={w.value ? `/?workplace=${w.value}#latest` : '/#latest'} aria-current={w.value === workplace ? 'true' : undefined}>
+                        <a class="v-tab" href={w.value ? `/?workplace=${w.value}#latest` : '/#latest'} aria-current={w.value === workplace ? 'true' : undefined}>
                           {w.label}
+                          {switchCount(w.value) != null && <span class="v-tab-count">{switchCount(w.value)}</span>}
                         </a>
                       ))}
                     </nav>
                   </div>
                   {home.featuredMore && (
-                    <p class="panel-row featured-link">
+                    <p class="v-panel-note">
                       <a href="/jobs/?featured=1">
                         See all {home.featuredCount >= 100 ? '100+' : home.featuredCount} featured jobs
-                        <Icon name="arrow-right" class="inline-icon" />
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                          <path d="M5 12h14M13 6l6 6-6 6"></path>
+                        </svg>
                       </a>
                     </p>
                   )}
                   {jobs.length > 0 ? (
-                    <div class="panel-list">
-                      <JobList jobs={jobs} pinned={featured.length} />
-                    </div>
+                    <ul class="v-rows">
+                      {jobs.map((job, i) => (
+                        <VelaJobRow job={job} pinned={i < featured.length} go />
+                      ))}
+                    </ul>
                   ) : (
-                    <p class="panel-empty">
-                      No {viewLabel} roles among the latest jobs.{' '}
-                      <a href={`/jobs/?workplace=${workplace}`}>Search all {viewLabel} jobs</a>
+                    <p class="v-panel-empty">
+                      No {viewLabel} roles among the latest jobs. <a href={`/jobs/?workplace=${workplace}`}>Search all {viewLabel} jobs</a>
                     </p>
                   )}
-                  <div class="panel-foot">
-                    <p>{featured.length > 0 ? 'Featured first, then newest' : 'Newest first'}</p>
-                    <a class="button ghost button-outline" href="/jobs/">
-                      Browse all jobs
-                      <Icon name="arrow-right" class="button-icon" />
+                  <div class="v-panel-foot">
+                    <span>{featured.length > 0 ? 'Featured first, then newest' : 'Newest first'}</span>
+                    <a class="v-btn v-btn-secondary" href="/jobs/">
+                      See all {allRoles.toLocaleString('en-US')} {allRoles === 1 ? 'role' : 'roles'}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                        <path d="M5 12h14M13 6l6 6-6 6"></path>
+                      </svg>
                     </a>
                   </div>
-                </section>
-                <p class="safety-note">
-                  <strong>Stay safe:</strong> never pay to apply for a job or share bank details during an application.
+                </div>
+                <p class="v-safety">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3z"></path>
+                  </svg>
+                  <span>
+                    <strong>Stay safe.</strong> Never pay to apply for a job or share bank details during an application.
+                  </span>
                 </p>
               </>
             )}
-          </div>
+          </section>
 
-          {!single && home.companies.length > 0 && (
-            <section class="home-band" aria-labelledby="companies-title">
-              <div class="wrap">
-                <div class="home-section-head">
-                  <div>
-                    <p class="kicker">{HOME.companiesTitle}</p>
-                    <h2 id="companies-title" class="title">Companies with open roles</h2>
+          {(fieldList.length > 0 || (!single && companies.length > 0) || (single && owner)) && (
+            <section class="v-section v-duo" aria-label="Browse">
+              {fieldList.length > 0 && (
+                <div class="v-card v-card-fields">
+                  <div class="v-card-head">
+                    <h2>Browse by field</h2>
+                    <a href="/jobs/">{HOME.allJobs}</a>
                   </div>
-                  <a class="link-action" href="/companies/">{HOME.allCompanies}</a>
+                  <ul class="v-fields">
+                    {fieldList.map(c => (
+                      <li>
+                        <a class="v-field-link" href={`/jobs/?category=${encodeURIComponent(c.slug)}`}>
+                          <span class="v-field-name">{c.name}</span>
+                          <span class="v-field-count" aria-label={roles(c.jobCount)}>
+                            {c.jobCount.toLocaleString('en-US')}
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul class="co-grid">
-                  {home.companies.map(co => (
-                    <li>
-                      <a class="co-card" href={`/companies/${encodeURIComponent(co.slug)}/`}>
-                        <CompanyLogo name={co.name} logoUrl={co.logoUrl} />
-                        <span class="co-card-text">
-                          <span class="co-card-name">{co.name}</span>
-                          <span class="co-card-count">{roles(co.openJobCount)}</span>
-                        </span>
-                        <span class="round-arrow" aria-hidden="true">
-                          <Icon name="arrow-up-right" />
-                        </span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              )}
+
+              {!single && companies.length > 0 && (
+                <div class="v-card">
+                  <div class="v-card-head">
+                    <h2>Who’s hiring</h2>
+                    <a href="/companies/">{allCompaniesLabel}</a>
+                  </div>
+                  <ul class="v-hire">
+                    {companies.map(co => {
+                      const sub = companySub(co.slug, co.location);
+                      return (
+                        <li>
+                          <a class="v-hire-card" href={`/companies/${encodeURIComponent(co.slug)}/`}>
+                            <CompanyLogo name={co.name} logoUrl={co.logoUrl} size="sm" />
+                            <span class="v-hire-text">
+                              <span class="v-hire-name">{co.name}</span>
+                              {sub && <span class="v-hire-sub">{sub}</span>}
+                            </span>
+                            <span class="v-hire-count">
+                              {co.openJobCount.toLocaleString('en-US')} {co.openJobCount === 1 ? 'role' : 'roles'}
+                            </span>
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {single && owner && (
+                <div class="v-card">
+                  <div class="v-owner-head">
+                    <CompanyLogo name={owner.name} logoUrl={owner.logoUrl} size="lg" />
+                    <div>
+                      <h2 class="v-owner-name">{owner.name}</h2>
+                      {owner.location && <p class="v-owner-loc">{owner.location}</p>}
+                    </div>
+                  </div>
+                  {owner.aboutHtml && <div class="v-owner-about" set:html={sanitizeHtml(owner.aboutHtml)} />}
+                  <div>
+                    <a class="v-btn v-btn-secondary" href={`/companies/${encodeURIComponent(owner.slug)}/`}>
+                      About {owner.name}
+                    </a>
+                  </div>
+                </div>
+              )}
             </section>
           )}
 
           {!single && (
-            <section class="employer-band" aria-labelledby="employer-cta-title">
-              <svg class="orbits orbits-band" viewBox="0 0 600 600" fill="none" aria-hidden="true" focusable="false">
-                <g transform="rotate(-24 300 300)" stroke="currentColor" stroke-width="1.25">
-                  <ellipse cx="300" cy="300" rx="290" ry="150"></ellipse>
-                  <ellipse cx="300" cy="300" rx="215" ry="108"></ellipse>
-                  <ellipse cx="300" cy="300" rx="140" ry="66"></ellipse>
-                </g>
-                <circle class="orbit-dot" cx="398" cy="186" r="8"></circle>
-                <circle class="orbit-dot" cx="226" cy="398" r="4.5"></circle>
-              </svg>
-              <div class="wrap employer-band-inner">
-                <div class="employer-band-text">
-                  <p class="kicker">For employers</p>
-                  <h2 id="employer-cta-title" class="title">Hiring? Reach people who are looking right now.</h2>
-                  <p class="home-lead">Post in a few minutes. Candidates apply directly.</p>
+            <section class="v-section" aria-labelledby="employer-cta-title">
+              <div class="v-band">
+                <div class="v-band-text">
+                  <p class="v-band-kicker">For employers</p>
+                  <h2 id="employer-cta-title" class="v-band-title">
+                    Hiring? Reach people<br />who are looking right now.
+                  </h2>
+                  <p class="v-band-lead">Post in a few minutes. Candidates apply directly, and you pay once per listing with no subscription.</p>
+                  <ol class="v-steps">
+                    <li class="v-step">
+                      <span class="v-step-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="M12 20h9"></path>
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path>
+                        </svg>
+                      </span>
+                      <span class="v-step-title">Write your listing</span>
+                      <span class="v-step-body">A few minutes. Apply here, by link or email.</span>
+                    </li>
+                    <li class="v-step">
+                      <span class="v-step-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3z"></path>
+                          <path d="m9 12 2 2 4-4"></path>
+                        </svg>
+                      </span>
+                      <span class="v-step-title">We review it</span>
+                      <span class="v-step-body">A real person checks it before it goes live.</span>
+                    </li>
+                    <li class="v-step">
+                      <span class="v-step-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                          <circle cx="9" cy="7" r="4"></circle>
+                          <path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"></path>
+                        </svg>
+                      </span>
+                      <span class="v-step-title">Meet applicants</span>
+                      <span class="v-step-body">Resumes and applicants land in your dashboard.</span>
+                    </li>
+                  </ol>
                 </div>
-                <div class="employer-band-actions">
-                  <a class="button button-inverse" href="/post-a-job/">
-                    {HOME.cta.action}
-                    <Icon name="arrow-right" class="button-icon" />
-                  </a>
-                  <a class="button button-inverse-outline" href="/pricing/">{HOME.cta.pricing}</a>
+                <div class="v-price">
+                  {priceLabel && (
+                    <div class="v-price-top">
+                      <span class="v-price-from">{tiers?.freePosting ? 'Listings are' : 'Listings from'}</span>
+                      <span class="v-price-line">
+                        <span class="v-price-amount">{priceLabel}</span>
+                        {!tiers?.freePosting && <span class="v-price-unit">per listing</span>}
+                      </span>
+                    </div>
+                  )}
+                  <ul class="v-price-list">
+                    {shortest != null && (
+                      <li>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                          <path d="m5 12 5 5L20 7"></path>
+                        </svg>
+                        Live for {shortest} days
+                      </li>
+                    )}
+                    <li>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                        <path d="m5 12 5 5L20 7"></path>
+                      </svg>
+                      Pay once, no subscription
+                    </li>
+                    <li>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                        <path d="m5 12 5 5L20 7"></path>
+                      </svg>
+                      Shown in Google for Jobs
+                    </li>
+                  </ul>
+                  <div class="v-price-actions">
+                    <a class="v-btn v-btn-primary v-btn-lg v-btn-full" href="/post-a-job/">
+                      {HOME.cta.action}
+                    </a>
+                    <a class="v-btn v-btn-secondary v-btn-lg v-btn-full" href="/pricing/">
+                      Compare plans
+                    </a>
+                  </div>
                 </div>
               </div>
             </section>
@@ -318,3 +488,34 @@ const description = single && owner ? `Open roles at ${owner.name}. ${board?.her
     }
   </main>
 </Base>
+
+<script>
+  // The hero title lights up under the pointer (a radial gradient through the text). CSS custom
+  // properties set through the CSSOM (allowed by the CSP, unlike style attributes).
+  document.addEventListener('astro:page-load', () => {
+    const title = document.querySelector<HTMLElement>('[data-hero-title]');
+    if (!title || title.dataset.bound) return;
+    title.dataset.bound = '1';
+    const role = title.querySelector<HTMLElement>('[data-hero-role]');
+    let frame = 0;
+    title.addEventListener('pointermove', event => {
+      if (event.pointerType !== 'mouse') return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const r = title.getBoundingClientRect();
+        title.style.setProperty('--hx', `${Math.round(event.clientX - r.left)}px`);
+        title.style.setProperty('--hy', `${Math.round(event.clientY - r.top)}px`);
+        if (role) {
+          const rr = role.getBoundingClientRect();
+          title.style.setProperty('--rx', `${Math.round(event.clientX - rr.left)}px`);
+          title.style.setProperty('--ry', `${Math.round(event.clientY - rr.top)}px`);
+        }
+        title.classList.add('is-lit');
+      });
+    });
+    title.addEventListener('pointerleave', () => {
+      cancelAnimationFrame(frame);
+      title.classList.remove('is-lit');
+    });
+  });
+</script>

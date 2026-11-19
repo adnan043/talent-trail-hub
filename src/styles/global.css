@@ -21,9 +21,9 @@
 /*
  * THE colour, type and shape tokens of the whole site: the website, the
  * sign-in pages and the dashboard (`app.css`). The look is the board's design
- * system: warm paper, ink type, hairline rules, one terracotta accent used sparingly.
+ * system: white and cool grey surfaces, ink type, hairline rules, one terracotta accent used sparingly.
  *
- * - Surfaces: `--bg` (paper page), `--surface` (quiet bands, notes), `--card`
+ * - Surfaces: `--bg` (white page), `--surface` (light grey bands, notes), `--card`
  *   (white panels, inputs), `--hover` = `--secondary` (current nav item, hover fill, tags).
  * - Text: `--ink`, `--ink-soft` (nav links, lead, meta), `--muted` (labels,
  *   captions), `--subtle` = `--placeholder`.
@@ -46,35 +46,37 @@
 :root {
   color-scheme: light;
 
-  --bg: #faf7f2;
-  --surface: #f7f3ec;
+  --bg: #ffffff;
+  --surface: #f8f8f9;
   --card: #ffffff;
-  --ink: #1a1714;
-  --ink-soft: #4a433c;
-  --muted: #5c534a;
-  --subtle: #756c63;
-  --placeholder: #756c63;
-  --line: #ede7dd;
-  --line-strong: #e4dcd0;
-  --input: #91867a;
-  --hover: #f3eee6;
-  --secondary: #f3eee6;
+  --ink: #0d0c22;
+  --ink-soft: #3d3d4e;
+  --muted: #5e5e6d;
+  --subtle: #6e6d7a;
+  --placeholder: #6e6d7a;
+  --line: #ececee;
+  --line-strong: #e2e2e5;
+  --input: #8f8f9b;
+  --hover: #f3f3f4;
+  --secondary: #f3f3f4;
 
-  --accent: #1a1714;
-  --accent-hover: #3c3935;
+  --accent: #0d0c22;
+  --accent-hover: #313043;
   --accent-ink: #ffffff;
-  --accent-soft: #f2e6df;
+  --accent-soft: #f7eeeb;
   --accent-text: #a63d23;
   --brand: #a63d23;
   --brand-text: #a63d23;
-  --brand-soft: #f2e6df;
-  --brand-soft-ink: #7d2e1a;
+  --brand-soft: #f7eeeb;
+  --brand-soft-ink: #85311c;
+  --brand-fill: #a63d23;
+  --brand-fill-ink: #ffffff;
   --ring: #a63d23;
 
-  --inverse: #1a1714;
-  --inverse-ink: #faf7f2;
-  --inverse-muted: #d8d0c4;
-  --inverse-line: #5c534a;
+  --inverse: #0d0c22;
+  --inverse-ink: #ffffff;
+  --inverse-muted: #d4d4dc;
+  --inverse-line: #545463;
 
   --success: #1d5130;
   --success-soft: #e6f2e9;
@@ -87,12 +89,12 @@
   --danger-soft: #f8e5e1;
   --info: #1f4677;
   --info-soft: #e7edf6;
-  --neutral: #3d3731;
-  --neutral-soft: #efe8dc;
+  --neutral: #3d3d4e;
+  --neutral-soft: #f0f0f2;
 
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 1px 2px rgb(40 30 20 / 0.04), 0 8px 24px rgb(40 30 20 / 0.06);
-  --shadow-lg: 0 2px 4px rgb(40 30 20 / 0.06), 0 16px 40px rgb(40 30 20 / 0.14);
+  --shadow-md: 0 1px 2px rgb(13 12 34 / 0.04), 0 8px 24px rgb(13 12 34 / 0.06);
+  --shadow-lg: 0 2px 4px rgb(13 12 34 / 0.06), 0 16px 40px rgb(13 12 34 / 0.14);
   --overlay: rgb(26 23 20 / 0.5);
   /* The light plate behind uploaded logos in dark mode (board.css); none behind the header logo in light. */
   --logo-plate: #ffffff;
@@ -125,35 +127,37 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg: #161310;
-  --surface: #231e1a;
-  --card: #1f1b17;
-  --ink: #f3eee6;
-  --ink-soft: #d3cabe;
-  --muted: #b0a699;
-  --subtle: #8f8579;
-  --placeholder: #8f8579;
-  --line: #2e2924;
-  --line-strong: #3b352e;
-  --input: #776e63;
-  --hover: #29241f;
-  --secondary: #29241f;
+  --bg: #0e0e10;
+  --surface: #18181b;
+  --card: #161618;
+  --ink: #f4f4f5;
+  --ink-soft: #d4d4d8;
+  --muted: #a1a1aa;
+  --subtle: #8b8b93;
+  --placeholder: #8b8b93;
+  --line: #26262a;
+  --line-strong: #333338;
+  --input: #74747c;
+  --hover: #222225;
+  --secondary: #222225;
 
-  --accent: #f3eee6;
-  --accent-hover: #d2cdc6;
+  --accent: #f4f4f5;
+  --accent-hover: #d2d2d3;
   --accent-ink: #000000;
-  --accent-soft: #331b14;
-  --accent-text: #c37d6b;
+  --accent-soft: #2c1714;
+  --accent-text: #c37b69;
   --brand: #a63d23;
-  --brand-text: #c37d6b;
-  --brand-soft: #331b14;
-  --brand-soft-ink: #d7a89c;
-  --ring: #c37d6b;
+  --brand-text: #c37b69;
+  --brand-soft: #2c1714;
+  --brand-soft-ink: #d39e91;
+  --brand-fill: #a63d23;
+  --brand-fill-ink: #ffffff;
+  --ring: #c37b69;
 
-  --inverse: #f3eee6;
-  --inverse-ink: #1a1714;
-  --inverse-muted: #4a433c;
-  --inverse-line: #a69c8f;
+  --inverse: #f4f4f5;
+  --inverse-ink: #0e0e10;
+  --inverse-muted: #52525b;
+  --inverse-line: #a1a1aa;
 
   --success: #a8d8b5;
   --success-soft: #17291d;
@@ -166,50 +170,54 @@
   --danger-soft: #351914;
   --info: #a9c4ec;
   --info-soft: #172235;
-  --neutral: #e6dfd3;
-  --neutral-soft: #2f2923;
+  --neutral: #e4e4e7;
+  --neutral-soft: #27272a;
 
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 16px 40px rgb(0 0 0 / 0.5);
   --overlay: rgb(0 0 0 / 0.6);
-  --logo-plate: #f3eee6;
-  --board-logo-plate: #f3eee6;
+  --logo-plate: #f4f4f5;
+  --board-logo-plate: #f4f4f5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --bg: #161310;
-    --surface: #231e1a;
-    --card: #1f1b17;
-    --ink: #f3eee6;
-    --ink-soft: #d3cabe;
-    --muted: #b0a699;
-    --subtle: #8f8579;
-    --placeholder: #8f8579;
-    --line: #2e2924;
-    --line-strong: #3b352e;
-    --input: #776e63;
-    --hover: #29241f;
-    --secondary: #29241f;
+    --bg: #0e0e10;
+    --surface: #18181b;
+    --card: #161618;
+    --ink: #f4f4f5;
+    --ink-soft: #d4d4d8;
+    --muted: #a1a1aa;
+    --subtle: #8b8b93;
+    --placeholder: #8b8b93;
+    --line: #26262a;
+    --line-strong: #333338;
+    --input: #74747c;
+    --hover: #222225;
+    --secondary: #222225;
 
-    --accent: #f3eee6;
-    --accent-hover: #d2cdc6;
+    --accent: #f4f4f5;
+    --accent-hover: #d2d2d3;
     --accent-ink: #000000;
-    --accent-soft: #331b14;
-    --accent-text: #c37d6b;
+    --accent-soft: #2c1714;
+    --accent-text: #c37b69;
     --brand: #a63d23;
-    --brand-text: #c37d6b;
-    --brand-soft: #331b14;
-    --brand-soft-ink: #d7a89c;
-    --ring: #c37d6b;
+    --brand-text: #c37b69;
+    --brand-soft: #2c1714;
+    --brand-soft-ink: #d39e91;
+    --brand-fill: #a63d23;
+    --brand-fill-ink: #ffffff;
+  --brand-fill: #a63d23;
+  --brand-fill-ink: #ffffff;
+    --ring: #c37b69;
 
-    --inverse: #f3eee6;
-    --inverse-ink: #1a1714;
-    --inverse-muted: #4a433c;
-    --inverse-line: #a69c8f;
+    --inverse: #f4f4f5;
+    --inverse-ink: #0e0e10;
+    --inverse-muted: #52525b;
+    --inverse-line: #a1a1aa;
 
     --success: #a8d8b5;
     --success-soft: #17291d;
@@ -222,15 +230,15 @@
     --danger-soft: #351914;
     --info: #a9c4ec;
     --info-soft: #172235;
-    --neutral: #e6dfd3;
-    --neutral-soft: #2f2923;
+    --neutral: #e4e4e7;
+    --neutral-soft: #27272a;
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.3);
     --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 16px 40px rgb(0 0 0 / 0.5);
     --overlay: rgb(0 0 0 / 0.6);
-    --logo-plate: #f3eee6;
-    --board-logo-plate: #f3eee6;
+    --logo-plate: #f4f4f5;
+    --board-logo-plate: #f4f4f5;
   }
 }
 

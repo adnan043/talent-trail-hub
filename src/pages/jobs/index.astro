@@ -1,31 +1,40 @@
 ---
 /**
- * The job board (F2): search and filters as ONE plain GET form, so every result set is a real,
- * shareable URL that a reload restores (`/jobs/?q=design&type=FULL_TIME&workplace=remote`).
- * Rendered from `GET /site-api/jobs` (in-process). Page 1 pins up to 5 featured matches (rotated
- * per UTC hour); filters and fields apply on submit only; "Next page" follows the keyset cursor (`before`). Filtered and `?featured=1`
- * pages are `noindex,follow`; the canonical is always `/jobs/`.
+ * The job board (F2) in the "Vela" design (~/Downloads/Find jobs-html; src/styles/home-vela.css +
+ * src/styles/jobs-vela.css, `skin="vela"` on the layout). Search and filters are ONE plain GET
+ * form, so every result set is a real, shareable URL that a reload restores
+ * (`/jobs/?q=design&type=FULL_TIME&workplace=remote`). Rendered from `GET /site-api/jobs`
+ * (in-process). Page 1 pins up to 5 featured matches (rotated per UTC hour); filters apply on
+ * "Apply filters" (the sort on change); the workplace switch is links; "Next" follows the keyset
+ * cursor (`before`). Filtered and `?featured=1` pages are `noindex,follow`; the canonical is
+ * always `/jobs/`.
  *
- * Layout: search bar, a row of stat tiles, then the filters in a sidebar card beside the results
- * card (md and up); below md the filters open as a side sheet from the "Filters" button.
+ * Layout: hero (search + field chips), then the filters card beside the results card (md and up);
+ * below md the filters open as a side sheet from the "Filters" button.
  */
 import Icon from '../../components/board/Icon.astro';
-import JobList from '../../components/board/JobList.astro';
+import VelaJobRow from '../../components/board/VelaJobRow.astro';
 import Base from '../../layouts/Base.astro';
-import {EMPLOYMENT_TYPES, WORKPLACE_TYPES} from '../../lib/board';
-import {employmentLabel, workplaceLabel} from '../../lib/job-display';
+import {EMPLOYMENT_TYPES, WORKPLACE_LABELS, type WorkplaceType} from '../../lib/board';
+import {employmentLabel, postedAgo, workplaceLabel} from '../../lib/job-display';
 import {activeFilterCount, isFilteredSearch, JOB_SORTS, jobSearchHref, MIN_SALARY_OPTIONS, parseJobSearch, POSTED_WITHIN, toApiQuery} from '../../lib/job-search';
-import type {CategoryCount, JobsPage} from '../../lib/types-public';
+import type {CategoryCount, HomeResponse, JobsPage} from '../../lib/types-public';
 import {backend, read} from '../../server/backend';
 import {boardPage} from '../../server/board/public-page';
 import '../../styles/board-list.css';
+import '../../styles/home-vela.css';
+import '../../styles/jobs-vela.css';
 
 const search = parseJobSearch(Astro.url.searchParams);
 const api = backend(Astro.request);
-const [{site, viewer, board}, result, cats] = await Promise.all([
+// The workplace switch's counts are board-wide (the home API's, cached): shown only while no other
+// filter narrows the list, so they always match what a tab leads to.
+const onlyWorkplace = !search.q && !search.category && !search.types.length && !search.location && !search.minSalary && !search.posted && !search.featured;
+const [{site, viewer, board}, result, cats, home] = await Promise.all([
   boardPage(Astro.request, Astro.response),
   read<JobsPage>(api.jobs.$get({query: toApiQuery(search)})),
   read<{categories: CategoryCount[]}>(api.board.categories.$get()),
+  onlyWorkplace ? read<HomeResponse>(api.board.home.$get({query: {workplace: ''}})) : Promise.resolve(null),
 ]);
 if (!result) Astro.response.status = 503;
 const categories = cats?.categories ?? [];
@@ -34,41 +43,58 @@ const filterCount = activeFilterCount(search);
 const currency = board?.currency ?? 'USD';
 const money = (n: number) => {
   try {
-    return new Intl.NumberFormat('en-US', {style: 'currency', currency, maximumFractionDigits: 0}).format(n);
+    return new Intl.NumberFormat('en-US', {style: 'currency', currency, notation: 'compact', maximumFractionDigits: 0}).format(n);
   } catch {
     return `${currency} ${n}`;
   }
 };
 const categoryName = categories.find(c => c.slug === search.category)?.name ?? search.category;
+// Filters with no control on screen (keyword and place are in the search bar, the rest in the card):
+// removable chips above the list.
 const chips = [
   ...(search.q ? [{label: `“${search.q}”`, href: jobSearchHref(search, {q: '', before: ''})}] : []),
   ...(search.featured ? [{label: 'Featured jobs', href: jobSearchHref(search, {featured: false, before: ''})}] : []),
   ...(search.category ? [{label: categoryName, href: jobSearchHref(search, {category: '', before: ''})}] : []),
   ...search.types.map(t => ({label: employmentLabel(t), href: jobSearchHref(search, {types: search.types.filter(x => x !== t), before: ''})})),
-  ...search.workplaces.map(w => ({label: workplaceLabel(w), href: jobSearchHref(search, {workplaces: search.workplaces.filter(x => x !== w), before: ''})})),
+  ...(search.workplaces.length > 1 ? search.workplaces.map(w => ({label: workplaceLabel(w), href: jobSearchHref(search, {workplaces: search.workplaces.filter(x => x !== w), before: ''})})) : []),
   ...(search.location ? [{label: `In ${search.location}`, href: jobSearchHref(search, {location: '', before: ''})}] : []),
   ...(search.minSalary ? [{label: `${money(search.minSalary)}+ a year`, href: jobSearchHref(search, {minSalary: null, before: ''})}] : []),
   ...(search.posted ? [{label: POSTED_WITHIN.find(p => p.value === search.posted)!.label, href: jobSearchHref(search, {posted: null, before: ''})}] : []),
 ];
 const clearHref = search.sort === 'salary' ? '/jobs/?sort=salary' : '/jobs/';
 const jobs = result?.jobs ?? [];
-// The focused heading says how many (no totals: "20+" when there is a next page).
+const pinned = result?.pinned ?? 0;
 const shown = `${jobs.length}${result?.nextBefore ? '+' : ''}`;
-const noun = (one: string, many: string) => (jobs.length === 1 && !result?.nextBefore ? one : many);
-const headingRest = search.featured
-  ? `featured ${noun('job', 'jobs')}`
-  : search.before
-    ? `more ${noun('job', 'jobs')}`
-    : filtered
-      ? `matching ${noun('job', 'jobs')}`
-      : `latest ${noun('job', 'jobs')}`;
+const roleWord = (n: number) => (n === 1 ? 'role' : 'roles');
+const resultsTitle = search.featured ? 'Featured roles' : search.q ? `Jobs matching “${search.q}”` : filtered ? 'Matching roles' : 'Open roles';
 const pageTitle = search.q ? `“${search.q}” jobs` : search.featured ? 'Featured jobs' : 'Jobs';
-const h1 = search.q ? `Jobs matching “${search.q}”` : search.featured ? 'Featured jobs' : 'Find jobs';
 const name = board?.name ?? site?.name ?? 'our board';
-// Stat tiles: numbers already on hand (no extra count per request).
-const hiringCategories = categories.filter(c => c.jobCount > 0).length;
-const featuredNow = !result || search.before ? '—' : result.featuredCount >= 100 ? '100+' : String(result.featuredCount);
-const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
+const showLabel = `Show ${shown} ${jobs.length === 1 && !result?.nextBefore ? 'job' : 'jobs'}`;
+
+// "Fields": the biggest categories hiring now.
+const fields = categories
+  .filter(c => c.jobCount > 0)
+  .sort((a, b) => b.jobCount - a.jobCount)
+  .slice(0, 6);
+// The hero pill: when the newest job on this page went up (ISO strings sort chronologically).
+const newest = jobs
+  .map(j => j.publishedAt)
+  .filter((d): d is string => Boolean(d))
+  .sort()
+  .at(-1);
+
+// The workplace switch: '' = all (one workplace at most; several from an old URL press none).
+const SWITCH_ORDER: WorkplaceType[] = ['remote', 'hybrid', 'onsite'];
+const counts = home?.workplaceCounts;
+const tabs = [{value: '' as const, label: 'All'}, ...SWITCH_ORDER.map(w => ({value: w, label: WORKPLACE_LABELS[w]}))].map(t => ({
+  ...t,
+  href: jobSearchHref(search, {workplaces: t.value ? [t.value] : [], before: ''}),
+  current: t.value ? search.workplaces.length === 1 && search.workplaces[0] === t.value : search.workplaces.length === 0,
+  count: !counts ? null : t.value ? (counts[t.value] ?? 0) : SWITCH_ORDER.reduce((sum, w) => sum + (counts[w] ?? 0), 0),
+}));
+// The footer's "Showing 1–20 of 47": the total is known on page 1 of an unfiltered list (the tab's count).
+const total = search.before ? null : (tabs.find(t => t.current)?.count ?? null);
+const showing = total != null && jobs.length <= total ? `Showing 1–${jobs.length} of ${total.toLocaleString('en-US')}` : `Showing ${shown} ${roleWord(jobs.length)}`;
 ---
 
 <Base
@@ -77,115 +103,123 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
   board={board}
   title={pageTitle}
   description={`Search open jobs at ${name}: filter by category, job type, remote or on-site, location, salary and date posted.`}
-  noindexFollow={filtered}>
-  <main id="main" tabindex="-1" class="wrap jobs-page">
-    <h1 class="title">{h1}</h1>
-
+  noindexFollow={filtered}
+  skin="vela">
+  <main id="main" tabindex="-1" class="v-home v-jobs">
     <form id="jobs-form" action="/jobs/" method="get" role="search" aria-label="Search jobs" novalidate data-jobs-form>
-      <div class="searchbar searchbar-md">
-        <div class="searchbar-field searchbar-what">
-          <Icon name="search" class="searchbar-icon" />
-          <span class="searchbar-control">
-            <label for="jobs-q">Keyword</label>
-            <input id="jobs-q" type="search" name="q" value={search.q} maxlength="100" enterkeyhint="search" autocomplete="off" placeholder="Job title, skill or company" />
-          </span>
-        </div>
-        <span class="searchbar-divider" aria-hidden="true"></span>
-        <div class="searchbar-field searchbar-where">
-          <Icon name="map-pin" class="searchbar-icon" />
-          <span class="searchbar-control">
-            <label for="jobs-location">Location</label>
-            <input id="jobs-location" type="search" name="location" value={search.location} maxlength="80" autocomplete="address-level2" placeholder="City, country or “Remote”" />
-          </span>
-        </div>
-        {search.featured && <input type="hidden" name="featured" value="1" />}
-        <button class="button searchbar-submit" type="submit">
-          Search jobs
-          <Icon name="arrow-right" class="button-icon" />
-        </button>
-      </div>
+      <section class="vj-hero" aria-labelledby="jobs-title">
+        <div class="vj-hero-inner">
+          <div class="vj-hero-text">
+            <span class="vj-pill">
+              <span class="vj-pill-dot" aria-hidden="true"></span>Hand-picked roles{newest && <> · updated {postedAgo(newest).toLowerCase()}</>}
+            </span>
+            <h1 id="jobs-title" class="vj-title">
+              Every open <span class="vj-role">role<svg viewBox="0 0 220 24" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                  <path d="M4 12 C 50 4, 120 2, 216 9" fill="none" stroke="#4f46e5" stroke-width="5" stroke-linecap="round"></path>
+                  <path d="M40 20 C 90 14, 140 14, 178 17" fill="none" stroke="#a3acfc" stroke-width="3.5" stroke-linecap="round"></path>
+                </svg></span> in one place
+            </h1>
+            <p class="vj-lead">Filter by type, workplace and pay.<br />Save the ones you like and apply in minutes.</p>
+          </div>
 
-      <div class="stat-row">
-        <div class="stat-tile">
-          <dl>
-            <dt>{noun('Job found', 'Jobs found')}</dt>
-            <dd>{result ? shown : '—'}</dd>
-          </dl>
-          <span class="stat-icon tone-info" aria-hidden="true"><Icon name="briefcase" /></span>
+          <div class="vj-search-wrap">
+            <div class="v-search vj-search">
+              <div class="v-field v-field-what">
+                <svg class="v-field-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="7"></circle>
+                  <path d="m20 20-3.5-3.5"></path>
+                </svg>
+                <span class="v-field-control">
+                  <label for="jobs-q">What</label>
+                  <input id="jobs-q" type="search" name="q" value={search.q} maxlength="100" enterkeyhint="search" autocomplete="off" placeholder="Job title, skill or company" />
+                </span>
+              </div>
+              <span class="v-search-divider" aria-hidden="true"></span>
+              <div class="v-field v-field-where">
+                <svg class="v-field-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"></path>
+                  <circle cx="12" cy="9.5" r="2.5"></circle>
+                </svg>
+                <span class="v-field-control">
+                  <label for="jobs-location">Where</label>
+                  <input id="jobs-location" type="search" name="location" value={search.location} maxlength="80" autocomplete="address-level2" placeholder="City, country or “Remote”" />
+                </span>
+              </div>
+              {search.featured && <input type="hidden" name="featured" value="1" />}
+              {search.workplaces.map(w => <input type="hidden" name="workplace" value={w} />)}
+              <button class="v-btn v-btn-primary v-btn-lg v-search-submit" type="submit">
+                Search jobs
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M5 12h14M13 6l6 6-6 6"></path>
+                </svg>
+              </button>
+            </div>
+            {
+              fields.length > 0 && (
+                <nav class="v-chips" aria-label="Fields">
+                  <span class="v-chips-label">Fields:</span>
+                  {fields.map(c => (
+                    <a class="v-chip vj-chip" href={`/jobs/?category=${encodeURIComponent(c.slug)}`} aria-current={c.slug === search.category ? 'true' : undefined}>
+                      {c.name} <span class="vj-chip-count">{c.jobCount.toLocaleString('en-US')}</span>
+                    </a>
+                  ))}
+                </nav>
+              )
+            }
+          </div>
         </div>
-        <div class="stat-tile">
-          <dl>
-            <dt>Featured now</dt>
-            <dd>{featuredNow}</dd>
-          </dl>
-          <span class="stat-icon tone-warning" aria-hidden="true"><Icon name="star" /></span>
-        </div>
-        <div class="stat-tile">
-          <dl>
-            <dt>Categories hiring</dt>
-            <dd>{cats ? hiringCategories : '—'}</dd>
-          </dl>
-          <span class="stat-icon tone-success" aria-hidden="true"><Icon name="layout-grid" /></span>
-        </div>
-      </div>
+      </section>
 
-      <div class="jobs-grid">
-        <details class="fpanel" data-filter-sheet>
+      <div class="vj-body">
+        <details class="fpanel vj-filters" data-filter-sheet>
           <summary class="fpanel-toggle">
             <Icon name="sliders" class="button-icon" />
             Filters
-            {filterCount > 0 && (
-              <span class="fpanel-count">
-                {filterCount}
-                <span class="visually-hidden"> active</span>
-              </span>
-            )}
+            {
+              filterCount > 0 && (
+                <span class="fpanel-count">
+                  {filterCount}
+                  <span class="visually-hidden"> active</span>
+                </span>
+              )
+            }
           </summary>
           <div class="fpanel-sheet" role="group" aria-labelledby="filters-title">
             <div class="fpanel-head">
               <h2 id="filters-title" tabindex="-1">Filters</h2>
-              {filtered && <a class="fpanel-clear" href={clearHref}>Clear filters</a>}
+              <a class="fpanel-clear" href={clearHref}>Clear all</a>
               <button class="fpanel-close" type="button" aria-label="Close filters" data-filter-close>
                 <Icon name="x" />
               </button>
             </div>
             <div class="fpanel-body">
-              <div class="fgroup">
-                <label class="fgroup-title" for="jobs-category">Category</label>
-                <select id="jobs-category" name="category">
-                  <option value="">All categories</option>
-                  {categories.map(c => <option value={c.slug} selected={c.slug === search.category}>{c.name} ({c.jobCount})</option>)}
-                </select>
-              </div>
               <fieldset class="fgroup">
                 <legend class="fgroup-title">Job type</legend>
                 <ul class="fchecks">
-                  {EMPLOYMENT_TYPES.map(t => (
-                    <li>
-                      <label class="fcheck">
-                        <input type="checkbox" name="type" value={t} checked={search.types.includes(t)} /> {employmentLabel(t)}
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </fieldset>
-              <fieldset class="fgroup">
-                <legend class="fgroup-title">Workplace</legend>
-                <ul class="fchecks">
-                  {WORKPLACE_TYPES.map(w => (
-                    <li>
-                      <label class="fcheck">
-                        <input type="checkbox" name="workplace" value={w} checked={search.workplaces.includes(w)} /> {workplaceLabel(w)}
-                      </label>
-                    </li>
-                  ))}
+                  {
+                    EMPLOYMENT_TYPES.map(t => (
+                      <li>
+                        <label class="fcheck">
+                          <input type="checkbox" name="type" value={t} checked={search.types.includes(t)} />
+                          {employmentLabel(t)}
+                        </label>
+                      </li>
+                    ))
+                  }
                 </ul>
               </fieldset>
               <div class="fgroup">
-                <label class="fgroup-title" for="jobs-salary">Minimum salary</label>
+                <label class="fgroup-title" for="jobs-category">Field</label>
+                <select id="jobs-category" name="category">
+                  <option value="">All fields</option>
+                  {categories.map(c => <option value={c.slug} selected={c.slug === search.category}>{c.name}</option>)}
+                </select>
+              </div>
+              <div class="fgroup">
+                <label class="fgroup-title" for="jobs-salary">Minimum pay</label>
                 <select id="jobs-salary" name="minSalary">
-                  <option value="">Any salary</option>
-                  {MIN_SALARY_OPTIONS.map(n => <option value={String(n)} selected={search.minSalary === n}>{money(n)}+ per year</option>)}
+                  <option value="">Any</option>
+                  {MIN_SALARY_OPTIONS.map(n => <option value={String(n)} selected={search.minSalary === n}>{money(n)}+</option>)}
                 </select>
               </div>
               <fieldset class="fgroup">
@@ -193,27 +227,25 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
                 <ul class="fchecks">
                   <li>
                     <label class="fcheck">
-                      <input type="radio" name="posted" value="" checked={!search.posted} /> Any time
+                      <input type="radio" name="posted" value="" checked={!search.posted} />
+                      Any time
                     </label>
                   </li>
-                  {POSTED_WITHIN.map(p => (
-                    <li>
-                      <label class="fcheck">
-                        <input type="radio" name="posted" value={p.value} checked={search.posted === p.value} /> {p.label}
-                      </label>
-                    </li>
-                  ))}
+                  {
+                    POSTED_WITHIN.map(p => (
+                      <li>
+                        <label class="fcheck">
+                          <input type="radio" name="posted" value={p.value} checked={search.posted === p.value} />
+                          {p.label}
+                        </label>
+                      </li>
+                    ))
+                  }
                 </ul>
               </fieldset>
-              <div class="fgroup">
-                <label class="fgroup-title" for="jobs-sort">Sort by</label>
-                <select id="jobs-sort" name="sort">
-                  {JOB_SORTS.map(s => <option value={s.value} selected={search.sort === s.value}>{s.label}</option>)}
-                </select>
-              </div>
             </div>
             <div class="fpanel-foot">
-              <button class="button fpanel-apply" type="submit">
+              <button class="v-btn v-btn-primary v-btn-full fpanel-apply" type="submit">
                 <span class="fpanel-apply-wide">Apply filters</span>
                 <span class="fpanel-apply-narrow">{showLabel}</span>
               </button>
@@ -221,73 +253,132 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
           </div>
         </details>
 
-        <section class="results-card" aria-labelledby="results-title">
-          <div class="results-top">
-            <h2 id="results-title" class="results-count" tabindex="-1">
-              {result ? (
-                <>
-                  <strong>{shown}</strong> {headingRest}
-                </>
-              ) : (
-                'Jobs'
-              )}
-            </h2>
-            {chips.length > 0 && (
-              <div class="applied">
-                <ul class="applied-list" aria-label="Active filters">
-                  {chips.map(chip => (
-                    <li>
-                      <a class="pill pill-active" href={chip.href} aria-label={`Remove filter: ${chip.label}`}>
-                        {chip.label}
-                        <Icon name="x" class="pill-x" />
+        <section class="vj-results" aria-labelledby="results-title">
+          <div class="v-panel vj-panel">
+            <div class="v-panel-head vj-panel-head">
+              <div class="v-panel-title">
+                <h2 id="results-title" tabindex="-1">{resultsTitle}</h2>
+                {result && <span class="vj-count">{jobs.length} {roleWord(jobs.length)} on this page</span>}
+              </div>
+              <div class="vj-tools">
+                <nav class="v-tabs" aria-label="Filter by workplace">
+                  {
+                    tabs.map(t => (
+                      <a class="v-tab" href={t.href} aria-current={t.current ? 'true' : undefined}>
+                        {t.label}
+                        {t.count != null && <span class="v-tab-count">{t.count.toLocaleString('en-US')}</span>}
                       </a>
-                    </li>
+                    ))
+                  }
+                </nav>
+                <label for="jobs-sort" class="visually-hidden">Sort</label>
+                <select id="jobs-sort" name="sort" class="vj-sort" data-auto-submit>
+                  {JOB_SORTS.map(s => <option value={s.value} selected={search.sort === s.value}>{s.value === 'salary' ? 'Highest pay' : s.label}</option>)}
+                </select>
+              </div>
+            </div>
+            {
+              chips.length > 0 && (
+                <div class="vj-applied">
+                  <ul class="vj-applied-list" aria-label="Active filters">
+                    {chips.map(chip => (
+                      <li>
+                        <a class="vj-applied-chip" href={chip.href} aria-label={`Remove filter: ${chip.label}`}>
+                          {chip.label}
+                          <Icon name="x" />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                  <a class="vj-applied-clear" href={clearHref}>
+                    Clear all
+                  </a>
+                </div>
+              )
+            }
+            {
+              result?.featuredMore && !search.featured && jobs.length > 0 && (
+                <p class="v-panel-note">
+                  <a href="/jobs/?featured=1">
+                    See all {result.featuredCount >= 100 ? '100+' : result.featuredCount} featured jobs
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                      <path d="M5 12h14M13 6l6 6-6 6"></path>
+                    </svg>
+                  </a>
+                </p>
+              )
+            }
+            {
+              !result ? (
+                <p class="v-panel-empty">The job board is not available right now. Try again in a minute.</p>
+              ) : jobs.length === 0 ? (
+                <div class="v-empty vj-empty">
+                  <span class="v-empty-icon" aria-hidden="true">
+                    <Icon name="search-x" />
+                  </span>
+                  <h3>{filtered ? 'No jobs match your search' : 'No open jobs right now'}</h3>
+                  <p>{filtered ? 'Try fewer filters or a different keyword.' : 'New jobs are posted regularly. Check back soon.'}</p>
+                  {filtered && (
+                    <a class="v-btn v-btn-primary" href={clearHref}>
+                      Clear all filters
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <ul class="v-rows">
+                  {jobs.map((job, i) => (
+                    <VelaJobRow job={job} pinned={i < pinned} />
                   ))}
                 </ul>
-                <a class="applied-clear" href={clearHref}>Clear all</a>
-              </div>
-            )}
-          </div>
-          {result?.featuredMore && !search.featured && jobs.length > 0 && (
-            <p class="featured-link results-featured">
-              <a href="/jobs/?featured=1">
-                See all {result.featuredCount >= 100 ? '100+' : result.featuredCount} featured jobs
-                <Icon name="arrow-right" class="inline-icon" />
-              </a>
-            </p>
-          )}
-          {!result ? (
-            <p class="notice results-notice">The job board is not available right now. Try again in a minute.</p>
-          ) : jobs.length === 0 ? (
-            <div class="empty-box results-empty">
-              <span class="empty-box-icon" aria-hidden="true"><Icon name="search-x" /></span>
-              <h3>{filtered ? 'No jobs match your search' : 'No open jobs right now'}</h3>
-              <p>{filtered ? 'Try fewer filters or a different keyword.' : 'New jobs are posted regularly. Check back soon.'}</p>
-              {filtered && (
-                <div class="empty-box-actions">
-                  <a class="button" href={clearHref}>Clear all filters</a>
+              )
+            }
+            {
+              jobs.length > 0 && (
+                <div class="v-panel-foot vj-foot">
+                  <span>
+                    {showing}
+                    {pinned > 0 ? ', featured first' : ''}
+                  </span>
+                  {(search.before || result?.nextBefore) && (
+                    <nav class="vj-pager" aria-label="Pages">
+                      {search.before ? (
+                        <a class="vj-page" href={jobSearchHref(search, {before: ''})}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M19 12H5M11 18l-6-6 6-6"></path>
+                          </svg>
+                          First page
+                        </a>
+                      ) : (
+                        <span class="vj-page-off" aria-disabled="true">
+                          Previous
+                        </span>
+                      )}
+                      {result?.nextBefore ? (
+                        <a class="vj-page" href={jobSearchHref(search, {before: result.nextBefore})}>
+                          Next
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M5 12h14M13 6l6 6-6 6"></path>
+                          </svg>
+                        </a>
+                      ) : (
+                        <span class="vj-page-off" aria-disabled="true">
+                          Next
+                        </span>
+                      )}
+                    </nav>
+                  )}
                 </div>
-              )}
-            </div>
-          ) : (
-            <JobList jobs={jobs} pinned={result.pinned} />
-          )}
-          {(result?.nextBefore || search.before) && (
-            <nav class="pager" aria-label="Pages">
-              {search.before && (
-                <a class="pager-link" href={jobSearchHref(search, {before: ''})}>
-                  <Icon name="arrow-left" class="button-icon" />
-                  First page
-                </a>
-              )}
-              {result?.nextBefore && (
-                <a class="pager-link pager-next" href={jobSearchHref(search, {before: result.nextBefore})}>
-                  Next page
-                  <Icon name="arrow-right" class="button-icon" />
-                </a>
-              )}
-            </nav>
-          )}
+              )
+            }
+          </div>
+          <p class="v-safety">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3z"></path>
+            </svg>
+            <span>
+              <strong>Stay safe.</strong> Never pay to apply for a job or share bank details during an application.
+            </span>
+          </p>
         </section>
       </div>
     </form>
@@ -295,7 +386,7 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
 </Base>
 
 <script>
-  // Filters wait for "Apply filters", the keyword and the location for Search or Enter (no submit
+  // Filters wait for "Apply filters" (the sort applies on change), the keyword and the location for Search or Enter (no submit
   // while typing: the swap would move focus to the results and drop keystrokes). After a submit,
   // the results heading takes focus.
   const FOCUS_KEY = 'board:focus-results';
@@ -415,6 +506,8 @@ const showLabel = `Show ${shown} ${noun('job', 'jobs')}`;
         if (value === '' || (key === 'sort' && value === 'newest')) event.formData.delete(key);
       }
     });
+    // The sort (beside the results) applies at once, like the workplace switch.
+    form.querySelector<HTMLSelectElement>('select[data-auto-submit]')?.addEventListener('change', () => form.requestSubmit());
     // Below md the filters are a side sheet (a <details>): the × button and Escape close it, focus
     // moves into it on open and back to the "Filters" button on close.
     const sheet = form.querySelector<HTMLDetailsElement>('details[data-filter-sheet]');

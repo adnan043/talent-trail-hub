@@ -20,6 +20,8 @@
  */
 import '../styles/global.css';
 import '../styles/board.css';
+// The header and footer, the same on every page (the Vela design, as on /jobs/).
+import '../styles/site-chrome.css';
 
 import {ClientRouter} from 'astro:transitions';
 
@@ -36,6 +38,8 @@ import {BRAND_CSS_HREF} from '../lib/brand-style';
 import {brandCss} from '../server/board/brand';
 // The one font file every page needs first (latin, upright): the same hashed URL the stylesheet uses.
 import fontLatin from '@fontsource-variable/plus-jakarta-sans/files/plus-jakarta-sans-latin-wght-normal.woff2?url';
+// Geist, latin, upright: the header/footer's font on every page (and the vela skin's).
+import geistLatin from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 
 interface Props {
   site: Site | null;
@@ -79,6 +83,11 @@ interface Props {
   board?: PublicBoard | null;
   /** `noindex,follow` (filtered job searches): out of search, links still followed. */
   noindexFollow?: boolean;
+  /**
+   * `vela`: the Vela page design (src/styles/home-vela.css, imported by the page): `body.vela`.
+   * The header and footer look the same on every page either way (src/styles/site-chrome.css).
+   */
+  skin?: 'vela';
 }
 
 const {
@@ -99,18 +108,24 @@ const {
   jsonLd,
   board = null,
   noindexFollow = false,
+  skin,
 } = Astro.props;
 const single = board?.singleCompany ?? false;
 // The board's brand, inline when this page has the settings (src/lib/brand-style.ts): the same CSS as
 // `/site-api/board/brand.css` (no sidebar on the website), its hash in this page's CSP.
 const brandStyle = board
-  ? brandCss({primaryColor: board.primaryColor, fontPreset: board.fontPreset, sidebarBg: null, sidebarText: null}, board.singleCompany)
+  ? brandCss({primaryColor: board.primaryColor, fontPreset: board.fontPreset, sidebarBg: null, sidebarText: null}, board.singleCompany, {
+      // The vela skin (home page) keeps the design's own colours: no brand colour there.
+      colours: skin !== 'vela',
+    })
   : null;
 // SYNCHRONOUS on purpose: the response headers (the CSP) leave at this component's first `await`,
 // so a hash added after one never reaches the policy and the browser blocks the style.
 if (brandStyle) Astro.csp?.insertStyleHash(`sha256-${createHash('sha256').update(brandStyle).digest('base64')}`);
 // Another font preset (serif, mono) never uses the web font: nothing to preload.
 const preloadFont = !board || board.fontPreset === 'inter';
+// The vela skin brings its own font (Geist) unless the board picked another preset.
+const bodyClass = ['vchrome', {'vchrome-font': preloadFont, vela: skin === 'vela', 'vela-font': skin === 'vela' && preloadFont}];
 const name = site?.name ?? 'My site';
 const fullTitle = title ? `${title} · ${name}` : name;
 const description = pageDescription ?? withName(SITE.description, name);
@@ -167,12 +182,13 @@ const structured = indexable
     <meta name="twitter:description" content={description} />
     {socialImage && <meta name="twitter:image" content={socialImage} />}
     <meta name="color-scheme" content="light" />
-    {preloadFont && <link rel="preload" href={fontLatin} as="font" type="font/woff2" crossorigin="anonymous" />}
+    {preloadFont && !skin && <link rel="preload" href={fontLatin} as="font" type="font/woff2" crossorigin="anonymous" />}
+    {preloadFont && <link rel="preload" href={geistLatin} as="font" type="font/woff2" crossorigin="anonymous" />}
     {/* The board's brand (F30): colours, font, single-company mode. Inline on rendered board pages (its
         hash is in the CSP: no style ATTRIBUTES anywhere); a stylesheet on prerendered pages. */}
     {
       brandStyle ? (
-        <style is:inline data-brand-style set:html={brandStyle} />
+        <style is:inline data-brand-style data-brand-plain={skin === 'vela' ? '' : undefined} set:html={brandStyle} />
       ) : (
         <link rel="stylesheet" href={BRAND_CSS_HREF} data-brand-style />
       )
@@ -184,7 +200,7 @@ const structured = indexable
         portal has no router, so a link to it is a normal page load. Page scripts run on `astro:page-load`. */}
     <ClientRouter />
   </head>
-  <body data-viewer={viewer.state} data-static={hydrate ? '1' : undefined}>
+  <body class:list={bodyClass} data-viewer={viewer.state} data-static={hydrate ? '1' : undefined}>
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap site-header-inner">

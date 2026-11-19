@@ -98,6 +98,19 @@ export interface PublicCompanySummary extends PublicCompanyRef {
 export interface CompaniesPage {
   companies: PublicCompanySummary[];
   nextAfter: string | null;
+  /** The directory's header (every page): board-wide totals and the companies with the most open jobs. */
+  overview?: CompaniesOverview;
+}
+
+export interface CompaniesOverview {
+  /** Companies with at least one open job. */
+  companyCount: number;
+  /** Their open jobs. */
+  roleCount: number;
+  /** Up to 24 companies, most open jobs first (the page's moving strip; the first 3 are "Hiring the most"). */
+  top: PublicCompanySummary[];
+  /** The first 3 companies' open job titles (up to 3 each, distinct), by company slug. */
+  topRoles: Record<string, string[]>;
 }
 
 export interface CompanyProfileResponse {
@@ -112,6 +125,8 @@ export interface HomeResponse {
   featuredCount: number;
   /** The latest list's workplace switch (`?workplace=`), '' for any. */
   workplace: string;
+  /** Open jobs per workplace type on the whole board (the switch's counts). Absent in an older cached copy. */
+  workplaceCounts?: Partial<Record<WorkplaceType, number>>;
   latest: PublicJobSummary[];
   categories: CategoryCount[];
   /** Marketplace: companies hiring now (≤ 6). */

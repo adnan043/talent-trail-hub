@@ -582,6 +582,142 @@ JOIN "jobs" j ON j."slug"=v.job
 JOIN "users" u ON u."email"='applicant@gmail.com'
 WHERE NOT EXISTS (SELECT 1 FROM "applications" a WHERE a."job_id"=j."id" AND a."email"='applicant@gmail.com');
 
+-- Sales and Customer Support (the more_categories migration): two demo jobs each.
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Account Executive','account-executive-meridian-bank','<p>We are looking for a Account Executive to join Meridian Bank and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Account Executive to join Meridian Bank and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','hybrid','Dublin',NULL,'IE',NULL::jsonb,6000000,8000000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '3 days',now() + interval '27 days',30,false,88,14,false,true,now(),now() - interval '4 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='meridian-bank' AND ca."slug"='sales'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='account-executive-meridian-bank');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Sales Development Representative','sales-development-representative-kestrel','<p>We are looking for a Sales Development Representative to join Kestrel Logistics and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Sales Development Representative to join Kestrel Logistics and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','remote',NULL,NULL,NULL,'["NL","DE","BE"]'::jsonb,4200000,5200000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '6 days',now() + interval '24 days',30,false,61,9,false,true,now(),now() - interval '7 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='kestrel-logistics' AND ca."slug"='sales'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='sales-development-representative-kestrel');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Customer Success Specialist','customer-success-specialist-orbit-health','<p>We are looking for a Customer Success Specialist to join Orbit Health and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Customer Success Specialist to join Orbit Health and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','remote',NULL,NULL,NULL,'["US"]'::jsonb,5000000,6000000,'USD','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '2 days',now() + interval '28 days',30,false,74,12,false,true,now(),now() - interval '3 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='orbit-health' AND ca."slug"='customer-support'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='customer-success-specialist-orbit-health');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Support Team Lead','support-team-lead-quillstack','<p>We are looking for a Support Team Lead to join Quillstack and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Support Team Lead to join Quillstack and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','remote',NULL,NULL,NULL,NULL::jsonb,7000000,8500000,'USD','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '8 days',now() + interval '22 days',30,false,53,7,false,true,now(),now() - interval '9 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='quillstack' AND ca."slug"='customer-support'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='support-team-lead-quillstack');
+
+-- Two more demo companies (fills the companies directory's grid).
+INSERT INTO "companies" ("name","slug","website","location","about_html","source","owner_user_id","is_trusted","is_seed","updated_at")
+SELECT 'Saltmarsh Studio','saltmarsh-studio','https://saltmarsh.example','Lisbon, Portugal','<p>Saltmarsh is a small brand and product design studio working with climate and food startups.</p>','admin',NULL,true,true,now()
+WHERE NOT EXISTS (SELECT 1 FROM "companies" c WHERE c."slug"='saltmarsh-studio');
+INSERT INTO "companies" ("name","slug","website","location","about_html","source","owner_user_id","is_trusted","is_seed","updated_at")
+SELECT 'Tidewater Energy','tidewater-energy','https://tidewater.example','Oslo, Norway','<p>Tidewater builds monitoring software for offshore wind farms across the North Sea.</p>','admin',NULL,true,true,now()
+WHERE NOT EXISTS (SELECT 1 FROM "companies" c WHERE c."slug"='tidewater-energy');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Brand Designer','brand-designer-saltmarsh','<p>We are looking for a Brand Designer to join Saltmarsh Studio and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Brand Designer to join Saltmarsh Studio and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','hybrid','Lisbon',NULL,'PT',NULL::jsonb,4000000,5200000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '4 days',now() + interval '26 days',30,false,57,8,false,true,now(),now() - interval '5 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='saltmarsh-studio' AND ca."slug"='design'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='brand-designer-saltmarsh');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Content Strategist','content-strategist-saltmarsh','<p>We are looking for a Content Strategist to join Saltmarsh Studio and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Content Strategist to join Saltmarsh Studio and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','PART_TIME','remote',NULL,NULL,NULL,NULL::jsonb,2800000,3600000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '9 days',now() + interval '21 days',30,false,33,4,false,true,now(),now() - interval '10 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='saltmarsh-studio' AND ca."slug"='content'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='content-strategist-saltmarsh');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Backend Engineer','backend-engineer-tidewater','<p>We are looking for a Backend Engineer to join Tidewater Energy and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Backend Engineer to join Tidewater Energy and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','hybrid','Oslo',NULL,'NO',NULL::jsonb,7500000,9000000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '2 days',now() + interval '28 days',30,false,92,15,false,true,now(),now() - interval '3 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='tidewater-energy' AND ca."slug"='engineering'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='backend-engineer-tidewater');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Field Operations Coordinator','field-operations-coordinator-tidewater','<p>We are looking for a Field Operations Coordinator to join Tidewater Energy and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Field Operations Coordinator to join Tidewater Energy and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','onsite','Bergen',NULL,'NO',NULL::jsonb,5200000,6200000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '5 days',now() + interval '25 days',30,false,41,6,false,true,now(),now() - interval '6 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='tidewater-energy' AND ca."slug"='operations'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='field-operations-coordinator-tidewater');
+INSERT INTO "jobs" ("company_id","category_id","title","slug","description_html","description_md","employment_type","workplace_type","location_city","location_region","location_country","applicant_countries","salary_min_cents","salary_max_cents","salary_currency","salary_period","apply_method","status","rejection_reason","source","is_featured","featured_until","published_at","expires_at","duration_days","listing_featured","view_count","apply_click_count","needs_review","is_seed","updated_at","created_at")
+SELECT co."id",ca."id",'Data Engineer','data-engineer-tidewater','<p>We are looking for a Data Engineer to join Tidewater Energy and help our customers get more from what we make.</p><h3>What you will do</h3><ul><li>Own your area end to end</li><li>Share what you learn in short written updates</li><li>Work with people across the team and with customers</li></ul><h3>About you</h3><p>You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.</p>','We are looking for a Data Engineer to join Tidewater Energy and help our customers get more from what we make.
+
+### What you will do
+
+- Own your area end to end
+- Share what you learn in short written updates
+- Work with people across the team and with customers
+
+### About you
+
+You will work closely with a small, friendly team that values clear writing, steady pace and honest feedback.','FULL_TIME','remote',NULL,NULL,NULL,NULL::jsonb,7000000,8500000,'EUR','YEAR','onsite','published',NULL,'paid',false,NULL,now() - interval '11 days',now() + interval '19 days',30,false,66,9,false,true,now(),now() - interval '12 days'
+FROM "companies" co, "categories" ca WHERE co."slug"='tidewater-energy' AND ca."slug"='engineering'
+AND NOT EXISTS (SELECT 1 FROM "jobs" j WHERE j."slug"='data-engineer-tidewater');
+
 UPDATE "jobs" j SET "application_count" = (SELECT count(*)::int FROM "applications" a WHERE a."job_id" = j."id") WHERE j."is_seed";
 UPDATE "companies" c SET "active_job_count" = (SELECT count(*)::int FROM "jobs" j WHERE j."company_id"=c."id" AND j."status"='published' AND j."expires_at" > now()) WHERE c."is_seed";
 COMMIT;
