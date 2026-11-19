@@ -13,7 +13,7 @@ import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
 import {HOME_PREFIX, SITEMAP_KEY} from '../board/public-cache';
 import {cursorHour, cursorWhere, encodeCursor, featuredCount, featuredPinsAndCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
-import {jobDetailSelect, jobState, jobSummarySelect, toJobDetail, toJobSummary} from '../board/public-shapes';
+import {jobDetailSelect, jobState, jobSummarySelect, reviveSummary, toJobDetail, toJobSummary} from '../board/public-shapes';
 import {isSingleCompany} from '../board/settings';
 
 /**
@@ -114,6 +114,10 @@ export const jobRoutes = new Hono()
             orderBy,
             take: LIMITS.pageSize + LIMITS.featuredPinCap + 1,
             select: listSelect,
+            // A keyword (trigram on long text) matches far more rows than the planner expects, so a
+            // joined read built every match's company and tags before the sort cut the page (2x the
+            // time at 5k jobs, growing with the board): read the page first, then its relations.
+            ...(search.q ? {relationLoadStrategy: 'query' as const} : {}),
           }),
         ]);
         const shown = firstPage ? pinned : [];
@@ -254,14 +258,6 @@ async function loadJobPage(db: PrismaClient, settings: Parameters<typeof publicJ
   return {row, similar, more};
 }
 
-/** Cached values are JSON: the dates come back as ISO strings. */
-const toDate = (value: Date | string | null): Date | null => (value === null ? null : new Date(value));
-const reviveSummary = <T extends SummaryRow>(r: T): T => ({
-  ...r,
-  featuredUntil: toDate(r.featuredUntil),
-  publishedAt: toDate(r.publishedAt),
-  expiresAt: toDate(r.expiresAt),
-});
 function reviveJobPage(page: JobPageRows): JobPageRows {
   const row = reviveSummary(page.row);
   return {

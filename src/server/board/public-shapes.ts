@@ -63,6 +63,15 @@ export const jobDetailSelect = {
 } satisfies Prisma.JobSelect;
 
 type SummaryRow = Prisma.JobGetPayload<{select: typeof jobSummarySelect}>;
+
+/** A summary row read back from the Site Cache (JSON): its dates come back as ISO strings. */
+const toDate = (value: Date | string | null): Date | null => (value === null ? null : new Date(value));
+export const reviveSummary = <T extends SummaryRow>(r: T): T => ({
+  ...r,
+  featuredUntil: toDate(r.featuredUntil),
+  publishedAt: toDate(r.publishedAt),
+  expiresAt: toDate(r.expiresAt),
+});
 type DetailRow = Prisma.JobGetPayload<{select: typeof jobDetailSelect}>;
 type CompanyRow = Prisma.CompanyGetPayload<{select: typeof companySelect}>;
 
