@@ -21,7 +21,8 @@ const params = Astro.url.searchParams;
 const sort = params.get('sort') === 'az' ? 'az' : '';
 const rawAfter = params.get('after') ?? '';
 const after = (sort === 'az' ? /^\d{1,10}$/ : /^\d{1,6}\.\d{1,10}$/).test(rawAfter) ? rawAfter : '';
-const q = (params.get('q') ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+// Control characters (a NUL, which the API refuses) become spaces, as on /jobs/.
+const q = (params.get('q') ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 const [{site, viewer, board}, answer] = await Promise.all([
   boardPage(Astro.request, Astro.response),
   backend(Astro.request)

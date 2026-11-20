@@ -38,8 +38,9 @@ export interface JobSearch {
 
 const MAX_TEXT = 100;
 
+// Control characters (a NUL, which the database refuses) become spaces: `/jobs/?q=%00` is a plain search.
 const text = (value: unknown, max = MAX_TEXT): string =>
-  typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
+  typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, max) : '';
 
 function list<V extends string>(value: unknown, allowed: readonly V[]): V[] {
   const raw = Array.isArray(value) ? value.join(',') : typeof value === 'string' ? value : '';
