@@ -63,7 +63,7 @@ export function AdminDashboard() {
               items={RANGES.map(item => ({label: item.label, checked: item.value === range, onSelect: () => setRange(item.value)}))}
             />
             {can?.manageJobs && (
-              <Link className={buttonClass()} to="/manage/jobs/new">
+              <Link className={buttonClass()} to="/manage/admin-jobs/post">
                 <Icon name="plus" size={16} />
                 Post an admin job
               </Link>
@@ -94,7 +94,20 @@ export function AdminDashboard() {
           }
         />
         <Stat label="Active jobs" icon="briefcase" value={bounded(o?.activeJobs)} to="/manage/jobs" hint={a ? <><b>{n(sum(r => r.jobsPublished))}</b> published {RANGE_WORDS[range]}</> : undefined} />
-        <Stat label="Applications" icon="users" value={bounded(o?.applications30d)} to={can?.readApplicants ? '/manage/applicants' : undefined} hint="In the last 30 days" />
+        {/* The admin's own jobs (what the Applicants list shows); the whole board's total only as a hint. */}
+        <Stat
+          label="Applications"
+          icon="users"
+          value={bounded(o?.ownApplications30d)}
+          to={can?.readApplicants ? '/manage/admin-jobs/applicants' : undefined}
+          hint={
+            o && o.applications30d.value !== o.ownApplications30d.value ? (
+              <>Your jobs, 30 days · <b>{bounded(o.applications30d)}</b> on the whole board</>
+            ) : (
+              'In the last 30 days'
+            )
+          }
+        />
         <Stat label="Companies" icon="building" value={bounded(o?.companies)} hint="On the board" />
       </div>
 

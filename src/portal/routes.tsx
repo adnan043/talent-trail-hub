@@ -15,7 +15,7 @@ import {type ComponentType, useEffect, useRef, useState} from 'react';
 import {useQuery} from '@tanstack/react-query';
 
 import type {Abilities} from '../lib/types';
-import {logout} from '../platform/browser';
+import {siteFetch} from '../platform/browser';
 import {
   auditQuery,
   firstAuditQuery,
@@ -245,6 +245,16 @@ export const rootRoute = createRootRouteWithContext<{queryClient: QueryClient}>(
   ),
 });
 
+/**
+ * Sign out, then open a plain sign-in page. Reloading the current address instead (the platform's
+ * `logout()`) would send the next person who signs in back to this screen, which may be one only
+ * the account that just left can use (an admin page shown to a job seeker as "no access").
+ */
+async function signOutToLogin(): Promise<void> {
+  await siteFetch('/site-api/auth/logout', {method: 'POST'}).catch(() => null);
+  window.location.replace('/account/login/');
+}
+
 function Shell() {
   const me = useMe();
   const site = useSite();
@@ -254,7 +264,7 @@ function Shell() {
   const {heading, resolved} = useNavigationFocus(title, siteName);
   const pathname = useRouterState({select: state => state.location.pathname});
   const [open, setOpen] = useState(false);
-  // `logout()` reloads the page when it is done, so pending never needs resetting.
+  // Signing out leaves the page, so pending never needs resetting.
   const [signingOut, setSigningOut] = useState(false);
   const viewer = me.data?.viewer;
   const abilities = me.data?.abilities;
@@ -294,7 +304,7 @@ function Shell() {
       icon: 'log-out' as const,
       onSelect: () => {
         setSigningOut(true);
-        void logout();
+        void signOutToLogin();
       },
     },
   ];

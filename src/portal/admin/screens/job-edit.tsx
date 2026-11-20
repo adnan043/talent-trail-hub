@@ -7,8 +7,9 @@ import {EMPTY_JOB_VALUES, type JobValues} from '../../../lib/job-input';
 import {EMPLOYER_JOB_NOTE} from '../../../lib/types-manage';
 import {api, ApiError, read} from '../../api';
 import {JobForm} from '../../board/JobForm';
-import {buttonClass, EmptyState, ErrorNote, Field, LoadingBlock, Notice, PageHeader, rules, Select, useForm, useToast} from '../../ui';
+import {buttonClass, Combobox, EmptyState, ErrorNote, Field, LoadingBlock, Notice, PageHeader, rules, useForm, useToast} from '../../ui';
 import {adminJobQuery, companiesQuery, invalidateAdminJobs, jobFormOptionsQuery} from '../queries';
+import {AdminJobsPage} from './admin-jobs-tabs';
 
 const fieldsOf = (err: unknown) => (err instanceof ApiError ? err.fields : undefined);
 const statusOf = (err: unknown) => (err && !(err instanceof ApiError && Object.keys(err.fields).length) ? <ErrorNote error={err as Error} /> : null);
@@ -22,7 +23,7 @@ function companyOptions(found: {id: number; name: string}[], selected: string, c
   return [{value: '', label: 'A new company (name it below)'}, ...[...kept, ...found].map(c => ({value: String(c.id), label: c.name}))];
 }
 
-/** `/manage/jobs/new` (site:job:manage): a free admin job, live at once (F21). */
+/** `/manage/admin-jobs/post` (site:job:manage, Admin jobs · Post a job tab): a free admin job, live at once (F21). */
 export function NewAdminJob() {
   const options = useQuery(jobFormOptionsQuery);
   // The picker lists 50 companies at a time: a search narrows it on the server (by name).
@@ -70,12 +71,11 @@ export function NewAdminJob() {
   });
   const submit = (values: JobValues) => meta.submit(() => create.mutate(values))();
 
-  if (options.isPending || companies.isPending) return <div className="app-page"><LoadingBlock rows={6} /></div>;
-  if (options.error || companies.error) return <div className="app-page"><ErrorNote error={(options.error ?? companies.error)!} /></div>;
+  if (options.isPending || companies.isPending) return <AdminJobsPage className="screen-admin-job"><LoadingBlock rows={6} /></AdminJobsPage>;
+  if (options.error || companies.error) return <AdminJobsPage className="screen-admin-job"><ErrorNote error={(options.error ?? companies.error)!} /></AdminJobsPage>;
 
   return (
-    <div className="app-page screen-admin-job">
-      <PageHeader title="Post an admin job" description="Free, and live as soon as you save it. You can edit it later." />
+    <AdminJobsPage className="screen-admin-job">
       <JobForm
         initial={EMPTY_JOB_VALUES}
         categories={options.data.categories.filter(c => c.active)}
@@ -85,7 +85,7 @@ export function NewAdminJob() {
         pendingLabel="Posting…"
         submitLabel="Post the job"
         sectioned
-        note="Goes live straight away: no review for admin jobs."
+        note="Free, and live straight away: no review for admin jobs. You can edit it later."
         lead={{
           title: 'Company and listing',
           description: 'Pick a company already on the board, or name a new one, and how long it stays live.',
@@ -95,20 +95,14 @@ export function NewAdminJob() {
             <Notice tone="info">Single-company board: this job is posted for {locked.name}.</Notice>
           ) : (
             <>
-              <Field label="Find a company" id="f-companySearch" optional hint="Type part of its name.">
-                {/* Inside the job's form: Enter only searches (as typing does), never posts the job. */}
-                <input
-                  id="f-companySearch"
-                  type="search"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
-                  maxLength={80}
-                  placeholder="Acme"
+              <Field label="Company" id="f-companyId" error={meta.error('companyId')} hint="Type to search the board's companies.">
+                <Combobox
+                  {...meta.field('companyId')}
+                  options={companyOptions(companies.data.companies, meta.values.companyId, chosen)}
+                  onQueryChange={setSearch}
+                  placeholder="Search companies"
+                  emptyLabel="No company by that name."
                 />
-              </Field>
-              <Field label="Company" id="f-companyId" error={meta.error('companyId')}>
-                <Select {...meta.field('companyId')} options={companyOptions(companies.data.companies, meta.values.companyId, chosen)} />
               </Field>
               {!meta.values.companyId && (
                 <Field label="New company name" id="f-newCompanyName" error={meta.error('newCompanyName')} optional>
@@ -127,7 +121,7 @@ export function NewAdminJob() {
         secondary={<Link className={buttonClass({variant: 'secondary'})} to="/manage/jobs" disabled={create.isPending}>Cancel</Link>}
         status={statusOf(create.error)}
       />
-    </div>
+    </AdminJobsPage>
   );
 }
 

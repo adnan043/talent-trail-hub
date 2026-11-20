@@ -216,7 +216,7 @@ const tile = (co: PublicCompanySummary) => {
             )}
 
             {(rest.length > 0 || !firstPage || featured.length === 0) && (
-              <section class="v-co-section" aria-labelledby="co-all">
+              <section id="list" class="v-co-section" aria-labelledby="co-all">
                 <div class="v-co-panel">
                   <div class="v-co-panel-head">
                     <div class="v-co-panel-title">
@@ -230,10 +230,10 @@ const tile = (co: PublicCompanySummary) => {
                     </div>
                     {companyCount > 0 && (
                       <nav class="v-co-sort" aria-label="Sort companies">
-                        <a class="v-co-sort-opt" href={href({q})} aria-current={!sort ? 'true' : undefined}>
+                        <a class="v-co-sort-opt" href={`${href({q})}#list`} aria-current={!sort ? 'true' : undefined}>
                           Most roles
                         </a>
-                        <a class="v-co-sort-opt" href={href({q, sort: 'az'})} aria-current={sort ? 'true' : undefined}>
+                        <a class="v-co-sort-opt" href={`${href({q, sort: 'az'})}#list`} aria-current={sort ? 'true' : undefined}>
                           A–Z
                         </a>
                       </nav>
@@ -289,12 +289,12 @@ const tile = (co: PublicCompanySummary) => {
                   {(page.nextAfter || after) && (
                     <nav class="v-co-pager" aria-label="Pages">
                       {after && (
-                        <a class="v-btn v-btn-secondary" href={href({q, sort})}>
+                        <a class="v-btn v-btn-secondary" href={`${href({q, sort})}#list`}>
                           ← First page
                         </a>
                       )}
                       {page.nextAfter && (
-                        <a class="v-btn v-btn-secondary" href={href({q, sort, after: page.nextAfter})}>
+                        <a class="v-btn v-btn-secondary" href={`${href({q, sort, after: page.nextAfter})}#list`}>
                           Next page →
                         </a>
                       )}

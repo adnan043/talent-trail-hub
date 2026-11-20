@@ -20,6 +20,7 @@ import {
   idOf,
   isResumeExpired,
   jobWhereOf,
+  staffJobWhere,
   STATUS_TEMPLATES,
   toApplicantRow,
 } from '../board/applicants';
@@ -31,10 +32,11 @@ import {PERMISSIONS} from '../permissions';
 
 /**
  * F16 / F39 applicants (under `/site-api/applications`). The employer reaches their own company's
- * applicants (marketplace mode only); holders of `site:applicant:read` reach everyone's.
+ * applicants (marketplace mode only); holders of `site:applicant:read` reach the board's own jobs'
+ * applicants (`staffJobWhere`), never another company's.
  *
  *   GET   /jobs/:id/applicants[/export]   one job's applicants (keyset page) or its CSV
- *   GET   /all[/export], /all/jobs        the admin's list of every applicant, its CSV, job filter
+ *   GET   /all[/export], /all/jobs        the admin's list of the board's own applicants, its CSV, job filter
  *   PATCH /:id                            status and private notes
  *   POST  /:id/resume-link                a 10-minute download link (410 once past retention)
  *   GET   /:id/profile                    the applicant's job seeker profile (signed-in applications only)
@@ -156,8 +158,9 @@ export const applicantRoutes = new Hono<Env>()
 
   .get('/all', listQuery, withViewer, requireAuth, requirePermission(PERMISSIONS.APPLICANT_READ_ALL), withDb, async c => {
     const {status, before, job} = c.req.valid('query');
+    const scope = staffJobWhere(await cachedBoardSettings(c.var.db));
     const rows = await c.var.db.application.findMany({
-      where: {...(job ? {jobId: job} : {}), ...(status ? {status} : {}), ...(before ? {id: {lt: before}} : {})},
+      where: {job: scope, ...(job ? {jobId: job} : {}), ...(status ? {status} : {}), ...(before ? {id: {lt: before}} : {})},
       select: adminApplicationSelect,
       orderBy: {id: 'desc'},
       take: PAGE + 1,
@@ -168,14 +171,15 @@ export const applicantRoutes = new Hono<Env>()
 
   .get('/all/export', listQuery, withViewer, requireAuth, requirePermission(PERMISSIONS.APPLICANT_READ_ALL), withDb, async c => {
     const {status, job} = c.req.valid('query');
-    const {csv, count} = await exportCsv(c.var.db, {...(job ? {jobId: job} : {}), ...(status ? {status} : {})}, true);
+    const scope = staffJobWhere(await cachedBoardSettings(c.var.db));
+    const {csv, count} = await exportCsv(c.var.db, {job: scope, ...(job ? {jobId: job} : {}), ...(status ? {status} : {})}, true);
     await audit(c.var.db, {actorUserId: c.var.viewer.id, action: 'applicants_exported', ...(job ? {target: ['job', job] as [string, number]} : {}), meta: {count}});
     return csvResponse(c, csv, 'applicants.csv');
   })
 
   .get('/all/jobs', withViewer, requireAuth, requirePermission(PERMISSIONS.APPLICANT_READ_ALL), withDb, async c => {
     const jobs = await c.var.db.job.findMany({
-      where: {applicationCount: {gt: 0}},
+      where: {...staffJobWhere(await cachedBoardSettings(c.var.db)), applicationCount: {gt: 0}},
       select: {id: true, title: true, applicationCount: true, company: {select: {name: true}}},
       orderBy: {id: 'desc'},
       take: 100,
@@ -250,7 +254,7 @@ export const applicantRoutes = new Hono<Env>()
       action: 'resume_downloaded',
       target: ['application', found.id],
       ipHash: await ipHashOf(c),
-      meta: {staff: scope.kind === 'all' && found.job.company.ownerUserId !== c.var.viewer.id},
+      meta: {staff: scope.kind === 'staff' && found.job.company.ownerUserId !== c.var.viewer.id},
     });
     return c.json({url: link.data.url, expiresAt: link.data.expiresAt});
   })

@@ -2089,3 +2089,9 @@ a.vd-t:hover {
 [data-skin='vela'] .card-body > .notice-box:not(:last-child) {
   margin-bottom: 24px;
 }
+
+/* Admin jobs › Applicants: the one-line note sits snug between the tabs and the list card. */
+[data-skin='vela'] .screen-own-jobs > .tab-list + .muted {
+  margin: -12px 0 -10px;
+  font-size: 13px;
+}

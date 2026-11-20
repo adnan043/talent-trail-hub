@@ -18,6 +18,8 @@ import {likeLiteral} from './public-search';
  * C's JobForm). Admin jobs are free and live at once (`source: admin`). Only admin and import jobs
  * can be edited here: an employer's job (`paid`, `credit`, `free`) answers 403 `employer_job_locked`.
  * In single-company mode (F39) every admin job goes to the owner company, whatever was sent.
+ * On a marketplace the admin posts only for companies with no employer account: posting under an
+ * employer's company would put a job in their name and hand its applicants to the admin.
  */
 const COMPANIES = 50;
 
@@ -67,7 +69,9 @@ const detailSelect = {
 } as const;
 
 export const manageJobEditRoutes = new Hono()
-  // Companies to post for: a name search (first 50); single-company mode: the owner company only.
+  // Companies to post for: a name search (first 50) over companies WITHOUT an employer account
+  // (`ownerUserId: null`) — an employer's company is theirs to post for, never the admin's;
+  // single-company mode: the owner company only.
   .get('/companies', validator('query', v => ({q: typeof v.q === 'string' ? v.q.trim().slice(0, 80) : ''})), ...guard, async c => {
     const db = c.var.db;
     const settings = await getBoardSettings(db);
@@ -78,7 +82,7 @@ export const manageJobEditRoutes = new Hono()
     }
     const {q} = c.req.valid('query');
     const companies = await db.company.findMany({
-      where: {isBlocked: false, ...(q ? {name: {contains: likeLiteral(q), mode: 'insensitive'}} : {})},
+      where: {isBlocked: false, ownerUserId: null, ...(q ? {name: {contains: likeLiteral(q), mode: 'insensitive'}} : {})},
       orderBy: [{name: 'asc'}, {id: 'asc'}],
       select: {id: true, name: true},
       take: COMPANIES,
@@ -135,7 +139,7 @@ export const manageJobEditRoutes = new Hono()
     if (isSingleCompany(settings)) {
       company = await db.company.findUnique({where: {id: settings.ownerCompanyId!}, select: {id: true, name: true}});
     } else if (input.companyId) {
-      company = await db.company.findFirst({where: {id: input.companyId, isBlocked: false}, select: {id: true, name: true}});
+      company = await db.company.findFirst({where: {id: input.companyId, isBlocked: false, ownerUserId: null}, select: {id: true, name: true}});
       if (!company) return invalid(c, {companyId: 'Choose a company.'});
     } else if (input.newCompanyName) {
       const name = input.newCompanyName;

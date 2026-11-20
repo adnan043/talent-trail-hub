@@ -6,10 +6,14 @@ import {
   type ReactElement,
   type ReactNode,
   type SelectHTMLAttributes,
+  useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
+
+import {createPortal} from 'react-dom';
 
 import {type PasswordCheck} from '../../lib/password-checks';
 import {type Rule, rules} from '../../lib/rules';
@@ -234,6 +238,173 @@ export function Select({
         onSelect: () => onChange?.({target: {value: option.value}, currentTarget: {value: option.value}} as ChangeEvent<HTMLSelectElement>),
       }))}
     />
+  );
+}
+
+/**
+ * A dropdown you can type into: a search box and a picker in one. Typing calls
+ * `onQueryChange` (the caller narrows `options`, on the server or not); the
+ * list opens under it, arrows move, Enter picks, Esc closes. Closed, the box
+ * shows the picked option's label. Spread `form.field(name)` into it.
+ */
+export function Combobox({
+  options,
+  value,
+  onChange,
+  onBlur,
+  onQueryChange,
+  placeholder,
+  emptyLabel = 'Nothing matches.',
+  disabled,
+  id,
+  ref,
+  'aria-invalid': ariaInvalid,
+  'aria-describedby': describedBy,
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'ref'> & {
+  options: {value: string; label: string}[];
+  onQueryChange?: (query: string) => void;
+  placeholder?: string;
+  emptyLabel?: string;
+  ref?: (node: HTMLElement | null) => void;
+}) {
+  const current = options.find(option => option.value === String(value ?? ''));
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState<string | null>(null); // null: not typing, show the picked label
+  const [active, setActive] = useState(0);
+  const input = useRef<HTMLInputElement | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const listId = useId();
+
+  const query = (next: string | null) => {
+    setText(next);
+    onQueryChange?.(next ?? '');
+  };
+  const close = () => {
+    setOpen(false);
+    if (text !== null) query(null);
+    onBlur?.({} as FocusEvent<HTMLSelectElement>);
+  };
+  const pick = (option: {value: string}) => {
+    onChange?.({target: {value: option.value}, currentTarget: {value: option.value}} as ChangeEvent<HTMLSelectElement>);
+    setOpen(false);
+    query(null);
+  };
+
+  // The list sits under (or over) the box, as wide as it, and scrolls inside itself.
+  useLayoutEffect(() => {
+    if (!open || !input.current || !list.current) return;
+    const place = () => {
+      const rect = input.current!.getBoundingClientRect();
+      const menu = list.current!;
+      menu.style.width = `${rect.width}px`;
+      menu.style.maxHeight = '';
+      const natural = menu.offsetHeight;
+      const roomBelow = window.innerHeight - rect.bottom - 18;
+      const roomAbove = rect.top - 18;
+      const below = roomBelow >= Math.min(natural, 240) || roomBelow >= roomAbove;
+      menu.style.maxHeight = `${Math.max(120, Math.min(320, below ? roomBelow : roomAbove))}px`;
+      menu.style.top = `${below ? rect.bottom + 6 : rect.top - menu.offsetHeight - 6}px`;
+      menu.style.left = `${rect.left}px`;
+    };
+    place();
+    const scrolled = (event: Event) => {
+      if (!list.current?.contains(event.target as Node)) place();
+    };
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', scrolled, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', scrolled, true);
+    };
+  });
+
+  // The highlighted option stays in range and in view as the list changes.
+  const at = Math.min(active, Math.max(0, options.length - 1));
+  useEffect(() => {
+    if (open) list.current?.querySelector(`[data-index="${at}"]`)?.scrollIntoView({block: 'nearest'});
+  }, [open, at]);
+
+  const openAt = () => {
+    if (text === null) query('');
+    setOpen(true);
+    setActive(Math.max(0, options.findIndex(option => option === current)));
+  };
+
+  return (
+    <div className="combobox">
+      <input
+        ref={node => {
+          input.current = node;
+          ref?.(node);
+        }}
+        id={id}
+        type="text"
+        role="combobox"
+        autoComplete="off"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open && options.length ? `${listId}-${at}` : undefined}
+        aria-invalid={ariaInvalid}
+        aria-describedby={describedBy}
+        disabled={disabled}
+        // Typing starts from an empty box: the picked label stays visible as the placeholder.
+        placeholder={text !== null && current ? current.label : placeholder}
+        value={text ?? current?.label ?? ''}
+        onFocus={() => text === null && query('')}
+        onClick={() => {
+          if (!open) openAt();
+        }}
+        onChange={event => {
+          query(event.target.value);
+          setOpen(true);
+          setActive(0);
+        }}
+        onBlur={event => {
+          if (!list.current?.contains(event.relatedTarget as Node)) close();
+        }}
+        onKeyDown={event => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!open) return openAt();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            setActive((at + step + options.length) % Math.max(1, options.length));
+          } else if (event.key === 'Enter') {
+            // Inside a form: Enter picks, never submits.
+            event.preventDefault();
+            if (open && options[at]) pick(options[at]);
+            else openAt();
+          } else if (event.key === 'Escape' && open) {
+            // Only the list closes: not the drawer or modal it may sit in.
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            query(null);
+          }
+        }}
+      />
+      <Icon name="chevron-down" size={16} className="combobox-chevron" />
+      {open &&
+        createPortal(
+          <div ref={list} id={listId} className="menu combobox-list" role="listbox" tabIndex={-1} onPointerDown={event => event.preventDefault()}>
+            {options.length === 0 && <div className="combobox-empty">{emptyLabel}</div>}
+            {options.map((option, i) => (
+              <div
+                key={option.value}
+                id={`${listId}-${i}`}
+                data-index={i}
+                role="option"
+                aria-selected={option === current}
+                className={['menu-item', option === current ? 'menu-item-checked' : '', i === at ? 'combobox-active' : ''].filter(Boolean).join(' ')}
+                onPointerMove={() => i !== at && setActive(i)}
+                onClick={() => pick(option)}>
+                {option.label}
+              </div>
+            ))}
+          </div>,
+          input.current?.closest('dialog[open]') ?? document.body
+        )}
+    </div>
   );
 }
 

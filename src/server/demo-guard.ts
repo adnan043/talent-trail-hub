@@ -22,8 +22,16 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** The sign-in and sign-out writes the demo needs to get in and out. */
 const OPEN = new Set(['/site-api/auth/login', '/site-api/auth/login/two-factor', '/site-api/auth/code', '/site-api/auth/code/verify', '/site-api/auth/refresh', '/site-api/auth/logout']);
 
+/**
+ * Public POSTs that change nothing of anyone's: the job page's view counter (a capped count any
+ * visitor adds to) and the saved-jobs lookup (reads the ids it is sent). Refusing them only put a
+ * 403 in the console on every job page the demo opened.
+ */
+const PUBLIC_POSTS = [/^\/site-api\/jobs\/saved$/, /^\/site-api\/jobs\/[a-z0-9-]{1,120}\/view$/];
+
 export const refuseDemoWrites = createMiddleware(async (c, next) => {
-  if (!SAFE.has(c.req.method) && !OPEN.has(c.req.path.replace(/\/+$/, ''))) {
+  const path = c.req.path.replace(/\/+$/, '');
+  if (!SAFE.has(c.req.method) && !OPEN.has(path) && !(c.req.method === 'POST' && PUBLIC_POSTS.some(re => re.test(path)))) {
     const access = await getAccess(c.req.raw).catch(() => null);
     // The roles could not be read (a database outage): the write could not go through anyway.
     if (!access) return c.json(problem('unavailable', 'The site is busy. Try again in a minute.'), 503, {'Retry-After': '60'});

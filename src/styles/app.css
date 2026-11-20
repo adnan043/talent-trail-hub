@@ -3731,6 +3731,25 @@ html:root .app-shell[data-side='light'] .app-sidebar {
 .applied-panel > .skeleton-block {
   margin: 1.5rem;
 }
+/* Phones: unlike the other tables (a 640px table scrolled sideways), the job seeker's own list
+   fits the screen: the date column goes (it is in the drawer), the job title wraps, and Status
+   and View stay in sight. */
+@media (max-width: 720px) {
+  .screen-applied .data-table {
+    min-width: 0;
+  }
+  .screen-applied .data-table .cell-hide-mobile {
+    display: none;
+  }
+  .screen-applied .data-table th,
+  .screen-applied .data-table td {
+    padding-inline: 0.625rem;
+  }
+  .screen-applied .data-table td:first-child {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 .applied-body {
   display: grid;
   gap: 1.25rem;
@@ -4086,4 +4105,41 @@ html:root .app-shell[data-side='light'] .app-sidebar {
   .review-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Combobox (form.tsx): a text box with a chevron, its list styled as a .menu. */
+.combobox {
+  position: relative;
+}
+
+.app-body .field .combobox input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.combobox-chevron {
+  position: absolute;
+  top: 50%;
+  right: 0.875rem;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.combobox-list .menu-item {
+  cursor: pointer;
+}
+
+.combobox-list .combobox-active {
+  background: var(--hover);
+}
+
+.combobox-list .menu-item-checked.combobox-active {
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--hover));
+}
+
+.combobox-empty {
+  padding: 0.5rem 0.625rem;
+  color: var(--muted);
+  font-size: 0.875rem;
 }

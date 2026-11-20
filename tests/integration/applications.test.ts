@@ -69,7 +69,7 @@ async function setRoles(email: string, ...slugs: string[]) {
   await db.userRole.createMany({data: roles.map(role => ({userId: id, roleId: role.id}))});
 }
 
-async function makeJob(companyId: number, slug: string) {
+async function makeJob(companyId: number, slug: string, source = 'paid') {
   const category = await db.category.upsert({where: {slug: 'apply-test'}, create: {name: 'Apply test', slug: 'apply-test'}, update: {}, select: {id: true}});
   return db.job.create({
     data: {
@@ -77,6 +77,7 @@ async function makeJob(companyId: number, slug: string) {
       categoryId: category.id,
       title: `Job ${slug}`,
       slug,
+      source,
       descriptionHtml: '<p>x</p>',
       descriptionMd: 'x',
       employmentType: 'FULL_TIME',
@@ -258,8 +259,8 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect(seen.json.profile).toMatchObject({headline: 'Designer', skills: 'Figma, CSS', experienceYears: 4, hasPhoto: true});
     expect(JSON.stringify(seen.json)).not.toMatch(/file_/);
     expect((await ownerA.get(`/site-api/applications/${appId}/photo`)).status).toBe(302);
-    expect((await admin.get(`/site-api/applications/${appId}/profile`)).status).toBe(200);
-    for (const other of [ownerB, seeker, new Browser(app)]) {
+    // A company's candidate is the company's: the admin does not see their profile either.
+    for (const other of [ownerB, admin, seeker, new Browser(app)]) {
       expect([401, 403, 404]).toContain((await other.get(`/site-api/applications/${appId}/profile`)).status);
       expect([401, 403, 404]).toContain((await other.get(`/site-api/applications/${appId}/photo`)).status);
     }
@@ -278,7 +279,7 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect((await one.post('/site-api/applicant-profile/resume', {name: 'cv.pdf', contentType: 'application/pdf', size: 50 * 1024 * 1024})).status).toBe(422);
   });
 
-  it('employers reach only their own company’s applicants; staff reach all; single-company mode closes the employer side', async () => {
+  it('employers reach only their own company’s applicants; staff only the board’s own jobs; single-company mode closes the employer side', async () => {
     expect((await apply(await applicant('c@example.test', '198.51.100.5'), jobA.slug)).status).toBe(201);
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
 
@@ -293,11 +294,24 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect((await ownerB.get('/site-api/applications/all?status=&before=&job=')).status).toBe(403);
     expect((await new Browser(app).get(`/site-api/applications/jobs/${jobA.id}/applicants?status=&before=`)).status).toBe(401);
 
+    // The staff never reach a company's applicants: not listed, not read, not changed, no resume.
+    expect((await admin.get('/site-api/applications/all?status=&before=&job=')).json.items).toEqual([]);
+    expect((await admin.get('/site-api/applications/all/jobs')).json.jobs).toEqual([]);
+    expect((await admin.get(`/site-api/applications/jobs/${jobA.id}/applicants?status=&before=`)).status).toBe(404);
+    expect((await admin.request('PATCH', `/site-api/applications/${appId}`, {status: 'rejected'})).status).toBe(404);
+    expect((await admin.post(`/site-api/applications/${appId}/resume-link`)).status).toBe(404);
+    expect(await db.application.findUniqueOrThrow({where: {id: appId}, select: {status: true}})).toEqual({status: 'new'});
+
+    // The board's own job (source `admin`): the staff's to read and decide on.
+    const companyA = await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}});
+    const house = await makeJob(companyA.id, 'house-job', 'admin');
+    expect((await apply(await applicant('h@example.test', '198.51.100.6'), house.slug)).status).toBe(201);
+    const houseApp = (await db.application.findFirstOrThrow({where: {jobId: house.id}, select: {id: true}})).id;
     const all = await admin.get('/site-api/applications/all?status=&before=&job=');
     expect(all.status).toBe(200);
-    expect((all.json.items as {job: {company: string}}[])[0]!.job.company).toBe('A Co');
+    expect((all.json.items as {id: number}[]).map(r => r.id)).toEqual([houseApp]);
 
-    // Seeing every applicant is not changing them: without site:applicant:manage the staff
+    // Seeing the board's applicants is not changing them: without site:applicant:manage the staff
     // member's PATCH is a 404 (nothing changes, no email); with it, a 200.
     const adminRole = await db.role.findUniqueOrThrow({where: {slug: 'admin'}, select: {id: true}});
     const manage = await db.permission.upsert({
@@ -307,18 +321,17 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
       select: {id: true},
     });
     await db.rolePermission.deleteMany({where: {roleId: adminRole.id, permissionId: manage.id}});
-    expect((await admin.request('PATCH', `/site-api/applications/${appId}`, {status: 'rejected', notes: 'x'})).status).toBe(404);
-    expect(await db.application.findUniqueOrThrow({where: {id: appId}, select: {status: true, employerNotes: true}})).toEqual({status: 'new', employerNotes: null});
+    expect((await admin.request('PATCH', `/site-api/applications/${houseApp}`, {status: 'rejected', notes: 'x'})).status).toBe(404);
+    expect(await db.application.findUniqueOrThrow({where: {id: houseApp}, select: {status: true, employerNotes: true}})).toEqual({status: 'new', employerNotes: null});
     expect(await db.emailLog.count({where: {templateKey: 'application-rejected'}})).toBe(0);
     await db.rolePermission.create({data: {roleId: adminRole.id, permissionId: manage.id}});
-    expect((await admin.request('PATCH', `/site-api/applications/${appId}`, {notes: 'Seen by staff.'})).status).toBe(200);
+    expect((await admin.request('PATCH', `/site-api/applications/${houseApp}`, {notes: 'Seen by staff.'})).status).toBe(200);
 
     // Admin resume downloads are audited; the employer's own are not.
     expect((await ownerA.post(`/site-api/applications/${appId}/resume-link`)).status).toBe(200);
-    expect((await admin.post(`/site-api/applications/${appId}/resume-link`)).status).toBe(200);
+    expect((await admin.post(`/site-api/applications/${houseApp}/resume-link`)).status).toBe(200);
     expect(await db.auditEvent.count({where: {action: 'resume_downloaded'}})).toBe(2);
 
-    const companyA = await db.company.findFirstOrThrow({where: {slug: 'a-co'}, select: {id: true}});
     await db.boardSettings.upsert({where: {id: 1}, create: {id: 1, boardMode: 'single_company', ownerCompanyId: companyA.id}, update: {boardMode: 'single_company', ownerCompanyId: companyA.id}});
     forgetBoardSettings();
     expect((await ownerA.get(`/site-api/applications/jobs/${jobA.id}/applicants?status=&before=`)).status).toBe(404);
@@ -400,7 +413,7 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     const appId = (await db.application.findFirstOrThrow({select: {id: true}})).id;
     await db.application.update({where: {id: appId}, data: {createdAt: new Date(Date.now() - 181 * 86_400_000)}});
 
-    for (const browser of [ownerA, admin]) {
+    for (const browser of [ownerA]) {
       const link = await browser.post(`/site-api/applications/${appId}/resume-link`);
       expect(link.status).toBe(410);
       expect(link.json.error).toBe('resume_expired');
@@ -411,8 +424,8 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     const csv = await ownerA.get(`/site-api/applications/jobs/${jobA.id}/applicants/export?status=`);
     expect(csv.status).toBe(200);
     expect(String(csv.json.text)).toContain('Resume deleted after 180 days (privacy policy)');
-    // The profile (birth date, address) and the photo end with the CV, for the employer and staff.
-    for (const browser of [ownerA, admin]) {
+    // The profile (birth date, address) and the photo end with the CV.
+    for (const browser of [ownerA]) {
       const profile = await browser.get(`/site-api/applications/${appId}/profile`);
       expect(profile.status).toBe(200);
       expect(profile.json.profile).toBeNull();
@@ -423,6 +436,18 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     const path = `/site-api/applications/jobs/${jobA.slug}/can-apply`;
     expect((await admin.get(path)).json).toEqual({canApply: false, reason: 'staff'});
     expect((await apply(admin, jobA.slug)).json.error).toBe('not_applicant');
+  });
+
+  it("a suspended employer's jobs take no applications, and nobody is emailed", async () => {
+    const casey = await applicant('casey@example.test', '198.51.100.23');
+    await db.user.update({where: {id: await userId(OWNER_A)}, data: {status: 'suspended'}});
+    expect((await casey.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toEqual({canApply: false, reason: 'closed'});
+    expect((await apply(casey, jobA.slug)).status).toBe(404);
+    expect(await db.application.count()).toBe(0);
+    expect(await db.emailLog.count({where: {templateKey: 'new-applicant'}})).toBe(0);
+    // Active again: applications open again.
+    await db.user.update({where: {id: await userId(OWNER_A)}, data: {status: 'active'}});
+    expect((await apply(casey, jobA.slug)).status).toBe(201);
   });
 
   it('a company without an owner account sends the new-applicant email to applicant staff', async () => {

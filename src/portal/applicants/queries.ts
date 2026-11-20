@@ -30,7 +30,7 @@ export const jobApplicantsQuery = (jobId: string, status: StatusFilter) =>
     getNextPageParam: last => (last.nextBefore ? String(last.nextBefore) : undefined),
   });
 
-/** `/dashboard/manage/applicants`: every applicant on the board (site:applicant:read). */
+/** `/dashboard/manage/admin-jobs/applicants`: applicants of the board's own jobs (site:applicant:read), never a company's. */
 export const allApplicantsQuery = (filter: {status: StatusFilter; job: string}) =>
   infiniteQueryOptions({
     queryKey: ['applicants', 'all', filter],

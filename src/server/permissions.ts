@@ -38,20 +38,20 @@ export const CATALOGUE = definePermissions({
     ability: 'moderateJobs',
     roles: ['admin'],
   },
-  /** Admin: every application on the board, resumes included (audited). */
+  /** Admin: the applications to the board's own jobs, resumes included (audited); never a company's. */
   APPLICANT_READ_ALL: {
     codename: 'site:applicant:read',
-    title: 'See all applicants',
-    description: "Every job's applicants and resumes (each resume download is logged).",
+    title: 'See the board\'s applicants',
+    description: "Applicants and resumes of the board's own jobs, not a company's (each resume download is logged).",
     group: 'Applicants',
     ability: 'readApplicants',
     roles: ['admin'],
   },
-  /** Admin: change any application's status and notes (the candidate may be emailed). */
+  /** Admin: change the status and notes of the board's own jobs' applications (the candidate may be emailed). */
   APPLICANT_MANAGE_ALL: {
     codename: 'site:applicant:manage',
-    title: 'Update all applicants',
-    description: "Change the status and private notes of any job's applicants (shortlisted, approved and rejected candidates are emailed).",
+    title: 'Update the board\'s applicants',
+    description: "Change the status and private notes of the board's own jobs' applicants, not a company's (shortlisted, approved and rejected candidates are emailed).",
     group: 'Applicants',
     ability: 'manageApplicants',
     roles: ['admin'],

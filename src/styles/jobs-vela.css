@@ -325,6 +325,18 @@
   box-shadow: 0 0 0 3px var(--v-ring);
 }
 
+/* The native select stays in the form, hidden behind the menu button. The rule above would size
+   it like a full input, and as an absolute box it then poked out past the card's right edge,
+   giving the sticky filters card a horizontal scrollbar. Keep it a 1px box at the top left. */
+.v-jobs .fgroup .fselect-native {
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+}
+
 .v-jobs .fgroup .fselect-pop {
   border-color: var(--v-border-subtle);
   border-radius: 10px;
