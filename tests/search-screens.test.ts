@@ -19,3 +19,30 @@ describe('searchScreens', () => {
     ]);
   });
 });
+
+/** ⌘K finds the Admin jobs tabs ("Applicants", "Post a job"), each only for a viewer who may use it. */
+describe('searchScreens: Admin jobs tabs', () => {
+  it('lists Applicants and Post a job under Admin jobs, gated by each tab’s ability', async () => {
+    await import('../src/portal/routes'); // the app's own import order (admin routes import its root)
+    const {ADMIN_NAV} = await import('../src/portal/admin/routes');
+    const board = ADMIN_NAV.map(group => ({...group, items: group.items.filter(item => item.to === '/manage/admin-jobs')}));
+    const labels = (abilities: Record<string, boolean>) =>
+      searchScreens(board, abilities as never)
+        .filter(s => s.tab)
+        .map(s => `${s.group} › ${s.label} → ${s.to}`);
+    expect(labels({manageJobs: true, readApplicants: true})).toEqual([
+      'Admin jobs › Post a job → /manage/admin-jobs/post',
+      'Admin jobs › Applicants → /manage/admin-jobs/applicants',
+    ]);
+    expect(labels({readApplicants: true})).toEqual(['Admin jobs › Applicants → /manage/admin-jobs/applicants']);
+    expect(labels({manageJobs: true})).toEqual(['Admin jobs › Post a job → /manage/admin-jobs/post']);
+  });
+
+  it('shows the Admin jobs item to a role that only reads applicants', async () => {
+    await import('../src/portal/routes'); // the app's own import order (admin routes import its root)
+    const {ADMIN_NAV} = await import('../src/portal/admin/routes');
+    const item = ADMIN_NAV.flatMap(group => group.items).find(i => i.to === '/manage/admin-jobs');
+    expect(item?.ability).toBeUndefined();
+    expect(item?.anyAbility).toEqual(['manageJobs', 'readApplicants']);
+  });
+});

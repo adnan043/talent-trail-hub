@@ -5,6 +5,7 @@ import type {AdminJobFilters} from '../../lib/types-manage';
 
 import {allApplicantsQuery, applicantJobsQuery, applicantsSearch} from '../applicants/queries';
 import type {NavItem} from '../routes';
+import {meQuery} from '../queries';
 import {ModerationNavBadge} from './NavBadges';
 import {rootRoute} from '../routes';
 import {
@@ -68,8 +69,11 @@ const adminJobsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/manage/admin-jobs',
   staticData: {title: 'Admin jobs'},
-  beforeLoad: () => {
-    throw redirect({to: '/manage/admin-jobs/post', replace: true});
+  // The first tab the viewer may use: a role that only reads applicants opens Applicants.
+  beforeLoad: async ({context: {queryClient}}) => {
+    const can = (await queryClient.ensureQueryData(meQuery).catch(() => null))?.abilities;
+    const tab = ADMIN_JOBS_TABS.find(t => can?.[t.ability]) ?? ADMIN_JOBS_TABS[0];
+    throw redirect({to: tab.to, replace: true});
   },
 });
 const newJobRoute = route('/manage/admin-jobs/post', 'Post a job', qc => [qc.ensureQueryData(jobFormOptionsQuery), qc.ensureQueryData(companiesQuery(''))], () => import('./screens/job-edit'), 'NewAdminJob');
@@ -136,6 +140,12 @@ export const adminRoutes = [
   moderationModeRoute,
 ] as const;
 
+/** The Admin jobs screen's tabs (admin-jobs-tabs.tsx), each its own route; a tab is shown to holders of its ability. */
+export const ADMIN_JOBS_TABS = [
+  {to: '/manage/admin-jobs/post', label: 'Post a job', ability: 'manageJobs'},
+  {to: '/manage/admin-jobs/applicants', label: 'Applicants', ability: 'readApplicants'},
+] as const;
+
 /** The Settings screen's tabs (settings-tabs.tsx), each its own route. */
 export const SETTINGS_TABS = [
   {to: '/manage/settings/branding', label: 'Branding'},
@@ -155,7 +165,8 @@ export const ADMIN_NAV: {label: string; items: NavItem[]}[] = [
     items: [
       {to: '/manage/moderation', label: 'Moderation', icon: 'inbox', ability: 'moderateJobs', badge: ModerationNavBadge},
       {to: '/manage/jobs', label: 'All jobs', icon: 'briefcase', ability: 'manageJobs'},
-      {to: '/manage/admin-jobs', label: 'Admin jobs', icon: 'file', ability: 'manageJobs'},
+      // Either tab's ability shows it (a role may only read applicants); ⌘K finds each tab by name.
+      {to: '/manage/admin-jobs', label: 'Admin jobs', icon: 'file', anyAbility: ['manageJobs', 'readApplicants'], tabs: ADMIN_JOBS_TABS},
       {to: '/manage/tiers', label: 'Listing tiers', icon: 'layers', ability: 'manageBoard'},
       {to: '/manage/privacy', label: 'Candidate data', icon: 'lock', ability: 'managePrivacy'},
       {to: '/manage/emails', label: 'Email log', icon: 'mail', ability: 'readBoardReports'},

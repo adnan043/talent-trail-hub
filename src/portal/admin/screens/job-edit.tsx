@@ -95,7 +95,7 @@ export function NewAdminJob() {
             <Notice tone="info">Single-company board: this job is posted for {locked.name}.</Notice>
           ) : (
             <>
-              <Field label="Company" id="f-companyId" error={meta.error('companyId')} hint="Type to search the board's companies.">
+              <Field label="Company" id="f-companyId" error={meta.error('companyId')} hint="Companies without an employer account (an employer posts for their own).">
                 <Combobox
                   {...meta.field('companyId')}
                   options={companyOptions(companies.data.companies, meta.values.companyId, chosen)}

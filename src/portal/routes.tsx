@@ -121,17 +121,19 @@ export function RouteError({error}: ErrorComponentProps) {
 /** `employer`: hidden in single-company mode (the employer area is 404 there). */
 /** `hideForAbility`: hidden for visitors who have it (the admin has the board's own screens instead). */
 /** `badge`: a small component beside the label (a waiting count); rendered only when the item shows. */
-/** `tabs`: the screens inside this one (Settings → Branding, …): not in the sidebar, but ⌘K finds them. */
+/** `anyAbility`: shown when the visitor has at least one of these (a screen of tabs, each with its own ability). */
+/** `tabs`: the screens inside this one (Settings → Branding, …): not in the sidebar, but ⌘K finds them (a tab's `ability` gates it there). */
 export type NavItem = {
   to: string;
   label: string;
   icon: IconName;
   exact?: boolean;
   ability?: keyof Abilities;
+  anyAbility?: readonly (keyof Abilities)[];
   employer?: boolean;
   hideForAbility?: keyof Abilities;
   badge?: ComponentType;
-  tabs?: readonly {to: string; label: string}[];
+  tabs?: readonly {to: string; label: string; ability?: keyof Abilities}[];
 };
 
 /**
@@ -417,7 +419,7 @@ function Shell() {
           )}
           <div className="app-topbar-actions">
             {vela ? (
-              <CommandSearch screens={searchScreens(groups)} />
+              <CommandSearch screens={searchScreens(groups, abilities)} />
             ) : (
               viewer && (
                 <Menu
@@ -451,7 +453,10 @@ function visibleGroups(me: ReturnType<typeof useMe>['data'], kind: string | unde
     if (group.for === 'applicant' && kind !== 'applicant') return [];
     if (group.for === 'not-applicant' && kind === 'applicant') return [];
     const items = group.items.filter(
-      item => (!item.ability || abilities?.[item.ability]) && !(item.hideForAbility && abilities?.[item.hideForAbility]) && !(item.employer && me?.board.singleCompany)
+      item =>
+        (!item.ability || abilities?.[item.ability]) &&
+        (!item.anyAbility || item.anyAbility.some(ability => abilities?.[ability])) &&
+        !(item.hideForAbility && abilities?.[item.hideForAbility]) && !(item.employer && me?.board.singleCompany)
     );
     return items.length ? [{...group, items}] : [];
   });
