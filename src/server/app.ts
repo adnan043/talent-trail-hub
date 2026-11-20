@@ -12,6 +12,7 @@ import {authSettings} from './auth-settings';
 import {signOutOthersOnTwoFactor} from './two-factor-signout';
 import {dropApplicantProfileOnDelete} from './applicant-account-delete';
 import {refuseDemoWrites} from './demo-guard';
+import {refuseNulBytes} from './nul-guard';
 import {checkoutRoutes, membershipRoutes} from './routes/checkout';
 import {abilitiesFor, CATALOGUE} from './permissions';
 import {applicationRoutes} from './routes/applications';
@@ -76,6 +77,8 @@ export const app = new Hono()
   .use(csrf)
   // No route here takes a big body; uploads never pass through the Worker.
   .use(bodyLimit({maxSize: 64 * 1024, onError: c => c.json(problem('too_large', 'That request is too large.'), 413)}))
+  // A NUL character (Postgres text cannot hold one) is a 400 here, never a database error and a 500.
+  .use(refuseNulBytes)
   // New catalogue codenames reach the `permissions` table (once per isolate; no migration).
   .use(syncPermissions(CATALOGUE))
 
