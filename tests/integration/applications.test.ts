@@ -448,8 +448,13 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect((await apply(casey, jobA.slug)).status).toBe(404);
     expect(await db.application.count()).toBe(0);
     expect(await db.emailLog.count({where: {templateKey: 'new-applicant'}})).toBe(0);
-    // Active again: applications open again.
+    // The job and the company leave the public board (a trigger on users keeps the flag).
+    expect((await db.company.findUniqueOrThrow({where: {slug: 'a-co'}, select: {ownerSuspended: true}})).ownerSuspended).toBe(true);
+    expect((await casey.get(`/site-api/jobs/${jobA.slug}`)).status).toBe(404);
+    // Active again: the job is back and applications open again.
     await db.user.update({where: {id: await userId(OWNER_A)}, data: {status: 'active'}});
+    expect((await db.company.findUniqueOrThrow({where: {slug: 'a-co'}, select: {ownerSuspended: true}})).ownerSuspended).toBe(false);
+    expect((await casey.get(`/site-api/jobs/${jobA.slug}`)).status).toBe(200);
     expect((await apply(casey, jobA.slug)).status).toBe(201);
   });
 

@@ -108,7 +108,7 @@ async function homeLists(db: PrismaClient, settings: BoardSettings, workplace: s
     categoryCounts(db, settings),
     single
       ? db.company.findFirst({
-          where: {id: settings.ownerCompanyId!, isBlocked: false},
+          where: {id: settings.ownerCompanyId!, isBlocked: false, ownerSuspended: false},
           select: companySelect,
         })
       : null,

@@ -216,7 +216,7 @@ async function countClick(c: Context, db: Db, slug: string): Promise<void> {
   await db.$executeRaw`
     UPDATE "jobs" j SET "apply_click_count" = j."apply_click_count" + 1
     FROM "companies" co
-    WHERE co."id" = j."company_id" AND co."is_blocked" = false
+    WHERE co."id" = j."company_id" AND co."is_blocked" = false AND co."owner_suspended" = false
       AND j."slug" = ${slug} AND j."status" = 'published' AND j."expires_at" > now()
       AND j."apply_method" IN ('url', 'email')
       AND (${scope}::int IS NULL OR j."company_id" = ${scope}::int)`;

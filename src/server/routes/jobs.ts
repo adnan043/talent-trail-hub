@@ -165,7 +165,7 @@ export const jobRoutes = new Hono()
         db.job.findMany({where: open, orderBy: NEWEST, take: SITEMAP_JOBS, select: {slug: true, updatedAt: true}}),
         marketplace
           ? db.company.findMany({
-              where: {isBlocked: false, jobs: {some: open}},
+              where: {isBlocked: false, ownerSuspended: false, jobs: {some: open}},
               orderBy: {id: 'desc'},
               take: SITEMAP_COMPANIES,
               select: {slug: true, updatedAt: true},
@@ -305,7 +305,7 @@ async function countView(c: Context, db: PrismaClient, slug: string): Promise<vo
   const scope = isSingleCompany(settings) ? settings.ownerCompanyId : null;
   const job = Prisma.sql`
     SELECT j."id" FROM "jobs" j JOIN "companies" co ON co."id" = j."company_id"
-    WHERE j."slug" = ${slug} AND j."status" = 'published' AND j."expires_at" > now() AND co."is_blocked" = false
+    WHERE j."slug" = ${slug} AND j."status" = 'published' AND j."expires_at" > now() AND co."is_blocked" = false AND co."owner_suspended" = false
       AND (${scope}::int IS NULL OR j."company_id" = ${scope}::int)`;
   if (!key) {
     // No secret to key visitors by (local only): count without the daily check.
