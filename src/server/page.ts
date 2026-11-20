@@ -25,6 +25,8 @@ export async function pageContext(request: Request, response: {headers: Headers}
     site: brand?.site ?? null,
     viewer: me?.viewer ?? GUEST,
     abilities: me?.abilities ?? NO_ABILITIES,
+    /** `/site-api/me`'s whole answer (null when it failed): the dashboard hands it to its app. */
+    me: me ?? null,
   };
 }
 

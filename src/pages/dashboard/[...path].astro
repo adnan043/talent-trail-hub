@@ -14,12 +14,16 @@ import App from '../../layouts/App.astro';
 import {config} from '../../platform/config';
 import {getDb} from '../../platform/db';
 import PortalApp from '../../portal/PortalApp';
+import type {Me} from '../../portal/shared';
 import {brandCssHref} from '../../server/board/brand';
 import {pageContext} from '../../server/page';
 
 export const prerender = false;
 
-const [{site, viewer}, brandHref] = await Promise.all([pageContext(Astro.request, Astro.response), brandCssHref(getDb())]);
+const [{site, viewer, me}, brandHref] = await Promise.all([pageContext(Astro.request, Astro.response), brandCssHref(getDb())]);
+// The visitor this page already read: the app starts from it instead of asking `/site-api/me`
+// again before its first screen's reads (one round trip less before the dashboard shows).
+const initialMe = viewer.state === 'user' ? (me as Me) : null;
 const back = encodeURIComponent(`${Astro.url.pathname}${Astro.url.search}`);
 // The editor Preview's gateway drops cookies, so this page never sees the
 // session there: the app starts anyway and asks `/site-api/me` itself (its
@@ -31,7 +35,7 @@ const open = viewer.state === 'user' || config.preview;
   {
     open ? (
       <>
-        <PortalApp client:only="react" />
+        <PortalApp client:only="react" initialMe={initialMe} />
         <noscript>
           <p class="app-gate">The dashboard needs JavaScript.</p>
         </noscript>

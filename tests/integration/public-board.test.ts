@@ -211,6 +211,24 @@ describe.skipIf(!DATABASE_URL)('public board (integration, real Postgres)', () =
     expect(all).not.toContain('writer-other');
   });
 
+  it('a keyword search pins only the featured jobs it matches (a `%` in it is no wildcard)', async () => {
+    const acme = await company('Acme');
+    await job(acme.id, 'designer-featured', {isFeatured: true});
+    await job(acme.id, 'writer-featured', {isFeatured: true});
+    await job(acme.id, 'designer-ended', {isFeatured: true, featuredUntil: new Date(Date.now() - 60_000)});
+    await job(acme.id, 'designer-plain');
+    const page = await browser.get('/site-api/jobs?q=designer');
+    const jobs = page.json.jobs as {slug: string; featured: boolean}[];
+    expect(page.json.pinned).toBe(1);
+    expect(jobs[0]!.slug).toBe('designer-featured');
+    expect(jobs.map(j => j.slug).sort()).toEqual(['designer-ended', 'designer-featured', 'designer-plain']);
+    // The board's featured count is the whole board's, as before.
+    expect(page.json.featuredCount).toBe(2);
+    const none = await browser.get(`/site-api/jobs?q=${encodeURIComponent('design%')}`);
+    expect(none.json.pinned).toBe(0);
+    expect(none.json.jobs).toEqual([]);
+  });
+
   it('a cached job page still follows the clock: past its end it reads expired, without the apply address', async () => {
     const acme = await company('Acme');
     await job(acme.id, 'ending-soon', {expiresAt: new Date(Date.now() + 1500), applyMethod: 'email', applyTarget: 'jobs@acme.example'});

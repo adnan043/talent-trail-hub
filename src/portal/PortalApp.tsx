@@ -7,7 +7,9 @@ import {finishProgress, installPageProgress, startProgress} from '../lib/page-pr
 import {siteFetch} from '../platform/browser';
 
 import {ApiError} from './api';
+import {meQuery} from './queries';
 import {RouteError, RoutePending, routeTree} from './routes';
+import type {Me} from './shared';
 
 /**
  * The portal: rendered ONLY in the browser (`client:only="react"`) by
@@ -90,7 +92,11 @@ function useOwnerTicket(): boolean {
   return pending;
 }
 
-export default function PortalApp() {
+/** `initialMe`: the visitor the page's server render already read (`/site-api/me`'s answer), so the first screen's reads start at once. */
+export default function PortalApp({initialMe}: {initialMe?: Me | null}) {
+  useState(() => {
+    if (initialMe && !queryClient.getQueryData(meQuery.queryKey)) queryClient.setQueryData(meQuery.queryKey, initialMe);
+  });
   const signingIn = useOwnerTicket();
   return (
     <QueryClientProvider client={queryClient}>

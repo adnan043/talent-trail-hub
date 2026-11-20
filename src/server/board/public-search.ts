@@ -31,9 +31,25 @@ export const PERIODS_PER_YEAR: Record<SalaryPeriod, number> = {YEAR: 1, MONTH: 1
  * term is ONE `ILIKE` the trigram GIN index answers, instead of an OR across four tables that
  * reads every live job.
  */
+const keywordTerms = (q: string) => [...new Set(q.toLowerCase().split(' ').filter(Boolean))].slice(0, MAX_TERMS);
+
 function keywordWhere(q: string): Prisma.JobWhereInput[] {
-  const terms = [...new Set(q.toLowerCase().split(' ').filter(Boolean))].slice(0, MAX_TERMS);
-  return terms.map(term => ({searchText: insensitive(term)}));
+  return keywordTerms(q).map(term => ({searchText: insensitive(term)}));
+}
+
+/**
+ * The ids among `ids` whose `search_text` matches every keyword term: the same `ILIKE '%term%'`
+ * as `keywordWhere`, but as `ILIKE ALL(…)`, which the trigram index can't serve, so Postgres reads
+ * just these rows by primary key. With `keywordWhere` the planner expects ONE trigram match
+ * (`search_text` is too wide for column statistics) and rechecks every match on the board
+ * (~13 ms for "engineer" at 5k jobs, growing with the board) to find a handful of featured ones.
+ */
+export async function idsMatchingKeyword(db: PrismaClient, ids: number[], q: string): Promise<number[]> {
+  const patterns = keywordTerms(q).map(term => `%${likeLiteral(term)}%`);
+  if (!ids.length || !patterns.length) return ids;
+  const rows = await db.$queryRaw<{id: number}[]>`
+    SELECT "id" FROM "jobs" WHERE "id" = ANY(${ids}::int[]) AND "search_text" ILIKE ALL(${patterns}::text[])`;
+  return rows.map(r => r.id);
 }
 
 /**
@@ -169,7 +185,7 @@ export const FEATURED_COUNT_CAP = 100;
 
 /**
  * The pinned ids AND the board's featured count in ONE read, for an unfiltered page 1 (the home
- * page, /jobs with no filter), where `pinnedIds(db, publicJobWhere(…))` and `featuredCount` would
+ * page, /jobs with no filter), where `pinnedIds(db, publicJobWhere(…))` and `featuredIds` would
  * read the same rows. With any filter, call both.
  */
 export async function featuredPinsAndCount(
@@ -187,14 +203,18 @@ export async function featuredPinsAndCount(
   return {pinned: pickPinned(rows.map(r => r.id), seedAt), count: Math.min(rows.length, FEATURED_COUNT_CAP)};
 }
 
-/** Featured jobs on the whole board, capped (one small bounded read of ids). */
-export async function featuredCount(db: PrismaClient, settings: BoardSettings, now: Date): Promise<number> {
+/**
+ * The ids of the featured jobs on the whole board (up to the pin candidates' cap), oldest first:
+ * the candidates every filtered search pins from, and (capped) the board's featured count.
+ */
+export async function featuredIds(db: PrismaClient, settings: BoardSettings, now: Date): Promise<number[]> {
   const rows = await db.job.findMany({
     where: {AND: [publicJobWhere(settings, now), featuredWhere(now)]},
-    take: FEATURED_COUNT_CAP,
+    orderBy: {id: 'asc'},
+    take: PIN_CANDIDATES,
     select: {id: true},
   });
-  return rows.length;
+  return rows.map(r => r.id);
 }
 
 /** "See all 12 featured jobs" / "See all 100+ featured jobs". */

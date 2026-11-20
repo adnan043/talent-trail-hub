@@ -3,7 +3,7 @@ import {validator} from 'hono/validator';
 
 import {Prisma, type PrismaClient} from '../../generated/prisma/client';
 import {LIMITS} from '../../lib/board';
-import {parseJobSearch, toApiQuery} from '../../lib/job-search';
+import {type JobSearch, parseJobSearch, toApiQuery} from '../../lib/job-search';
 import type {JobDetailResponse, JobsPage, SitemapResponse} from '../../lib/types-public';
 import {cache} from '../../platform/cache';
 import {problem, withDb} from '../../platform/guards';
@@ -12,9 +12,9 @@ import {cachedBoardSettings} from '../board/brand';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
 import {HOME_PREFIX, SITEMAP_KEY} from '../board/public-cache';
-import {cursorHour, cursorWhere, encodeCursor, featuredCount, featuredPinsAndCount, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
+import {cursorHour, cursorWhere, encodeCursor, FEATURED_COUNT_CAP, featuredIds, featuredPinsAndCount, idsMatchingKeyword, moreFeatured, NEWEST, orderFor, pinHour, pinnedIds, searchWhere} from '../board/public-search';
 import {jobDetailSelect, jobState, jobSummarySelect, reviveSummary, toJobDetail, toJobSummary} from '../board/public-shapes';
-import {isSingleCompany} from '../board/settings';
+import {type BoardSettings, isSingleCompany} from '../board/settings';
 
 /**
  * Public jobs (workstream A). Every read starts from `publicJobWhere` (published, unexpired,
@@ -105,10 +105,13 @@ export const jobRoutes = new Hono()
         const [[pinned, featuredTotal], rows] = await Promise.all([
           unfiltered
             ? featuredPinsAndCount(db, settings, now, seedAt).then(r => [r.pinned, r.count] as const)
-            : Promise.all([
-                search.featured ? Promise.resolve([] as number[]) : pinnedIds(db, where, now, seedAt),
-                firstPage ? boardFeaturedCount(db, settings, now, scope) : Promise.resolve(0),
-              ]),
+            : boardFeaturedIds(db, settings, now, scope).then(
+                async ids =>
+                  [
+                    search.featured ? [] : await filteredPins(db, search, settings, ids, now, seedAt),
+                    firstPage ? Math.min(ids.length, FEATURED_COUNT_CAP) : 0,
+                  ] as const
+              ),
           db.job.findMany({
             where: after ? {AND: [where, after]} : where,
             orderBy,
@@ -220,12 +223,25 @@ export const jobRoutes = new Hono()
   });
 
 /**
- * The whole board's featured count ("See all 12 featured jobs") on a filtered page 1: the same for
- * every search, so one cached number instead of a read per search. Featured periods end by
- * themselves, so a short TTL (as the first page's); job writes clear it with the public lists.
+ * The whole board's featured job ids: the only jobs a filtered or later page can pin, and (capped)
+ * the featured count on a filtered page 1 ("See all 12 featured jobs"). The same for every search,
+ * so one cached list instead of a read per search. Featured periods end by themselves, so a short
+ * TTL (as the first page's), and the pins are still checked against the clock (`filteredPins`); job
+ * writes clear it with the public lists.
  */
-const boardFeaturedCount = (db: PrismaClient, settings: Parameters<typeof publicJobWhere>[0], now: Date, scope: string) =>
-  cache.getOrSet(`${HOME_PREFIX}featured-count:${scope}`, JOBS_FIRST_PAGE_TTL, () => featuredCount(db, settings, now));
+const boardFeaturedIds = (db: PrismaClient, settings: BoardSettings, now: Date, scope: string) =>
+  cache.getOrSet(`${HOME_PREFIX}featured-ids:${scope}`, JOBS_FIRST_PAGE_TTL, () => featuredIds(db, settings, now));
+
+/**
+ * The pins of a filtered (or later) page: the board's featured jobs that match the search. No
+ * featured jobs, no read. A keyword is matched on those few rows by id first (`idsMatchingKeyword`),
+ * then the other filters, so neither read walks every keyword match on the board.
+ */
+async function filteredPins(db: PrismaClient, search: JobSearch, settings: BoardSettings, featured: number[], now: Date, seedAt: Date): Promise<number[]> {
+  const candidates = search.q ? await idsMatchingKeyword(db, featured, search.q) : featured;
+  if (!candidates.length) return [];
+  return pinnedIds(db, {AND: [searchWhere({...search, q: ''}, settings, now), {id: {in: candidates}}]}, now, seedAt);
+}
 
 type SummaryRow = Prisma.JobGetPayload<{select: typeof jobSummarySelect}>;
 const jobPageSelect = {...jobDetailSelect, needsReview: true} as const;
