@@ -2,6 +2,7 @@ import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 
 import {sha256Hex} from '../../src/platform/auth/encoding';
 import {app} from '../../src/server/app';
+import {STAFF_ID_LIST_MAX} from '../../src/server/board/applicants';
 import {forgetBoardSettings} from '../../src/server/board/brand';
 import {runPurge} from '../../src/server/board/tasks';
 import {overLimit} from '../../src/server/routes/applications';
@@ -313,6 +314,37 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     const all = await admin.get('/site-api/applications/all?status=&before=&job=');
     expect(all.status).toBe(200);
     expect((all.json.items as {id: number}[]).map(r => r.id)).toEqual([houseApp]);
+    // The job filter stays inside the scope (an employer's job id lists nothing), and the export too.
+    expect((await admin.get(`/site-api/applications/all?status=&before=&job=${jobA.id}`)).json.items).toEqual([]);
+    expect(((await admin.get(`/site-api/applications/all?status=&before=&job=${house.id}`)).json.items as {id: number}[]).map(r => r.id)).toEqual([houseApp]);
+    const exported = await admin.get('/site-api/applications/all/export?status=&job=');
+    expect(exported.json.text).toContain('h@example.test');
+    expect(exported.json.text).not.toContain('c@example.test');
+    expect((await admin.get(`/site-api/applications/all/export?status=&job=${jobA.id}`)).json.text).not.toContain('c@example.test');
+    // A company with no employer account (the staff's): its employer-sourced job is listed too.
+    const orphan = await db.company.create({data: {name: 'Orphan Co', slug: 'orphan-co', source: 'admin'}, select: {id: true}});
+    const orphanJob = await makeJob(orphan.id, 'orphan-job', 'paid');
+    expect((await apply(await applicant('o@example.test', '198.51.100.7'), orphanJob.slug)).status).toBe(201);
+    const orphanApp = (await db.application.findFirstOrThrow({where: {jobId: orphanJob.id}, select: {id: true}})).id;
+    expect(((await admin.get('/site-api/applications/all?status=&before=&job=')).json.items as {id: number}[]).map(r => r.id)).toEqual([orphanApp, houseApp]);
+    // Past STAFF_ID_LIST_MAX board jobs the scope filters by the relation instead: the same answer.
+    const category = await db.category.findFirstOrThrow({where: {slug: 'apply-test'}, select: {id: true}});
+    await db.job.createMany({
+      data: Array.from({length: STAFF_ID_LIST_MAX + 1}, (_, i) => ({
+        companyId: companyA.id,
+        categoryId: category.id,
+        title: `Imported ${i}`,
+        slug: `imported-${i}`,
+        source: 'import',
+        descriptionHtml: '<p>x</p>',
+        descriptionMd: 'x',
+        employmentType: 'FULL_TIME',
+        workplaceType: 'remote',
+        status: 'draft',
+      })),
+    });
+    expect(((await admin.get('/site-api/applications/all?status=&before=&job=')).json.items as {id: number}[]).map(r => r.id)).toEqual([orphanApp, houseApp]);
+    expect((await admin.get(`/site-api/applications/all?status=&before=&job=${jobA.id}`)).json.items).toEqual([]);
 
     // Seeing the board's applicants is not changing them: without site:applicant:manage the staff
     // member's PATCH is a 404 (nothing changes, no email); with it, a 200.

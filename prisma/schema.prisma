@@ -585,6 +585,8 @@ model Job {
   @@index([companyId, status, id])
   /// The employer's "my jobs" (every status, newest first).
   @@index([companyId, id(sort: Desc)])
+  /// The admin's own jobs (`admin`, `import`): `staffScope` reads their ids first (src/server/board/applicants.ts).
+  @@index([source, id])
   @@index([status, expiresAt])
   @@index([tierId])
   /// `/jobs?sort=salary` (the SQL index is `salary_sort_cents DESC NULLS LAST`, matching the order).

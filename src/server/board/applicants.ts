@@ -1,7 +1,7 @@
 import type {Context} from 'hono';
 
 import type {Prisma, PrismaClient} from '../../generated/prisma/client';
-import {type ApplicationStatus, EMPLOYER_SOURCES, RESUME_RETENTION_DAYS, isDbId} from '../../lib/board';
+import {type ApplicationStatus, EMPLOYER_SOURCES, JOB_SOURCES, RESUME_RETENTION_DAYS, isDbId} from '../../lib/board';
 import {type ApplicantRow, RESUME_EXPIRED_TEXT} from '../../lib/types-apply';
 import {can} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
@@ -31,6 +31,35 @@ type ViewerContext = Context<{Variables: {viewer: Viewer; db: PrismaClient}}>;
  */
 export const staffJobWhere = (settings: Pick<BoardSettings, 'boardMode' | 'ownerCompanyId'>): Prisma.JobWhereInput =>
   isSingleCompany(settings) ? {} : {OR: [{source: {notIn: [...EMPLOYER_SOURCES]}}, {company: {ownerUserId: null}}]};
+
+/** The board's own job sources (`admin`, `import`): every source but an employer's. */
+const STAFF_SOURCES = JOB_SOURCES.filter(source => !EMPLOYER_SOURCES.includes(source));
+
+/** Past this many staff jobs `staffScope` filters by the relation again (no huge id lists). */
+export const STAFF_ID_LIST_MAX = 2000;
+
+/**
+ * `staffJobWhere` as a filter on `applications` (the admin's list, its export and the dashboard's
+ * count). On a marketplace the staff jobs' ids are read FIRST (one indexed read: `jobs(source, id)`
+ * and the ownerless companies by `owner_user_id`), and the applications filtered by `job_id IN (…)`,
+ * which their `(job_id, …)` indexes answer. Filtering applications by the relation instead joins every
+ * application to its job and company newest first until a page is full: when the board's own jobs
+ * have few of the applications, that walks them all (~30 ms at 20k applications, growing with the
+ * board). With more than `STAFF_ID_LIST_MAX` staff jobs the relation filter is used as before
+ * (their applications are then common, so that walk ends early).
+ */
+export async function staffScope(
+  db: PrismaClient,
+  settings: Pick<BoardSettings, 'boardMode' | 'ownerCompanyId'>
+): Promise<Prisma.ApplicationWhereInput> {
+  if (isSingleCompany(settings)) return {};
+  const rows = await db.$queryRaw<{id: number}[]>`
+    SELECT "id" FROM "jobs" WHERE "source" = ANY(${STAFF_SOURCES}::text[])
+    UNION
+    SELECT j."id" FROM "jobs" j JOIN "companies" c ON c."id" = j."company_id" WHERE c."owner_user_id" IS NULL
+    LIMIT ${STAFF_ID_LIST_MAX + 1}`;
+  return rows.length > STAFF_ID_LIST_MAX ? {job: staffJobWhere(settings)} : {jobId: {in: rows.map(r => r.id)}};
+}
 
 /**
  * `staff` for holders of `site:applicant:read` (`site:applicant:manage` for a write), limited to
