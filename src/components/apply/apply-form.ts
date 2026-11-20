@@ -5,7 +5,6 @@
  * sends only the cover note and the consent: the name, email, phone and CV come from the profile,
  * on the server. Everything about the visitor is written with `textContent`, never as HTML.
  */
-import {replaceWithMessage} from '../../lib/account';
 import {LIMITS} from '../../lib/board';
 import {bindForm, postJson} from '../../lib/form';
 import {rules} from '../../lib/rules';
@@ -39,12 +38,33 @@ function bindApplyForm(form: HTMLFormElement, slug: string) {
         consent: consent.checked,
       });
       if (res?.status === 201) {
-        replaceWithMessage(form, result.message ?? 'Application sent. Follow it under My applications in your dashboard.');
+        showDone(form, false);
         return {ok: true};
       }
       return result;
     },
   });
+}
+
+/** Swaps the form for the success card (`alreadyApplied`: the job seeker applied before). */
+function showDone(form: HTMLFormElement, alreadyApplied: boolean) {
+  const section = form.closest<HTMLElement>('[data-apply-section]');
+  const done = section?.querySelector<HTMLElement>('[data-apply-done]');
+  if (!section || !done) return;
+  if (alreadyApplied) {
+    const set = (name: string, text: string) => {
+      const node = done.querySelector<HTMLElement>(`[data-done-${name}]`);
+      if (node) node.textContent = text;
+    };
+    set('kicker', 'Already applied');
+    set('title', 'Your application is on its way');
+    set('text', 'You have already applied for this job. Follow its status under My applications in your dashboard.');
+  } else {
+    done.classList.add('is-fresh');
+  }
+  form.hidden = true;
+  done.hidden = false;
+  if (!alreadyApplied) done.focus({preventScroll: true});
 }
 
 const BLOCKED_NOTES: Partial<Record<NonNullable<CanApplyAnswer['reason']>, string>> = {
@@ -88,6 +108,7 @@ async function showStep(section: HTMLElement, form: HTMLFormElement, slug: strin
     form.hidden = false;
     return;
   }
+  if (answer?.reason === 'applied') return showDone(form, true);
   if (answer?.reason === 'choose_kind') return show('apply-choose');
   if (answer?.reason === 'incomplete') {
     const line = pick('apply-missing');
