@@ -159,7 +159,9 @@ export const applicationRoutes = new Hono<Env>()
     const no = (reason: CanApplyAnswer['reason'], more: Partial<CanApplyAnswer> = {}) => c.json<CanApplyAnswer>({canApply: false, reason, ...more});
     if (viewer.state !== 'user' || !viewer.id) return no('sign_in');
     if (!slug) return no(null);
-    const email = viewer.email ? normalizeEmail(viewer.email) : null;
+    // Only a CONFIRMED address matches old guest applications (as My applications requires): the
+    // answer carries that application's status, which is the address owner's to see.
+    const email = viewer.email && viewer.emailVerified ? normalizeEmail(viewer.email) : null;
     // Applied from this account (even under an older email), or an old GUEST application with this
     // address. Another account's application never counts: an address can pass to a new account.
     const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{applicantUserId: null, email}] : [])]};

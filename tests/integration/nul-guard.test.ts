@@ -51,4 +51,17 @@ describe.skipIf(!DATABASE_URL)('NUL characters (integration, real Postgres)', ()
     const notJson = await seeker.request('POST', '/site-api/auth/login', new RawBody('not json'));
     expect(notJson.status).not.toBe(500);
   });
+
+  it('refuses one nested deeper than the check walks (security check 11)', async () => {
+    const visitor = new Browser(app);
+    let deep: unknown = 'a\u0000b';
+    for (let i = 0; i < 30; i++) deep = {x: deep};
+    const res = await visitor.post('/site-api/auth/login', {email: 'a@example.test', password: 'x', deep});
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('invalid_input');
+    // As deep, without one: not the guard's business.
+    let plain: unknown = 'ab';
+    for (let i = 0; i < 30; i++) plain = {x: plain};
+    expect((await visitor.post('/site-api/auth/login', {email: 'a@example.test', password: 'x', plain})).status).not.toBe(400);
+  });
 });

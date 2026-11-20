@@ -19,7 +19,10 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function hasNul(value: unknown, depth = 0): boolean {
   if (typeof value === 'string') return value.includes('\u0000');
-  if (depth > 20 || !value || typeof value !== 'object') return false;
+  if (!value || typeof value !== 'object') return false;
+  // Only reached when the body holds an escaped `\u0000`: one nested deeper than any route reads is
+  // refused rather than left unchecked (no real input nests 20 levels).
+  if (depth > 20) return true;
   if (Array.isArray(value)) return value.some(item => hasNul(item, depth + 1));
   return Object.entries(value).some(([key, item]) => key.includes('\u0000') || hasNul(item, depth + 1));
 }

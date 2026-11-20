@@ -376,6 +376,18 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     await expect(db.application.create({data: guestRow})).rejects.toThrow();
   });
 
+  it('an old guest application (and its status) matches only a confirmed address (security check 11)', async () => {
+    const dana = await applicant('dana@example.test', '198.51.100.25');
+    await db.application.create({data: {jobId: jobA.id, name: 'Dana', email: 'dana@example.test', status: 'rejected', consentAt: new Date(), consentText: 'x'}});
+    const path = `/site-api/applications/jobs/${jobA.slug}/can-apply`;
+    expect((await dana.get(path)).json).toMatchObject({canApply: false, reason: 'applied', applicationStatus: 'rejected'});
+    // The same session, its address no longer confirmed: the guest row is not this account's to see.
+    await db.user.update({where: {id: await userId('dana@example.test')}, data: {emailVerifiedAt: null}});
+    const unconfirmed = (await dana.get(path)).json;
+    expect(unconfirmed.reason).not.toBe('applied');
+    expect(unconfirmed.applicationStatus).toBeUndefined();
+  });
+
   it('a closed job says so before the form, and takes no application', async () => {
     const casey = await applicant('casey@example.test', '198.51.100.22');
     await db.job.update({where: {id: jobA.id}, data: {status: 'closed'}});
