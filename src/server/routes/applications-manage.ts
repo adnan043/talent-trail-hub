@@ -21,6 +21,7 @@ import {
   isResumeExpired,
   jobWhereOf,
   staffJobWhere,
+  staffScope,
   STATUS_TEMPLATES,
   toApplicantRow,
 } from '../board/applicants';
@@ -158,9 +159,9 @@ export const applicantRoutes = new Hono<Env>()
 
   .get('/all', listQuery, withViewer, requireAuth, requirePermission(PERMISSIONS.APPLICANT_READ_ALL), withDb, async c => {
     const {status, before, job} = c.req.valid('query');
-    const scope = staffJobWhere(await cachedBoardSettings(c.var.db));
+    const scope = await staffScope(c.var.db, await cachedBoardSettings(c.var.db));
     const rows = await c.var.db.application.findMany({
-      where: {job: scope, ...(job ? {jobId: job} : {}), ...(status ? {status} : {}), ...(before ? {id: {lt: before}} : {})},
+      where: {AND: [scope, job ? {jobId: job} : {}], ...(status ? {status} : {}), ...(before ? {id: {lt: before}} : {})},
       select: adminApplicationSelect,
       orderBy: {id: 'desc'},
       take: PAGE + 1,
@@ -171,8 +172,8 @@ export const applicantRoutes = new Hono<Env>()
 
   .get('/all/export', listQuery, withViewer, requireAuth, requirePermission(PERMISSIONS.APPLICANT_READ_ALL), withDb, async c => {
     const {status, job} = c.req.valid('query');
-    const scope = staffJobWhere(await cachedBoardSettings(c.var.db));
-    const {csv, count} = await exportCsv(c.var.db, {job: scope, ...(job ? {jobId: job} : {}), ...(status ? {status} : {})}, true);
+    const scope = await staffScope(c.var.db, await cachedBoardSettings(c.var.db));
+    const {csv, count} = await exportCsv(c.var.db, {AND: [scope, job ? {jobId: job} : {}], ...(status ? {status} : {})}, true);
     await audit(c.var.db, {actorUserId: c.var.viewer.id, action: 'applicants_exported', ...(job ? {target: ['job', job] as [string, number]} : {}), meta: {count}});
     return csvResponse(c, csv, 'applicants.csv');
   })

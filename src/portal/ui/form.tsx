@@ -290,7 +290,10 @@ export function Combobox({
     query(null);
   };
 
-  // The list sits under (or over) the box, as wide as it, and scrolls inside itself.
+  // The list sits under (or over) the box, as wide as it, and scrolls inside itself. Placed when it
+  // opens and when its row count changes (its height), then on resize and scroll: not after every
+  // render (each keystroke and arrow key), which forced a layout read each time.
+  const rows = options.length;
   useLayoutEffect(() => {
     if (!open || !input.current || !list.current) return;
     const place = () => {
@@ -316,7 +319,7 @@ export function Combobox({
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', scrolled, true);
     };
-  });
+  }, [open, rows]);
 
   // The highlighted option stays in range and in view as the list changes.
   const at = Math.min(active, Math.max(0, options.length - 1));

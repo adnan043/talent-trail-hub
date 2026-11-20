@@ -7,7 +7,7 @@ import {PERMISSIONS} from '../permissions';
 import {DAY_MS} from './manage-shared';
 import {cachedBoardSettings} from './brand';
 import {cache} from '../../platform/cache';
-import {staffJobWhere} from './applicants';
+import {staffScope} from './applicants';
 
 /**
  * F19 overview numbers and the activity chart. Each is ONE aggregate `$queryRaw` (counted in the
@@ -74,7 +74,7 @@ export const manageOverviewRoutes = new Hono()
           select: {id: true, title: true, slug: true, viewCount: true, applicationCount: true, company: {select: {name: true}}},
         }),
         // The admin's own share, the same scope as the Applicants list the card links to.
-        db.application.count({where: {createdAt: {gte: since}, job: staffJobWhere(settings)}}),
+        staffScope(db, settings).then(scope => db.application.count({where: {createdAt: {gte: since}, ...scope}})),
       ]);
       return {
         currency: settings.currency,
