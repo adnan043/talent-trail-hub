@@ -107,8 +107,18 @@ export const adminRoutes = [
   moderationModeRoute,
 ] as const;
 
-/** The board's settings (tabs inside one screen, settings-tabs.tsx): listed last in the sidebar's Site group. */
-export const SETTINGS_NAV_ITEM: NavItem = {to: '/manage/settings', label: 'Settings', icon: 'settings', ability: 'manageBoard'};
+/** The Settings screen's tabs (settings-tabs.tsx), each its own route. */
+export const SETTINGS_TABS = [
+  {to: '/manage/settings/branding', label: 'Branding'},
+  {to: '/manage/settings/board', label: 'Board mode'},
+  {to: '/manage/settings/moderation', label: 'Moderation mode'},
+] as const;
+
+/**
+ * The board's settings (tabs inside one screen, settings-tabs.tsx): listed last in the sidebar's Site
+ * group. Its tabs stay findable by name in the ⌘K search (they were sidebar items of their own).
+ */
+export const SETTINGS_NAV_ITEM: NavItem = {to: '/manage/settings', label: 'Settings', icon: 'settings', ability: 'manageBoard', tabs: SETTINGS_TABS};
 
 export const ADMIN_NAV: {label: string; items: NavItem[]}[] = [
   {

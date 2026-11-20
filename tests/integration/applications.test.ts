@@ -199,7 +199,10 @@ describe.skipIf(!DATABASE_URL)('applications (integration, real Postgres)', () =
     expect((noConsent.json.fields as Record<string, string>).consent).toBeTruthy();
     expect(await db.application.count({where: {jobId: jobA.id}})).toBe(0);
     expect((await apply(ready, jobA.slug)).status).toBe(201);
-    expect((await ready.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'applied'});
+    expect((await ready.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({canApply: false, reason: 'applied', applicationStatus: 'new'});
+    // The job page's card follows the application: once shortlisted (or not selected) it says so.
+    await db.application.updateMany({where: {jobId: jobA.id}, data: {status: 'shortlisted'}});
+    expect((await ready.get(`/site-api/applications/jobs/${jobA.slug}/can-apply`)).json).toMatchObject({reason: 'applied', applicationStatus: 'shortlisted'});
   });
 
   it('more than 5 applications per IP an hour are refused (429) and never saved', async () => {

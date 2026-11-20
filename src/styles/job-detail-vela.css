@@ -680,6 +680,11 @@
   list-style: none;
 }
 
+/* A closed application (not selected) has no next step: its steps are hidden. */
+.vd-done-steps[hidden] {
+  display: none;
+}
+
 .vd-done-steps li {
   display: inline-flex;
   align-items: center;
