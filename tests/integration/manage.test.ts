@@ -141,6 +141,22 @@ describe.skipIf(!DATABASE_URL)('manage (integration, real Postgres)', () => {
     expect(await db.auditEvent.count({where: {action: 'job_edited'}})).toBe(1);
   });
 
+  it("an admin cannot post for an employer's company: not offered, and refused if sent", async () => {
+    const {company, category} = await seedJob('admin');
+    const free = await db.company.create({data: {name: 'Acme ownerless', slug: `acme-ownerless-${Date.now()}`}});
+    await db.company.update({where: {id: company.id}, data: {ownerUserId: await userId('member@example.test')}});
+
+    const listed = (await admin.get('/site-api/manage/jobs/companies?q=acme')).json.companies as {id: number}[];
+    expect(listed.map(c => c.id)).toEqual([free.id]);
+
+    const refused = await admin.post('/site-api/manage/jobs', {values: values('Data engineer', category.id), companyId: company.id, durationDays: 14});
+    expect(refused.status).toBe(422);
+    expect(refused.json.fields).toHaveProperty('companyId');
+    expect(await db.job.count({where: {companyId: company.id, title: 'Data engineer'}})).toBe(0);
+
+    expect((await admin.post('/site-api/manage/jobs', {values: values('Data engineer', category.id), companyId: free.id, durationDays: 14})).status).toBe(201);
+  });
+
   it('listing tiers: the price comes from the catalogue, 1 to 3 active, never none', async () => {
     const tier = (name: string, priceKey: string | null, isActive = true) => ({name, priceKey, durationDays: 30, includesFeatured: false, isActive});
     const unknown = await admin.post('/site-api/manage/tiers', tier('Ghost', 'no-such-price'));

@@ -1,7 +1,7 @@
 import type {Context} from 'hono';
 
 import type {Prisma, PrismaClient} from '../../generated/prisma/client';
-import {type ApplicationStatus, RESUME_RETENTION_DAYS, isDbId} from '../../lib/board';
+import {type ApplicationStatus, EMPLOYER_SOURCES, RESUME_RETENTION_DAYS, isDbId} from '../../lib/board';
 import {type ApplicantRow, RESUME_EXPIRED_TEXT} from '../../lib/types-apply';
 import {can} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
@@ -12,31 +12,43 @@ import {cachedBoardSettings} from './brand';
 import {type BoardSettings, isSingleCompany} from './settings';
 
 /**
- * F16 applicants, shared by the employer area (own company) and the admin (`site:applicant:read`,
- * every company). Every read and write goes through a scope, so an employer never reaches another
- * company's job, application or resume: out-of-scope ids answer exactly like missing ones (404).
+ * F16 applicants, shared by the employer area (own company) and the admin (`site:applicant:read`).
+ * Every read and write goes through a scope, so an employer never reaches another company's job,
+ * application or resume: out-of-scope ids answer exactly like missing ones (404).
+ *
+ * The admin's scope is the BOARD'S OWN jobs only (`staffJobWhere`): on a marketplace, a company's
+ * applicants are that company's to read and decide on. The admin cannot edit an employer's job, and
+ * never sees or shortlists/rejects its candidates either.
  */
-export type ApplicantScope = {kind: 'all'} | {kind: 'company'; companyId: number} | {kind: 'none'};
+export type ApplicantScope = {kind: 'staff'; where: Prisma.JobWhereInput} | {kind: 'company'; companyId: number} | {kind: 'none'};
 
 type ViewerContext = Context<{Variables: {viewer: Viewer; db: PrismaClient}}>;
 
 /**
- * `all` for holders of `site:applicant:read` (`site:applicant:manage` for a write; both board
- * modes); otherwise the viewer's own
- * company, but only on a marketplace board (single-company mode: the employer area is 404).
+ * The jobs whose applicants the admin handles: on a single-company board every job; on a
+ * marketplace the admin's own (`admin`, `import`) plus any job whose company has no owner account
+ * (nobody else can answer those candidates, and the new-applicant email already goes to the staff).
+ */
+export const staffJobWhere = (settings: Pick<BoardSettings, 'boardMode' | 'ownerCompanyId'>): Prisma.JobWhereInput =>
+  isSingleCompany(settings) ? {} : {OR: [{source: {notIn: [...EMPLOYER_SOURCES]}}, {company: {ownerUserId: null}}]};
+
+/**
+ * `staff` for holders of `site:applicant:read` (`site:applicant:manage` for a write), limited to
+ * `staffJobWhere`; otherwise the viewer's own company, but only on a marketplace board
+ * (single-company mode: the employer area is 404).
  */
 export async function applicantScope(c: ViewerContext, access: 'read' | 'write' = 'read'): Promise<ApplicantScope> {
-  // Reading every company's applicants and CHANGING them are two permissions: a staff member who
+  // Reading the board's applicants and CHANGING them are two permissions: a staff member who
   // may only look never sets a status (which emails the candidate) or overwrites notes.
   const all = access === 'write' ? PERMISSIONS.APPLICANT_MANAGE_ALL : PERMISSIONS.APPLICANT_READ_ALL;
   const db = c.var.db;
-  // One parallel trip: the permission check and the own company (only used when it is not `all`).
+  // One parallel trip: the permission check and the own company (only used when it is not staff).
   const [staff, settings, company] = await Promise.all([
     can(c as unknown as Context<{Variables: {viewer: Viewer}}>, all),
     cachedBoardSettings(db),
     db.company.findUnique({where: {ownerUserId: c.var.viewer.id!}, select: {id: true, isBlocked: true}}),
   ]);
-  if (staff) return {kind: 'all'};
+  if (staff) return {kind: 'staff', where: staffJobWhere(settings)};
   if (isSingleCompany(settings) || !company) return {kind: 'none'};
   // A blocked company keeps reading its applicants but changes nothing: a status change emails the
   // candidate in the board's name.
@@ -47,7 +59,7 @@ export async function applicantScope(c: ViewerContext, access: 'read' | 'write' 
 /** The `jobs` filter of a scope (`null`: nothing is in scope). */
 export function jobWhereOf(scope: ApplicantScope): Prisma.JobWhereInput | null {
   if (scope.kind === 'none') return null;
-  return scope.kind === 'company' ? {companyId: scope.companyId} : {};
+  return scope.kind === 'company' ? {companyId: scope.companyId} : scope.where;
 }
 
 const DAY_MS = 86_400_000;
@@ -153,6 +165,16 @@ export function idOf(value: string | undefined): number | null {
 }
 
 /**
+ * An employer's company whose account is suspended (or gone) takes no applications: nobody could
+ * read them (the staff see only the board's own jobs, `staffJobWhere`). Ownerless companies, and
+ * every job on a single-company board, are the staff's own.
+ */
+export async function ownerInactive(db: PrismaClient, ownerUserId: number | null, singleCompany: boolean): Promise<boolean> {
+  if (singleCompany || ownerUserId === null) return false;
+  return (await db.user.count({where: {id: ownerUserId, status: 'active'}})) === 0;
+}
+
+/**
  * The candidate's confirmation and the employer's "new applicant" email (each send never throws).
  * Runs AFTER the apply answer (`after()`, src/server/board/after.ts). `settings`: the board
  * settings the route already holds, so no send reads them again.
@@ -171,12 +193,14 @@ export async function notifyNewApplication(
   const origin = new URL(c.req.url).origin;
   const requestUrl = c.req.url;
   // The employer; on a single-company board, or for a company without an owner account, the staff.
+  // An employer's company whose account is no longer active emails nobody: its jobs take no
+  // applications (`ownerInactive`), and the staff could not open that company's applicants anyway.
   const recipients = async () => {
-    const owner =
-      !singleCompany && job.company.ownerUserId
-        ? await db.user.findFirst({where: {id: job.company.ownerUserId, status: 'active'}, select: {email: true}})
-        : null;
-    return {owner: owner !== null, to: owner ? [owner.email] : await applicantStaffEmails(db)};
+    if (!singleCompany && job.company.ownerUserId) {
+      const owner = await db.user.findFirst({where: {id: job.company.ownerUserId, status: 'active'}, select: {email: true}});
+      return {owner: true, to: owner ? [owner.email] : []};
+    }
+    return {owner: false, to: await applicantStaffEmails(db)};
   };
   // All at once: the confirmation, and the employer lookup followed by their emails (unless this
   // job already sent its hourly share: a flood of applications never floods the staff's inboxes).
@@ -193,7 +217,7 @@ export async function notifyNewApplication(
       settings
     ),
     notifyEmployer && recipients().then(({owner, to}) => {
-      const applicantsUrl = owner ? `${origin}/dashboard/employer/jobs/${job.id}/applicants` : `${origin}/dashboard/manage/applicants?job=${job.id}`;
+      const applicantsUrl = owner ? `${origin}/dashboard/employer/jobs/${job.id}/applicants` : `${origin}/dashboard/manage/admin-jobs/applicants?job=${job.id}`;
       return Promise.allSettled(
         to.map(address =>
           sendBoardEmail(db, requestUrl, {template: 'new-applicant', to: address, vars: {boardName, jobTitle: job.title, applicantName: candidate.name, applicantsUrl}}, settings)

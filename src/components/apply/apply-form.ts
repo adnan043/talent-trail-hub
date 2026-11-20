@@ -75,6 +75,20 @@ function showDone(form: HTMLFormElement, applied: {status: CanApplyAnswer['appli
   form.hidden = true;
   done.hidden = false;
   if (!alreadyApplied) done.focus({preventScroll: true});
+  markApplied();
+}
+
+/**
+ * The page's other on-site apply buttons (the sidebar card, the phone's bottom bar) say "Applied"
+ * once the job seeker has applied; they still lead down to the card. The page itself is cached for
+ * everyone, so this happens here, not in the HTML.
+ */
+function markApplied() {
+  document.querySelectorAll<HTMLAnchorElement>('a.vd-apply[href="#apply"]').forEach(link => {
+    const label = [...link.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+    if (label) label.textContent = 'Applied';
+    link.classList.add('is-applied');
+  });
 }
 
 const BLOCKED_NOTES: Partial<Record<NonNullable<CanApplyAnswer['reason']>, string>> = {

@@ -57,6 +57,12 @@ describe.skipIf(!DATABASE_URL)('read-only demo admin (integration, real Postgres
       expect(res.status, path).toBe(403);
       expect(res.json.error, path).toBe('demo_read_only');
     }
+    // The job page's public POSTs (view counter, saved-jobs lookup) are not the demo's writes.
+    for (const path of ['/site-api/jobs/saved', '/site-api/jobs/no-such-job/view']) {
+      const res = await demo.request('POST', path, {ids: []});
+      expect(res.json?.error, path).not.toBe('demo_read_only');
+      expect(res.status, path).not.toBe(403);
+    }
     // Nothing changed: still no job seeker profile, the account and its password stand.
     expect(await db.applicantProfile.count()).toBe(0);
     expect((await new Browser(app).post('/site-api/auth/login', {email: 'demo@example.test', password: PASSWORD})).status).toBe(200);

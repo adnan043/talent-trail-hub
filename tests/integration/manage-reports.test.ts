@@ -62,6 +62,23 @@ describe.skipIf(!DATABASE_URL)('manage reports (integration, real Postgres)', ()
     expect(o.topJobs.map(j => j.title).sort()).toEqual(['live-1', 'live-2']);
   });
 
+  it("the Applications card counts the board's own jobs; another company's applications only in the board total", async () => {
+    await seed();
+    const category = await db.category.findFirstOrThrow({where: {slug: 'ops'}});
+    const employer = await db.company.create({data: {name: 'Employer Co', slug: 'employer-co', ownerUserId: 987654}});
+    const theirs = await db.job.create({
+      data: {companyId: employer.id, categoryId: category.id, title: 'theirs', slug: 'theirs', source: 'paid', descriptionHtml: '<p>x</p>', descriptionMd: 'x', employmentType: 'FULL_TIME', workplaceType: 'remote', status: 'published', publishedAt: new Date(), expiresAt: new Date(Date.now() + 10 * DAY)},
+    });
+    const ours = await db.job.findFirstOrThrow({where: {slug: 'live-1'}});
+    const apply = (jobId: number, email: string) => db.application.create({data: {jobId, name: 'A', email, consentAt: new Date(), consentText: 'ok'}});
+    await apply(ours.id, 'one@example.com');
+    await apply(theirs.id, 'two@example.com');
+    await apply(theirs.id, 'three@example.com');
+    const o = (await owner.get('/site-api/manage/overview')).json as {applications30d: {value: number}; ownApplications30d: {value: number}};
+    expect(o.applications30d.value).toBe(3);
+    expect(o.ownApplications30d.value).toBe(1);
+  });
+
   it("the overview's 30 days are the chart's 30 UTC days, so the card and the chart agree", async () => {
     await seed();
     const job = await db.job.findFirstOrThrow({where: {slug: 'live-1'}});

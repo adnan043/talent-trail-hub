@@ -18,7 +18,9 @@ export interface ManageOverview {
   paidOrders: Bounded;
   pendingApprovals: Bounded;
   activeJobs: Bounded;
+  /** Every company's applications (30 days); `ownApplications30d`: only the board's own jobs (`staffJobWhere`), as the Applicants list shows. */
   applications30d: Bounded;
+  ownApplications30d: Bounded;
   companies: Bounded;
   topJobs: {id: number; title: string; slug: string; company: string; views: number; applicants: number}[];
 }

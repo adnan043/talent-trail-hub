@@ -62,12 +62,38 @@ const jobsRoute = createRoute({
   loader: ({context: {queryClient}, deps}) => warm(queryClient.ensureInfiniteQueryData(adminJobsQuery(deps)), queryClient.ensureQueryData(jobFormOptionsQuery)),
   component: lazyRouteComponent(() => import('./screens/jobs'), 'Jobs'),
 });
-const newJobRoute = route('/manage/jobs/new', 'New admin job', qc => [qc.ensureQueryData(jobFormOptionsQuery), qc.ensureQueryData(companiesQuery(''))], () => import('./screens/job-edit'), 'NewAdminJob');
+// The sidebar's "Admin jobs" item: the board's own jobs as tabs (admin-jobs-tabs.tsx), Post a job ·
+// Applicants (only the applicants of the admin's jobs, never a company's).
+const adminJobsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/manage/admin-jobs',
+  staticData: {title: 'Admin jobs'},
+  beforeLoad: () => {
+    throw redirect({to: '/manage/admin-jobs/post', replace: true});
+  },
+});
+const newJobRoute = route('/manage/admin-jobs/post', 'Post a job', qc => [qc.ensureQueryData(jobFormOptionsQuery), qc.ensureQueryData(companiesQuery(''))], () => import('./screens/job-edit'), 'NewAdminJob');
+// The old addresses (bookmarks, and new-applicant emails already sent) open the tabs.
+const oldNewJobRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/manage/jobs/new',
+  beforeLoad: () => {
+    throw redirect({to: '/manage/admin-jobs/post', replace: true});
+  },
+});
 const editJobRoute = route('/manage/jobs/$id', 'Edit job', (qc, p) => [qc.ensureQueryData(adminJobQuery(p.id!)), qc.ensureQueryData(jobFormOptionsQuery)], () => import('./screens/job-edit'), 'EditAdminJob');
 // `?status=` and `?job=` filter the list (the new-applicant email links to `?job=<id>`).
-const applicantsRoute = createRoute({
+const oldApplicantsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/manage/applicants',
+  validateSearch: applicantsSearch,
+  beforeLoad: ({search}) => {
+    throw redirect({to: '/manage/admin-jobs/applicants', search, replace: true});
+  },
+});
+const applicantsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/manage/admin-jobs/applicants',
   staticData: {title: 'Applicants'},
   validateSearch: applicantsSearch,
   loaderDeps: ({search}) => ({status: search.status ?? ('' as const), job: search.job ?? ''}),
@@ -95,9 +121,12 @@ export const adminRoutes = [
   moderationRoute,
   reviewRoute,
   jobsRoute,
+  adminJobsRoute,
   newJobRoute,
+  oldNewJobRoute,
   editJobRoute,
   applicantsRoute,
+  oldApplicantsRoute,
   tiersRoute,
   privacyRoute,
   emailsRoute,
@@ -126,7 +155,7 @@ export const ADMIN_NAV: {label: string; items: NavItem[]}[] = [
     items: [
       {to: '/manage/moderation', label: 'Moderation', icon: 'inbox', ability: 'moderateJobs', badge: ModerationNavBadge},
       {to: '/manage/jobs', label: 'All jobs', icon: 'briefcase', ability: 'manageJobs'},
-      {to: '/manage/applicants', label: 'Applicants', icon: 'users', ability: 'readApplicants'},
+      {to: '/manage/admin-jobs', label: 'Admin jobs', icon: 'file', ability: 'manageJobs'},
       {to: '/manage/tiers', label: 'Listing tiers', icon: 'layers', ability: 'manageBoard'},
       {to: '/manage/privacy', label: 'Candidate data', icon: 'lock', ability: 'managePrivacy'},
       {to: '/manage/emails', label: 'Email log', icon: 'mail', ability: 'readBoardReports'},

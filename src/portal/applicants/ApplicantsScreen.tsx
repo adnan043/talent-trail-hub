@@ -5,6 +5,7 @@ import {type ReactNode, useRef, useState} from 'react';
 import {APPLICATION_STATUSES} from '../../lib/board';
 import {APPLICATION_STATUS_LABELS, type ApplicantRow} from '../../lib/types-apply';
 import {ago, useMe} from '../shared';
+import {AdminJobsPage} from '../admin/screens/admin-jobs-tabs';
 import {
   Button,
   Card,
@@ -26,7 +27,7 @@ import {allApplicantsQuery, applicantJobsQuery, applicantsSearch, downloadCsv, j
 
 /**
  * The applicants screens, shared by the employer area (one job's applicants, own company only)
- * and the admin (`/dashboard/manage/applicants`, every company). Workstream B builds them;
+ * and the admin (`/dashboard/manage/admin-jobs/applicants`, the board's own jobs only). Workstream B builds them;
  * C and D only register the routes (docs/MIGRATION.md). The server enforces who sees what.
  */
 
@@ -233,7 +234,7 @@ export function JobApplicants() {
   );
 }
 
-/** `/dashboard/manage/applicants` (D registers it): every job's applicants, admin only. */
+/** `/dashboard/manage/admin-jobs/applicants` (Admin jobs · Applicants tab): the board's own jobs' applicants (never a company's), admin only. */
 export function AllApplicants() {
   const [filter, setFilters] = useUrlFilters();
   const setFilter = (change: (f: typeof filter) => typeof filter) => setFilters(change(filter));
@@ -250,11 +251,9 @@ export function AllApplicants() {
     ...(jobs.data?.jobs.map(j => ({value: String(j.id), label: `${j.title} · ${j.company} (${j.applicationCount})`})) ?? []),
   ];
   return (
-    <div className="app-page screen-applicants">
-      <PageHeader
-        title="Applicants"
-        description="Every job’s applicants, newest first. Each resume you download is logged."
-        actions={
+    <AdminJobsPage
+      className="screen-applicants"
+      actions={
           <Button
             icon="file"
             disabled={!rows?.length}
@@ -263,8 +262,8 @@ export function AllApplicants() {
             onClick={() => csv.mutate({path: `/site-api/applications/all/export?status=${filter.status}&job=${filter.job}`, name: 'applicants.csv'})}>
             Download CSV
           </Button>
-        }
-      />
+      }>
+      <p className="muted">Applicants to your admin jobs, newest first. A company’s applicants are the company’s own. Each resume you download is logged.</p>
       <div className="toolbar">
         <SegmentedControl label="Filter by status" options={STATUS_FILTERS} value={filter.status} onChange={status => setFilter(f => ({...f, status}))} />
         <Select aria-label="Filter by job" options={jobOptions} value={filter.job} onChange={event => setFilter(f => ({...f, job: event.target.value}))} />
@@ -283,6 +282,6 @@ export function AllApplicants() {
           ) : undefined
         }
       />
-    </div>
+    </AdminJobsPage>
   );
 }

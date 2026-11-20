@@ -231,7 +231,7 @@ export const applicantProfileRoutes = new Hono<Env>()
     if (kind === 'employer') {
       return c.json(problem('employer_account', 'This is a company account. Sign up with another email to apply for jobs.'), 409);
     }
-    // Board staff see every applicant; they do not apply with the same account.
+    // Board staff see the board's own applicants; they do not apply with the same account.
     if (kind === 'none' && (await can(c as unknown as Context<{Variables: {viewer: Viewer}}>, PERMISSIONS.APPLICANT_READ_ALL))) {
       return c.json(problem('staff_account', 'Staff accounts cannot apply for jobs. Sign up with another email.'), 409);
     }

@@ -170,14 +170,10 @@ export function Jobs() {
         title="All jobs"
         description="Every job on the board. Employer jobs can be featured, extended or closed, not edited."
         actions={
-          <>
-            <Button variant="secondary" icon="refresh" pending={expiry.isPending} pendingLabel="Running…" onClick={() => expiry.mutate()}>
-              Run expiry now
-            </Button>
-            <Link className={buttonClass()} to="/manage/jobs/new">
-              Post an admin job
-            </Link>
-          </>
+          // Posting an admin job lives in the sidebar's "Admin jobs" (Post a job · Applicants).
+          <Button variant="secondary" icon="refresh" pending={expiry.isPending} pendingLabel="Running…" onClick={() => expiry.mutate()}>
+            Run expiry now
+          </Button>
         }
       />
       <div className="toolbar">
@@ -206,7 +202,7 @@ export function Jobs() {
                 Try other filters.
               </EmptyState>
             ) : (
-              <EmptyState icon="briefcase" title="No jobs yet" action={<Link className={buttonClass()} to="/manage/jobs/new">Post an admin job</Link>}>
+              <EmptyState icon="briefcase" title="No jobs yet" action={<Link className={buttonClass()} to="/manage/admin-jobs/post">Post an admin job</Link>}>
                 Jobs show here as employers post them.
               </EmptyState>
             )

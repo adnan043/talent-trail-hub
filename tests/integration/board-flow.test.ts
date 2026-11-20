@@ -166,7 +166,8 @@ describe.skipIf(!DATABASE_URL)('board flow, Release 1 end to end (integration, r
     expect(detail.status).toBe(200);
     expect((detail.json.job as {state: string}).state).toBe('active');
 
-    // (4) A job seeker applies; the employer sees them, the other employer cannot, staff see all.
+    // (4) A job seeker applies; the employer sees them, the other employer and the staff cannot
+    // (a company's candidates are the company's: the admin handles the board's own jobs only).
     expect((await apply(guest(), slug)).status).toBe(401);
     const visitor = await jobSeeker('casey@example.test');
     expect((await apply(visitor, slug)).status).toBe(201);
@@ -176,7 +177,8 @@ describe.skipIf(!DATABASE_URL)('board flow, Release 1 end to end (integration, r
     expect((await other.get(`/site-api/applications/jobs/${jobId}/applicants?status=&before=`)).status).toBe(404);
     const all = await admin.get('/site-api/applications/all?status=&before=&job=');
     expect(all.status).toBe(200);
-    expect((all.json.items as {email: string; job: {company: string}}[]).map(r => [r.email, r.job.company])).toEqual([['casey@example.test', 'Flow Robots']]);
+    expect(all.json.items).toEqual([]);
+    expect((await admin.get(`/site-api/applications/jobs/${jobId}/applicants?status=&before=`)).status).toBe(404);
     const again = await apply(visitor, slug);
     expect(again.status).toBe(409);
     expect(await db.application.count()).toBe(1);

@@ -7,6 +7,7 @@ import {PERMISSIONS} from '../permissions';
 import {DAY_MS} from './manage-shared';
 import {cachedBoardSettings} from './brand';
 import {cache} from '../../platform/cache';
+import {staffJobWhere} from './applicants';
 
 /**
  * F19 overview numbers and the activity chart. Each is ONE aggregate `$queryRaw` (counted in the
@@ -56,7 +57,7 @@ export const manageOverviewRoutes = new Hono()
       // the 29 before it), so the cards and the chart beside them never disagree.
       const since = new Date(bucketKey(now, false) - 29 * DAY_MS);
       type Totals = {revenue_all: bigint | null; revenue_30d: bigint | null; paid_orders: number; pending: number; active: number; applications: number; companies: number};
-      const [[totals], top] = await Promise.all([
+      const [[totals], top, own] = await Promise.all([
         db.$queryRaw<Totals[]>`
           SELECT
             (SELECT sum("amount_cents")::bigint FROM "listing_orders" WHERE "status" = 'paid' AND "currency" = ${settings.currency}) AS revenue_all,
@@ -72,6 +73,8 @@ export const manageOverviewRoutes = new Hono()
           take: TOP_JOBS,
           select: {id: true, title: true, slug: true, viewCount: true, applicationCount: true, company: {select: {name: true}}},
         }),
+        // The admin's own share, the same scope as the Applicants list the card links to.
+        db.application.count({where: {createdAt: {gte: since}, job: staffJobWhere(settings)}}),
       ]);
       return {
         currency: settings.currency,
@@ -81,6 +84,7 @@ export const manageOverviewRoutes = new Hono()
         pendingApprovals: exact(totals?.pending ?? 0),
         activeJobs: exact(totals?.active ?? 0),
         applications30d: exact(totals?.applications ?? 0),
+        ownApplications30d: exact(own),
         companies: exact(totals?.companies ?? 0),
         topJobs: top.map(j => ({id: j.id, title: j.title, slug: j.slug, company: j.company.name, views: j.viewCount, applicants: j.applicationCount})),
       };

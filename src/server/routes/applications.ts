@@ -8,7 +8,7 @@ import {normalizeEmail} from '../../platform/auth';
 import {can, problem, requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
 import type {Viewer} from '../../lib/types';
 import {PERMISSIONS} from '../permissions';
-import {notifyNewApplication} from '../board/applicants';
+import {notifyNewApplication, ownerInactive} from '../board/applicants';
 import {accountKind} from '../board/applicant-profile';
 import {ipHashOf} from '../board/ip';
 import {publicJobWhere} from '../board/public';
@@ -105,6 +105,9 @@ export const applicationRoutes = new Hono<Env>()
     if (!job) return c.json(problem('not_found', 'This job is no longer taking applications.'), 404);
     if (job.applyMethod !== 'onsite') return c.json(problem('apply_elsewhere', 'This job takes applications on the company’s own site.'), 400);
     if (job.company.ownerUserId === viewer.id) return c.json(problem('own_job', 'This is your company’s job: you cannot apply to it.'), 403);
+    if (await ownerInactive(db, job.company.ownerUserId, isSingleCompany(settings))) {
+      return c.json(problem('not_found', 'This job is no longer taking applications.'), 404);
+    }
     // Counted only now: a refusal above (profile not finished, job closed, own job) sends nothing,
     // so it never uses up the hour's applications of a job seeker who then fixes it and applies.
     if (await overLimit(db, 'apply', ipHash, LIMITS.appliesPerIpHour)) {
@@ -162,7 +165,11 @@ export const applicationRoutes = new Hono<Env>()
     const mine = {OR: [{applicantUserId: viewer.id}, ...(email ? [{applicantUserId: null, email}] : [])]};
     // One parallel trip: "already applied?" goes by the job's unique slug, not after the job read.
     const [job, kind, profile, applied] = await Promise.all([
-      cachedBoardSettings(db).then(settings => db.job.findFirst({where: {...publicJobWhere(settings), slug}, select: {id: true, company: {select: {ownerUserId: true}}}})),
+      cachedBoardSettings(db).then(async settings => {
+        const found = await db.job.findFirst({where: {...publicJobWhere(settings), slug}, select: {id: true, company: {select: {ownerUserId: true}}}});
+        // An employer whose account is suspended takes no applications (the POST answers 404).
+        return found && (await ownerInactive(db, found.company.ownerUserId, isSingleCompany(settings))) ? null : found;
+      }),
       accountKind(db, viewer.id),
       db.applicantProfile.findUnique({where: {userId: viewer.id}, select: applyProfileSelect}),
       db.application.findFirst({where: {...mine, job: {slug}}, select: {status: true}}),
