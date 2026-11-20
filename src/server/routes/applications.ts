@@ -2,7 +2,7 @@ import {type Context, Hono} from 'hono';
 import {validator} from 'hono/validator';
 
 import type {PrismaClient} from '../../generated/prisma/client';
-import {DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
+import {type ApplicationStatus, DEFAULT_CONSENT_TEXT, LIMITS} from '../../lib/board';
 import {type CanApplyAnswer, missingToApply, missingLabel} from '../../lib/types-profile';
 import {normalizeEmail} from '../../platform/auth';
 import {can, problem, requireAuth, requireVerified, withDb, withViewer} from '../../platform/guards';
@@ -165,7 +165,7 @@ export const applicationRoutes = new Hono<Env>()
       cachedBoardSettings(db).then(settings => db.job.findFirst({where: {...publicJobWhere(settings), slug}, select: {id: true, company: {select: {ownerUserId: true}}}})),
       accountKind(db, viewer.id),
       db.applicantProfile.findUnique({where: {userId: viewer.id}, select: applyProfileSelect}),
-      db.application.findFirst({where: {...mine, job: {slug}}, select: {id: true}}),
+      db.application.findFirst({where: {...mine, job: {slug}}, select: {status: true}}),
     ]);
     // A closed, expired or hidden job takes no applications (the POST would answer 404).
     if (!job) return no('closed');
@@ -182,7 +182,7 @@ export const applicationRoutes = new Hono<Env>()
       headline: profile?.headline ?? null,
       resumeFileName: profile?.resumeFileId ? profile.resumeFileName : null,
     };
-    if (applied) return no('applied', {profile: summary});
+    if (applied) return no('applied', {profile: summary, applicationStatus: applied.status as ApplicationStatus});
     const missing = profile ? missingToApply({hasPhoto: profile.photoFileId !== null, resumeFileName: profile.resumeFileId}) : [];
     if (missing.length) return no('incomplete', {missing, profile: summary});
     return c.json<CanApplyAnswer>({canApply: true, reason: null, profile: summary});

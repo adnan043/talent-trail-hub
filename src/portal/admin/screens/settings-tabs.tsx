@@ -2,12 +2,8 @@ import {Link} from '@tanstack/react-router';
 import type {ReactNode} from 'react';
 
 import {PageHeader} from '../../ui';
+import {SETTINGS_TABS as TABS} from '../routes';
 
-const TABS = [
-  {to: '/manage/settings/branding', label: 'Branding'},
-  {to: '/manage/settings/board', label: 'Board mode'},
-  {to: '/manage/settings/moderation', label: 'Moderation mode'},
-] as const;
 
 /**
  * The one Settings screen (sidebar "Settings"): Branding · Board mode · Moderation mode as

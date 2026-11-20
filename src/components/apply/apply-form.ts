@@ -8,7 +8,7 @@
 import {LIMITS} from '../../lib/board';
 import {bindForm, postJson} from '../../lib/form';
 import {rules} from '../../lib/rules';
-import {type CanApplyAnswer, missingLabel} from '../../lib/types-profile';
+import {appliedCard, type CanApplyAnswer, missingLabel} from '../../lib/types-profile';
 import {siteFetch} from '../../platform/browser';
 
 function bindClicks(section: HTMLElement, slug: string) {
@@ -38,7 +38,7 @@ function bindApplyForm(form: HTMLFormElement, slug: string) {
         consent: consent.checked,
       });
       if (res?.status === 201) {
-        showDone(form, false);
+        showDone(form, null);
         return {ok: true};
       }
       return result;
@@ -46,19 +46,29 @@ function bindApplyForm(form: HTMLFormElement, slug: string) {
   });
 }
 
-/** Swaps the form for the success card (`alreadyApplied`: the job seeker applied before). */
-function showDone(form: HTMLFormElement, alreadyApplied: boolean) {
+/**
+ * Swaps the form for the success card. `applied`: the job seeker applied before, and where that
+ * application stands now (shortlisted, not selected, …), so the card never contradicts My applications.
+ */
+function showDone(form: HTMLFormElement, applied: {status: CanApplyAnswer['applicationStatus']} | null) {
   const section = form.closest<HTMLElement>('[data-apply-section]');
   const done = section?.querySelector<HTMLElement>('[data-apply-done]');
   if (!section || !done) return;
-  if (alreadyApplied) {
+  const alreadyApplied = applied !== null;
+  if (applied) {
+    const card = appliedCard(applied.status);
     const set = (name: string, text: string) => {
       const node = done.querySelector<HTMLElement>(`[data-done-${name}]`);
       if (node) node.textContent = text;
     };
     set('kicker', 'Already applied');
-    set('title', 'Your application is on its way');
-    set('text', 'You have already applied for this job. Follow its status under My applications in your dashboard.');
+    set('title', card.title);
+    set('text', card.text);
+    const steps = done.querySelector<HTMLElement>('.vd-done-steps');
+    if (steps) {
+      steps.hidden = card.steps === 0;
+      steps.querySelectorAll('li').forEach((step, i) => step.classList.toggle('is-done', i < card.steps));
+    }
   } else {
     done.classList.add('is-fresh');
   }
@@ -108,7 +118,7 @@ async function showStep(section: HTMLElement, form: HTMLFormElement, slug: strin
     form.hidden = false;
     return;
   }
-  if (answer?.reason === 'applied') return showDone(form, true);
+  if (answer?.reason === 'applied') return showDone(form, {status: answer.applicationStatus});
   if (answer?.reason === 'choose_kind') return show('apply-choose');
   if (answer?.reason === 'incomplete') {
     const line = pick('apply-missing');

@@ -3,6 +3,7 @@
  * Browser-safe: the dashboard's profile screen, the job page's apply section and the server share
  * these shapes, limits and the completion rule, so the percentage reads the same everywhere.
  */
+import type {ApplicationStatus} from './board';
 
 /**
  * What a signed-in account is. `applicant`: has a job seeker profile. `employer`: owns a company.
@@ -130,6 +131,8 @@ export interface CanApplyAnswer {
   missing?: ApplyRequirement[];
   /** Signed in as an applicant: what the employer will see. */
   profile?: {name: string; email: string; phone: string | null; headline: string | null; resumeFileName: string | null};
+  /** `applied`: where that application stands now (the job page's card shows it, as My applications does). */
+  applicationStatus?: ApplicationStatus;
 }
 
 /** `GET /site-api/applications/:id/profile` → `profile`: what the employer sees beside the application. */
@@ -146,4 +149,25 @@ export interface ApplicantProfileForEmployer {
   passingYear: number | null;
   skills: string | null;
   hasPhoto: boolean;
+}
+
+/**
+ * The job page's card for a job seeker who already applied (`can-apply` → `applied`): where that
+ * application stands, in the words My applications uses. `steps`: how many of Sent · Reviewed ·
+ * Shortlisted are done (0 hides them: a closed application has no next step).
+ */
+export function appliedCard(status: ApplicationStatus | undefined): {title: string; text: string; steps: number} {
+  const follow = 'Follow it under My applications in your dashboard.';
+  switch (status) {
+    case 'reviewed':
+      return {title: 'Your application is being reviewed', text: `The employer has seen your application. ${follow}`, steps: 2};
+    case 'shortlisted':
+      return {title: 'You’re on the shortlist', text: `The employer shortlisted your application. ${follow}`, steps: 3};
+    case 'approved':
+      return {title: 'Your application was approved', text: `The employer approved your application and will be in touch. ${follow}`, steps: 3};
+    case 'rejected':
+      return {title: 'This application was not selected', text: 'The employer went ahead with other candidates this time. Your other applications are under My applications in your dashboard.', steps: 0};
+    default:
+      return {title: 'Your application is on its way', text: 'You have already applied for this job. Follow its status under My applications in your dashboard.', steps: 1};
+  }
 }

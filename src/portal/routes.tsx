@@ -38,6 +38,7 @@ import {applicantProfileQuery, ownPhotoUrl} from './applicants/profile-queries';
 import {ProfilePhoto} from './applicants/profile-parts';
 import {welcomeSearch} from './applicants/WelcomeScreen';
 import {CommandSearch} from './CommandSearch';
+import {searchScreens} from './search-screens';
 import {useMe, useSite} from './shared';
 import {
   Avatar,
@@ -120,7 +121,18 @@ export function RouteError({error}: ErrorComponentProps) {
 /** `employer`: hidden in single-company mode (the employer area is 404 there). */
 /** `hideForAbility`: hidden for visitors who have it (the admin has the board's own screens instead). */
 /** `badge`: a small component beside the label (a waiting count); rendered only when the item shows. */
-export type NavItem = {to: string; label: string; icon: IconName; exact?: boolean; ability?: keyof Abilities; employer?: boolean; hideForAbility?: keyof Abilities; badge?: ComponentType};
+/** `tabs`: the screens inside this one (Settings → Branding, …): not in the sidebar, but ⌘K finds them. */
+export type NavItem = {
+  to: string;
+  label: string;
+  icon: IconName;
+  exact?: boolean;
+  ability?: keyof Abilities;
+  employer?: boolean;
+  hideForAbility?: keyof Abilities;
+  badge?: ComponentType;
+  tabs?: readonly {to: string; label: string}[];
+};
 
 /**
  * The sidebar, in groups. `ability` hides an item the visitor may not use;
@@ -395,7 +407,7 @@ function Shell() {
           )}
           <div className="app-topbar-actions">
             {vela ? (
-              <CommandSearch screens={groups.flatMap(group => group.items.map(item => ({to: item.to, label: item.label, icon: item.icon, group: group.label})))} />
+              <CommandSearch screens={searchScreens(groups)} />
             ) : (
               viewer && (
                 <Menu

@@ -12,7 +12,8 @@ import {Icon, type IconName, Modal} from './ui';
  * Staff who manage jobs search the whole board on the server (`q`, a capped page);
  * an employer searches the first page of their own jobs in the browser (it is already cached).
  */
-export type SearchScreen = {to: string; label: string; icon: IconName; group: string};
+/** `tab`: a tab inside another screen, listed only when it matches what was typed. */
+export type SearchScreen = {to: string; label: string; icon: IconName; group: string; tab?: boolean};
 
 type Hit = {key: string; label: string; detail: string; icon: IconName; go: () => void};
 
@@ -78,7 +79,7 @@ function SearchBody({screens, close}: {screens: SearchScreen[]; close: () => voi
       fn();
     };
     const out: Hit[] = screens
-      .filter(s => !needle || s.label.toLowerCase().includes(needle) || s.group.toLowerCase().includes(needle))
+      .filter(s => (needle ? s.label.toLowerCase().includes(needle) || s.group.toLowerCase().includes(needle) : !s.tab))
       .slice(0, needle ? 6 : 8)
       .map(s => ({key: `s:${s.to}`, label: s.label, detail: s.group, icon: s.icon, go: go(() => void navigate({to: s.to}))}));
     if (canBoard && q.length >= 2) {
