@@ -397,8 +397,14 @@ const structured = indexable
           void import('../lib/checkout-session').then(({notifyPaymentOpener}) => notifyPaymentOpener());
         }
         // A prerendered page: the visitor and the site name arrive now. Then (every page) the account
-        // menu's email and Admin item, and the saved-jobs count.
-        void (document.body.dataset.static === '1' ? hydrateStaticPage() : Promise.resolve()).then(fillAccount);
+        // menu's email and Admin item, and the saved-jobs count. `site:viewer-ready` tells the page's
+        // own code the visitor is known (`signedIn()` in src/lib/account.ts), so it needn't ask again.
+        void (document.body.dataset.static === '1' ? hydrateStaticPage() : Promise.resolve())
+          .finally(() => {
+            document.body.dataset.viewerReady = '1';
+            document.dispatchEvent(new Event('site:viewer-ready'));
+          })
+          .then(fillAccount);
         showSavedCount();
         void hydrateFooterLinks();
 

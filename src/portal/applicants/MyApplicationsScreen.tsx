@@ -1,10 +1,9 @@
-import {useInfiniteQuery, useQuery} from '@tanstack/react-query';
+import {useInfiniteQuery} from '@tanstack/react-query';
 import {Link} from '@tanstack/react-router';
 import {useState} from 'react';
 
 import {type ApplicationStatus} from '../../lib/board';
-import {MY_APPLICATION_STATUS_LABELS, type MyApplicationRow, type MyApplicationsPage} from '../../lib/types-apply';
-import {api, read} from '../api';
+import {MY_APPLICATION_STATUS_LABELS, type MyApplicationRow} from '../../lib/types-apply';
 import {useMe, when} from '../shared';
 import {Button, buttonClass, Card, type Column, DataTable, DefinitionList, Drawer, ErrorNote, Icon, type IconName, LoadingBlock, LoadMore, Notice, StatusBadge} from '../ui';
 import {STATUS_TONES} from './ApplicantDrawer';
@@ -128,14 +127,9 @@ export function MyApplications() {
   const me = useMe();
   const verified = me.data?.viewer?.emailVerified === true;
   const query = useInfiniteQuery({...myApplicationsFilteredQuery(NO_MY_FILTER), enabled: verified});
-  // The tiles count ALL applications: from the unfiltered list's first page (shared with the dashboard).
-  const all = useQuery({
-    queryKey: ['my-applications', 'counts'],
-    queryFn: () => read<MyApplicationsPage>(api['my-applications'].$get({query: {before: '', ...NO_MY_FILTER, tz: ''}})),
-    enabled: verified,
-    staleTime: 30_000,
-  });
-  const counts = all.data?.counts ?? null;
+  // The tiles count ALL applications: the list is unfiltered, so its first page carries them (the
+  // same query as the dashboard's, no second read).
+  const counts = query.data?.pages[0]?.counts ?? null;
   const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : null;
   const [openId, setOpenId] = useState<number | null>(null);
   const rows = query.data?.pages.flatMap(page => page.items);

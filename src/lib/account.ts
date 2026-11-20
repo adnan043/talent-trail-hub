@@ -48,6 +48,14 @@ export function takeToken(): string | null {
 
 /** Already signed in? Then a sign-in or sign-up page has nothing to do. */
 export async function signedIn(): Promise<boolean> {
+  // A prerendered page already reads `/site-api/me` once to fill in the visitor (Base.astro, after
+  // refreshing an expired session): wait for that answer instead of a second read.
+  if (document.body.dataset.static === '1') {
+    if (document.body.dataset.viewerReady !== '1') {
+      await new Promise(resolve => document.addEventListener('site:viewer-ready', resolve, {once: true}));
+    }
+    return document.body.dataset.viewer === 'user';
+  }
   try {
     const res = await siteFetch('/site-api/me', {headers: {accept: 'application/json'}});
     const body = (await res.json()) as {viewer?: Viewer};

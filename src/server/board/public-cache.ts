@@ -9,7 +9,7 @@ import {cache} from '../../platform/cache';
  *
  *   board:home:<any|remote|onsite|hybrid>   GET /board/home            3 min
  *   board:home:jobs:<scope>:<sort>:<hour>  GET /jobs, the plain first page   3 min
- *   board:home:featured-count:<scope>      the board's featured count on a filtered page 1   3 min
+ *   board:home:featured-ids:<scope>        the board's featured job ids: pins of filtered and later pages, the count   3 min
  *   board:home:job:<scope>:<slug>          GET /jobs/:slug, the job page's rows (expiry applied per request)   10 min
  *   board:home:company:<scope>:<slug>      GET /companies/:slug, the profile and its jobs (expiry applied per request)   10 min
  *   board:home:companies:first             GET /companies, the plain first page   3 min
