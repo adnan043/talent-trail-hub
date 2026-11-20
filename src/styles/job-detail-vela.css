@@ -611,6 +611,138 @@
   display: flex;
 }
 
+/* After applying: the band stays dark and holds a success card (title hidden, the card says it). */
+.v-home .vd-apply-band.apply-section:has([data-apply-done]:not([hidden])) {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 36px 40px;
+  background:
+    radial-gradient(55% 80% at 0% 0%, rgba(16, 185, 129, 0.32), transparent 60%),
+    radial-gradient(50% 70% at 100% 10%, rgba(99, 102, 241, 0.4), transparent 60%),
+    radial-gradient(60% 60% at 70% 110%, rgba(34, 211, 238, 0.2), transparent 60%),
+    linear-gradient(160deg, #121a22 0%, #1b1a3d 100%);
+}
+
+.vd-apply-band:has([data-apply-done]:not([hidden])) .vd-apply-title {
+  display: none;
+}
+
+.vd-apply-done {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  outline: none;
+}
+
+
+.vd-done-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v-home .vd-done-kicker {
+  margin: 0;
+  font-family: var(--v-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #6ee7b7;
+}
+
+.v-home .vd-done-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.v-home .vd-done-text {
+  margin: 0;
+  max-width: 520px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #c7cbe0;
+}
+
+/* A small "sent → reviewed → shortlisted" track: only the first step is lit. */
+.vd-done-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vd-done-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  font-weight: 500;
+  color: #a9aecb;
+}
+
+.vd-done-steps li span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.vd-done-steps li.is-done {
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(16, 185, 129, 0.14);
+  color: #d1fae5;
+}
+
+.vd-done-steps li.is-done span {
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.25);
+}
+
+.vd-apply-band .vd-done-actions {
+  margin-top: 14px;
+}
+
+/* A fresh send gets a little motion: the card rises. */
+@media (prefers-reduced-motion: no-preference) {
+  .vd-apply-done.is-fresh .vd-done-body {
+    animation: vd-done-rise 480ms ease-out 120ms both;
+  }
+}
+
+@keyframes vd-done-rise {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (max-width: 639.98px) {
+  .v-home .vd-apply-band.apply-section:has([data-apply-done]:not([hidden])) {
+    padding: 28px 22px;
+  }
+  .vd-apply-done {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .v-home .vd-done-title {
+    font-size: 21px;
+  }
+  .vd-done-actions a {
+    flex: 1 1 100%;
+  }
+}
+
 /* ---------------------------------------------------------------- about the company */
 .vd-co-card {
   padding: 32px 40px;

@@ -66,6 +66,24 @@ const id = `apply-${job.id}`;
           </div>
         </div>
 
+        {/* After a sent application (and when this job seeker already applied): a success card. */}
+        <div class="vd-apply-done" data-apply-done hidden role="status" tabindex="-1">
+          <div class="vd-done-body">
+            <p class="vd-done-kicker" data-done-kicker>Application sent</p>
+            <h3 class="vd-done-title" data-done-title>You’re in the running at {job.companyName}</h3>
+            <p class="vd-done-text" data-done-text>{job.companyName} now has your profile, photo and CV. We’ll email you, and you can follow every step under My applications.</p>
+            <ol class="vd-done-steps" aria-label="What happens next">
+              <li class="is-done"><span></span>Sent</li>
+              <li><span></span>Reviewed</li>
+              <li><span></span>Shortlisted</li>
+            </ol>
+            <div class="apply-actions vd-done-actions">
+              <a class="vd-apply" href="/dashboard/my-applications">Track my application<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+              <a class="vd-apply-ghost" href="/jobs/">Browse more jobs</a>
+            </div>
+          </div>
+        </div>
+
         <form id={`${id}-form`} class="form-card apply-form" novalidate data-apply-form hidden>
           <p class="apply-lead">{job.companyName} will get your profile, photo and CV.</p>
           <dl class="apply-profile">
