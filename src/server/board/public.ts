@@ -10,7 +10,7 @@ export function publicJobWhere(settings: BoardSettings, now = new Date()): Prism
   return {
     status: 'published',
     expiresAt: {gt: now},
-    company: {isBlocked: false},
+    company: {isBlocked: false, ownerSuspended: false},
     ...(isSingleCompany(settings) ? {companyId: settings.ownerCompanyId!} : {}),
   };
 }

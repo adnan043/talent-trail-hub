@@ -65,6 +65,7 @@ export async function hiringRanking(
   const rows = await db.company.findMany({
     where: {
       isBlocked: false,
+      ownerSuspended: false,
       activeJobCount: {gt: 0},
       ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {}),
       ...(after ? {OR: [{activeJobCount: {lt: after.count}}, {activeJobCount: after.count, id: {gt: after.id}}]} : {}),
@@ -83,7 +84,7 @@ export async function companySummaries(db: PrismaClient, ranks: Rank[]): Promise
   const missing = ranks.filter(r => !r.row);
   const rows = missing.length
     ? await db.company.findMany({
-        where: {id: {in: missing.map(r => r.id)}, isBlocked: false},
+        where: {id: {in: missing.map(r => r.id)}, isBlocked: false, ownerSuspended: false},
         select: {id: true, slug: true, name: true, logoUrl: true, location: true},
         take: missing.length,
       })
@@ -106,12 +107,12 @@ const searchWhere = (q: string): Prisma.CompanyWhereInput | undefined =>
 async function byName(db: PrismaClient, afterId: number | null, where: Prisma.CompanyWhereInput | undefined): Promise<Rank[]> {
   let after: Prisma.CompanyWhereInput | undefined;
   if (afterId != null) {
-    const last = await db.company.findFirst({where: {id: afterId, isBlocked: false}, select: {name: true}});
+    const last = await db.company.findFirst({where: {id: afterId, isBlocked: false, ownerSuspended: false}, select: {name: true}});
     if (!last) return [];
     after = {OR: [{name: {gt: last.name}}, {name: last.name, id: {gt: afterId}}]};
   }
   const rows = await db.company.findMany({
-    where: {isBlocked: false, activeJobCount: {gt: 0}, AND: [after ?? {}, where ?? {}]},
+    where: {isBlocked: false, ownerSuspended: false, activeJobCount: {gt: 0}, AND: [after ?? {}, where ?? {}]},
     orderBy: [{name: 'asc'}, {id: 'asc'}],
     take: PAGE + 1,
     select: summarySelect,
@@ -125,7 +126,7 @@ async function byName(db: PrismaClient, afterId: number | null, where: Prisma.Co
  */
 async function companiesOverview(db: PrismaClient, settings: BoardSettings, now: Date, firstPage: Rank[] | null): Promise<CompaniesOverview> {
   const [totals, ranks] = await Promise.all([
-    db.company.aggregate({where: {isBlocked: false, activeJobCount: {gt: 0}}, _count: {_all: true}, _sum: {activeJobCount: true}}),
+    db.company.aggregate({where: {isBlocked: false, ownerSuspended: false, activeJobCount: {gt: 0}}, _count: {_all: true}, _sum: {activeJobCount: true}}),
     firstPage ? Promise.resolve(firstPage.slice(0, TOP)) : hiringRanking(db, settings, now, {take: TOP}),
   ]);
   const lead = ranks.slice(0, TOP_ROLES);
@@ -164,6 +165,7 @@ async function loadProfile(db: PrismaClient, settings: BoardSettings, slug: stri
       where: {
         slug,
         isBlocked: false,
+        ownerSuspended: false,
         ...(isSingleCompany(settings) ? {id: settings.ownerCompanyId!} : {jobs: {some: {publishedAt: {not: null}}}}),
       },
       select: companySelect,
@@ -188,7 +190,7 @@ export const companyRoutes = new Hono()
     const settings = await cachedBoardSettings(c.var.db);
     const single = isSingleCompany(settings);
     const row = await c.var.db.companyLogo.findFirst({
-      where: {company: {slug, isBlocked: false, ...(single ? {id: settings.ownerCompanyId!} : {})}},
+      where: {company: {slug, isBlocked: false, ownerSuspended: false, ...(single ? {id: settings.ownerCompanyId!} : {})}},
       select: {
         contentType: true,
         data: true,

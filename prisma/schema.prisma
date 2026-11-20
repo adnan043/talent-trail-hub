@@ -465,6 +465,9 @@ model Company {
   socials     Json?    @db.JsonB
   isTrusted   Boolean  @default(false) @map("is_trusted")
   isBlocked   Boolean  @default(false) @map("is_blocked")
+  /// Kept by a trigger on `users` (status change or delete): the owner account is not active. Its
+  /// jobs and profile leave the public board like a blocked company's; nothing else changes.
+  ownerSuspended Boolean @default(false) @map("owner_suspended")
   /// `employer`, `admin` or `import`.
   source      String   @default("employer") @db.VarChar(10)
   /// Kept on write (published, unexpired jobs): the companies directory lists > 0.
