@@ -3,11 +3,8 @@ import type {ReactNode} from 'react';
 
 import {useMe} from '../../shared';
 import {PageHeader} from '../../ui';
+import {ADMIN_JOBS_TABS as TABS} from '../routes';
 
-const TABS = [
-  {to: '/manage/admin-jobs/post', label: 'Post a job', ability: 'manageJobs'},
-  {to: '/manage/admin-jobs/applicants', label: 'Applicants', ability: 'readApplicants'},
-] as const;
 
 /**
  * The sidebar's "Admin jobs" screen: the board's OWN jobs, as tabs: Post a job · Applicants. The
